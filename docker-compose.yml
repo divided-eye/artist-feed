@@ -9,6 +9,6 @@ services:
       - ./data:/data         # the artist list and feed history live here
     environment:
       REFRESH_MINUTES: "60"  # how often to check for new posts
-      # LOOKUP_FALLBACK: "soundcloud"   # artist link when a track isn't found (also settable in the Tracklist panel)
+      # LOOKUP_FALLBACK: "soundcloud"   # artist link when a track isn't found (also settable in the Links Lookup panel)
       BANDCAMP_FAN: "divided_eye"   # Bandcamp account whose purchases the tracklist lookup checks first
       # SOUNDCLOUD_CLIENT_ID: ""   # optional; found automatically when unset

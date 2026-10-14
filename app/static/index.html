@@ -36,6 +36,8 @@
     border-radius: 8px; padding: 7px 10px; min-width: 0; }
   input[type=text]:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .spacer { flex: 1; }
+  .actions { display: flex; gap: 10px; margin-left: auto; }      /* stays at the right edge, also when the bar wraps */
+  .btn[aria-pressed="true"] { background: var(--accent); color: #14160a; border-color: var(--accent); }
   .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; }
   .btn:hover { background: var(--panel-2); }
   .btn.primary { background: var(--accent); color: #14160a; border-color: var(--accent); font-weight: 600; }
@@ -174,9 +176,11 @@
     <div class="spacer"></div>
     <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
     <span class="status" id="status"></span>
-    <button class="btn" id="lookupBtn" title="Find Bandcamp or SoundCloud links for a tracklist">Tracklist</button>
-    <button class="btn" id="refreshBtn">Refresh</button>
-    <button class="btn primary" id="manageBtn">Artists</button>
+    <div class="actions">
+      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find Bandcamp or SoundCloud links for a tracklist">Links Lookup</button>
+      <button class="btn" id="refreshBtn">Refresh</button>
+      <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
+    </div>
   </div>
   <div class="bar filters">
     <span class="lbl">Filter</span>
@@ -219,7 +223,7 @@
 
 <div class="scrim" id="scrim" hidden></div>
 <aside id="drawer" hidden aria-label="Manage artists">
-  <header><h2>Tracked artists</h2><button class="btn" id="closeBtn">Close</button></header>
+  <header><h2>Tracked Artists</h2><button class="btn" id="closeBtn">Close</button></header>
   <div class="tools">
     <button class="btn" id="addRowBtn">Add row</button>
     <button class="btn" id="importBtn">Import CSV</button>
@@ -234,8 +238,8 @@
   <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
 </aside>
 
-<aside id="lookup" hidden aria-label="Tracklist lookup">
-  <header><h2>Tracklist lookup</h2><button class="btn" id="lookupClose">Close</button></header>
+<aside id="lookup" hidden aria-label="Links lookup">
+  <header><h2>Links Lookup</h2><button class="btn" id="lookupClose">Close</button></header>
   <div class="tools">
     <button class="btn" id="lookupFileBtn">Choose file…</button>
     <input type="file" id="lookupFile" accept=".xlsx,.csv,.tsv,.txt,text/csv" hidden>
@@ -399,7 +403,7 @@ function showEmpty(none) {
   if (!none) return;
   const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]);
   $("empty").replaceChildren(el("b", { text: !artists.length ? "No artists yet" : filtered ? "Nothing matches" : "Nothing here yet" }),
-    !artists.length ? "Use the Artists button to add your first one." : filtered ? "Try a different search or filter." : "New posts appear after the next refresh.");
+    !artists.length ? "Use the Tracked Artists button to add your first one." : filtered ? "Try a different search or filter." : "New posts appear after the next refresh.");
 }
 
 async function loadGrid(reset) {
@@ -812,6 +816,7 @@ async function loadFan(fill) {
 
 function lookupPanel(open) {
   $("lookup").hidden = !open; $("scrim").hidden = !open;
+  $("lookupBtn").setAttribute("aria-pressed", String(open));
   if (open) { loadFan(true); api("/api/lookup/settings").then(s => { $("fallbackPref").value = s.fallback; }).catch(() => {}); }
 }
 
@@ -819,6 +824,7 @@ async function drawer(open) {
   if (!open && dirty && !confirm("Discard unsaved changes to the artist table?")) return;
   if (open) await loadTable(); else setDirty(false);
   $("drawer").hidden = !open; $("scrim").hidden = !open;
+  $("manageBtn").setAttribute("aria-pressed", String(open));
 }
 
 $("manageBtn").onclick = () => drawer(true);

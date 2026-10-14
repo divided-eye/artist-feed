@@ -10,7 +10,7 @@ docker compose up -d --build
 ```
 
 Open http://localhost:8080 (or `http://<that machine's address>:8080` from another
-device). Click **Artists**, fill in the table, and press **Save changes**; the
+device). Click **Tracked Artists**, fill in the table, and press **Save changes**; the
 posts appear a few seconds later. The app re-checks every hour; **Refresh**
 checks immediately.
 
@@ -46,9 +46,9 @@ Pre-orders appear with their future release date. Tracks that are not out yet
 have no duration, and a pre-order with nothing streamable yet has no play
 button.
 
-## Tracklist lookup
+## Links Lookup
 
-The **Tracklist** button takes a list of tracks and returns a link for each one:
+The **Links Lookup** button takes a list of tracks and returns a link for each one:
 the Bandcamp release the track is on, plus its release year. When the track
 isn't on Bandcamp, you get the artist's Bandcamp page if they have one, and
 otherwise their SoundCloud page.
@@ -140,7 +140,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v19. Labels, track lists and durations for Bandcamp
+is v20. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
@@ -195,7 +195,7 @@ listed, not reposts.
 
 Neither method is an official integration. If a site changes its pages, that
 source stops updating and the reason appears in yellow beside the page in the
-Artists panel; everything already collected stays in the feed.
+Tracked Tracked Tracked Artists panel; everything already collected stays in the feed.
 
 ## Settings (docker-compose.yml)
 

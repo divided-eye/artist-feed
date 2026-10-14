@@ -15,7 +15,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "19"   # shown beside the title, so you can tell which version is running
+VERSION = "20"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
