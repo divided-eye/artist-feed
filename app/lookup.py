@@ -1672,7 +1672,9 @@ def apply_to_jobs(artist, title, result):
     key = track_key(artist, title)
     for job in jobs.values():
         for row in job["rows"]:
-            if track_key(row["artist"], row["title"]) == key and row["status"] != "pending":
+            if track_key(row["artist"], row["title"]) == key and row["status"] == "pending" and not job.get("finished"):
+                job.setdefault("skip", set()).add(row.get("n"))     # you gave the link: no need to search for it
+            if track_key(row["artist"], row["title"]) == key:
                 row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": []})
                 row.update(result)
 
@@ -1949,6 +1951,39 @@ def _fill(row, result):
     row.update(result)
 
 
+SKIPPED = {"status": "skipped", "note": "Skipped; add the link with Edit, or search for it again",
+           "steps": ["skipped by you before the search finished"]}
+
+
+async def _unless_skipped(job, n, work):
+    """Run a row's search, unless you press Skip on that row meanwhile: then the search is stopped
+    and None comes back. Nothing is saved for a skipped row."""
+    task = asyncio.ensure_future(work)
+    skip = job.setdefault("skip", set())
+    while not task.done():
+        await asyncio.wait({task}, timeout=0.3)
+        if n in skip and not task.done():
+            task.cancel()
+            try:
+                await task
+            except BaseException:
+                pass
+            return None
+    return task.result()
+
+
+def skip_row(job, n: int):
+    """Stop searching for one row now (or never start): it is left for you to fill in."""
+    row = next((r for r in job["rows"] if r.get("n") == n), None)
+    if row is None:
+        raise ValueError("That row isn't in this lookup.")
+    if row["status"] != "pending" or job.get("finished"):
+        raise ValueError("That row isn't waiting to be searched.")
+    job.setdefault("skip", set()).add(n)
+    if job.get("current") != n:                          # not started yet: it shows as skipped straight away
+        _fill(row, with_list_link(SKIPPED, row["artist"], row["title"]))
+
+
 async def _run(job, fresh, retry_missing=False):
     """Three passes, quickest first, so everything already known shows up straight away:
        1. saved answers, your feed, your purchases and pages read earlier - no requests at all
@@ -2035,14 +2070,25 @@ async def _run(job, fresh, retry_missing=False):
                 pass
         # 3. everything not answered yet
         for n, row in enumerate(todo, 1):
+            if row.get("n") in job.setdefault("skip", set()):
+                if row["status"] == "pending":              # skipped before its turn came
+                    _fill(row, with_list_link(SKIPPED, row["artist"], row["title"]))
+                job["done"] += 1
+                continue
             job["current"] = row.get("n")           # the row being searched right now
             job["phase"] = (f"Searching Bandcamp for \u201c{row['title']}\u201d by {row['artist']} "
                             f"({n} of {len(todo)} not already saved)")
             try:
-                result, keep = await find(net, lib, row["artist"], row["title"], state)
+                found = await _unless_skipped(job, row.get("n"), find(net, lib, row["artist"], row["title"], state))
             except Exception as e:
-                result, keep = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]], "note":
-                                f"Couldn't complete the search ({type(e).__name__}); run it again to retry"}, False
+                found = ({"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]], "note":
+                          f"Couldn't complete the search ({type(e).__name__}); run it again to retry"}, False)
+            if found is None:                            # you skipped it while it was being searched
+                if row["status"] == "pending":
+                    _fill(row, with_list_link(SKIPPED, row["artist"], row["title"]))
+                job["done"] += 1
+                continue
+            result, keep = found
             if keep and result.get("note") != "In your feed":
                 _remember(_cache_key(row["artist"], row["title"]), result, row["artist"], row["title"])
             _fill(row, with_list_link(result, row["artist"], row["title"]))
@@ -2080,7 +2126,7 @@ def start(tracks, fresh=False, retry_missing=False):
 STATUS_TEXT = {"imported": "From your list", "manual": "Link you set", "bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
                "bandcamp_artist": "Bandcamp artist page", "soundcloud_track": "SoundCloud track",
                "soundcloud": "SoundCloud artist page", "soundcloud_search": "SoundCloud search",
-               "none": "Not found", "error": "Error", "pending": "Not looked up yet"}
+               "none": "Not found", "error": "Error", "pending": "Not looked up yet", "skipped": "Skipped"}
 
 
 # ---------- your own list: how names should be written, and links you already have ----------
@@ -2354,7 +2400,8 @@ def view(job) -> dict:
         year = r.get("year") or (known["year"] if r.get("status") else "")     # your list's year, where the lookup has none
         rows.append(dict(r, year=year, review=review_reason(r), list_artist=known["artist"], list_title=known["title"],
                          list_link=known["url"], list_note=known["note"]))
-    return dict(job, rows=rows)
+    shown = {k: v for k, v in job.items() if k != "skip"}
+    return dict(shown, rows=rows, skipping=sorted(job.get("skip") or []))
 
 
 def retry_row(job, n: int):
@@ -2375,7 +2422,8 @@ def retry_row(job, n: int):
                 async with refresh.make_client() as client:
                     net = Net(client)
                     net.fresh = True
-                    result, keep = await find(net, Library(), row["artist"], row["title"], state)
+                    found = await _unless_skipped(job, n, find(net, Library(), row["artist"], row["title"], state))
+                result, keep = found if found is not None else (dict(SKIPPED), False)
                 if keep and result.get("note") != "In your feed":
                     _remember(_cache_key(row["artist"], row["title"]), result, row["artist"], row["title"])
                 if state["warning"]:
@@ -2383,8 +2431,10 @@ def retry_row(job, n: int):
         except Exception as e:
             result = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]],
                       "note": f"Couldn't complete the search ({type(e).__name__}); try again"}
-        _fill(row, with_list_link(result, row["artist"], row["title"]))
+        if row["status"] == "pending":              # not answered meanwhile by a link you set
+            _fill(row, with_list_link(result, row["artist"], row["title"]))
         job.update(done=job["done"] + 1, current=None, phase="", finished=True)
+        job.get("skip", set()).discard(n)
     task = asyncio.create_task(go())
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

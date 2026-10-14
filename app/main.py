@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "49"   # shown beside the title, so you can tell which version is running
+VERSION = "50"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -540,6 +540,19 @@ def lookup_status(job_id: str):
 
 class RetryIn(BaseModel):
     n: int
+
+
+@app.post("/api/lookup/{job_id}/skip")
+async def skip_lookup_row(job_id: str, body: RetryIn):
+    """Stop searching for one row (now, or before its turn): it is left for you to fill in."""
+    job = lookup.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "That lookup has expired. Run it again.")
+    try:
+        lookup.skip_row(job, body.n)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return lookup.view(job)
 
 
 @app.post("/api/lookup/{job_id}/retry")

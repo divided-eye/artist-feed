@@ -1471,3 +1471,41 @@ def test_refresh_button_reports_and_queues(client):
         if not client.get("/api/status").json()["queued"]:
             break
     assert not client.get("/api/status").json()["queued"]
+
+
+def test_skipping_a_row_while_it_is_searched_or_before(client, monkeypatch):
+    import asyncio
+    from app import lookup
+    started = []
+
+    async def slow_find(net, lib, artist, title, state):
+        started.append(title)
+        await asyncio.sleep(60)
+        return {"status": "none"}, True
+    monkeypatch.setattr(lookup, "find", slow_find)
+    j = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSlow One\tStuck Tune Aaa\nSlow Two\tNext Tune Bbb\nSlow Three\tLast Tune Ccc".encode()).json()
+    for _ in range(100):
+        time.sleep(0.05)
+        now = client.get(f"/api/lookup/{j['id']}").json()
+        if now.get("current") == 1:
+            break
+    assert client.post(f"/api/lookup/{j['id']}/skip", json={"n": 3}).status_code == 200       # before its turn
+    assert client.post(f"/api/lookup/{j['id']}/skip", json={"n": 1}).json()["skipping"] == [1, 3]
+    for _ in range(100):
+        time.sleep(0.05)
+        now = client.get(f"/api/lookup/{j['id']}").json()
+        if now.get("current") == 2:
+            break
+    assert now["rows"][0]["status"] == "skipped" and now["rows"][2]["status"] == "skipped"
+    # knowing the link answers the row being searched
+    client.put("/api/lookup/link", json={"artist": "Slow Two", "title": "Next Tune Bbb", "url": "https://slowtwo.bandcamp.com/track/next"})
+    for _ in range(100):
+        time.sleep(0.05)
+        now = client.get(f"/api/lookup/{j['id']}").json()
+        if now["finished"]:
+            break
+    assert now["finished"] and started == ["Stuck Tune Aaa", "Next Tune Bbb"]
+    assert [r["status"] for r in now["rows"]] == ["skipped", "manual", "skipped"]
+    assert lookup._saved_for("Slow One", "Stuck Tune Aaa") is None                                  # nothing saved for a skip
+    assert client.post(f"/api/lookup/{j['id']}/skip", json={"n": 1}).status_code == 409
+    client.delete("/api/saved", params={"key": "slow two|next tune bbb"})

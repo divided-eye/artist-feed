@@ -1218,7 +1218,7 @@ async function pollStatus() {
 const LOOKUP_TAGS = { imported: ["mine", "From your list"], manual: ["mine", "Link you set"], bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
   bandcamp_artist: ["page", "Bandcamp artist page"],
   soundcloud_track: ["ok", "SoundCloud track"], soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
-  none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Waiting to be searched"] };
+  none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Waiting to be searched"], skipped: ["page", "Skipped"] };
 let lookupTimer = null, lookupJob = null, editingRow = null;
 
 // Replace a result with your own link (or remove it). Saved for this artist + title from then on.
@@ -1293,6 +1293,12 @@ function renderLookup(job) {
       el("td", {}, r.title, r.list_title && r.list_title !== r.title ? el("span", { class: "spelt", text: r.list_title }) : null),
       el("td", { class: "link" }, ...(editingRow === r.n ? [linkEditor(r)] : [
         url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
+        waiting ? el("div", { class: "rowbtns" },
+          (job.skipping || []).includes(r.n) ? el("small", { text: "Skipping…" }) :
+          el("button", { class: "btn small", text: "Skip", title: job.current === r.n ? "Stop searching for this track and move on" : "Don't search for this track",
+            onclick: () => skipRow(r).catch(x => { $("lookupError").textContent = x.message; }) }),
+          el("button", { class: "btn small ghost", text: "Add link", title: "You know the link: set it now and this track isn't searched",
+            onclick: () => { editingRow = r.n; renderLookup(job); } })) :
         r.status === "pending" ? null : el("div", { class: "rowbtns" },
           r.review && url ? el("button", { class: "btn small", text: "Looks right", title: "Keep this link: it is saved as yours, and the review mark goes",
             onclick: () => confirmLink(r) }) : null,
@@ -1307,6 +1313,10 @@ function renderLookup(job) {
         el("span", { class: "tag " + cls, text: waiting && job.current === r.n ? "Searching now…" : label }), r.note ? el("small", { text: r.note }) : null,
         (r.steps || []).length ? el("details", {}, el("summary", { text: "What was tried" }), el("ol", {}, ...r.steps.map(t => el("li", { text: t })))) : null));
   }));
+}
+
+async function skipRow(r) {
+  renderLookup(await api(`/api/lookup/${lookupJob.id}/skip`, { method: "POST", body: { n: r.n } }));
 }
 
 function renderLookupStatus(job) {
