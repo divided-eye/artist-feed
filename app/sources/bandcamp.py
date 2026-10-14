@@ -188,7 +188,10 @@ def parse_release(html: str, url: str) -> dict:
                             _clean(urljoin(url, link)) if link else None))
     if tracks or ld_tracks:
         out["tracks"] = tracks or ld_tracks
-    out["posted_at"] = _parse_date(current.get("publish_date"))   # when it went up on Bandcamp
+    # When it went up on Bandcamp, which is not always the stated release date.
+    out["posted_at"] = (_parse_date(current.get("publish_date"))
+                        or _parse_date(tralbum.get("album_publish_date"))
+                        or _parse_date(current.get("new_date")))
 
     props = {}
     tag = soup.find("meta", attrs={"name": "bc-page-properties"})

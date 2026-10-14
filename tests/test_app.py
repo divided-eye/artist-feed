@@ -175,9 +175,11 @@ def test_track_list(client):
     assert (intro["label"], intro["embed"], intro["track_ext_id"], intro["artist"]) == ("Deep Label", "album=111", "1001", "Night Ferry")
     assert long_one["artist"] == "Guest Person" and long_one["url"] == "https://nightferry.bandcamp.com/track/long-one"
     assert third["duration"] is None and third["embed"] is None
-    # posted = when it went up on the site; falls back to the release date when the site doesn't say
-    assert [r["posted"][:10] for r in rows] == ["2026-10-01", "2026-09-01", "2020-01-01", "2025-03-05", "2025-03-05", "2024-01-15"]
-    assert [r["track"] for r in get("?sort=posted&dir=asc")][:2] == ["No Art", ""]
+    # posted = when it went up on the site; blank when the site doesn't say (never the release date)
+    assert [(r["posted"] or "")[:10] for r in rows] == ["2026-10-01", "", "2020-01-01", "2025-03-05", "2025-03-05", ""]
+    assert [r["published_at"][:10] for r in rows] == ["2026-10-01", "2026-09-01", "2026-08-01", "2025-03-07", "2025-03-07", "2024-01-15"]
+    assert [r["track"] for r in get("?sort=posted&dir=asc")] == ["No Art", "Intro", "Long One", "Demo", "Second", ""]
+    assert [r["track"] for r in get("?sort=released&dir=asc")][:2] == ["", "Intro"]
 
     assert [r["track"] for r in get("?sort=duration&dir=desc")][:2] == ["Long One", "Second"]
     assert get("?sort=duration&dir=asc")[-1]["release"] == "Third"            # unknown durations last
@@ -223,7 +225,7 @@ def test_upgrade_from_first_version(client):
     assert old.execute("SELECT title, label, detailed FROM posts").fetchall() == [("kept", None, 0)]
 
     before = client.get("/api/tracks").json()
-    db.execute("UPDATE posts SET detailed=1, label=NULL, embed=NULL, posted_at=NULL")   # what an upgraded database looks like
+    db.execute("UPDATE posts SET detailed=2, label=NULL, embed=NULL, posted_at=NULL")   # what an upgraded database looks like
     db.execute("DELETE FROM tracks")
     assert all(r["track_id"] is None for r in client.get("/api/tracks").json())
     for _ in range(2):                                 # BANDCAMP_MAX_NEW=2, three releases

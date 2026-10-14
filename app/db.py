@@ -94,7 +94,7 @@ ADDED_POST_COLUMNS = {
 }
 # Raise this when the sources start collecting something new: posts stored with
 # a lower number are re-read (a few per refresh) to pick it up.
-DETAIL_VERSION = 2
+DETAIL_VERSION = 3
 
 
 def migrate(c):
@@ -270,7 +270,7 @@ def save_error(account_id, message):
 
 
 WHEN = "COALESCE(p.published_at, p.first_seen)"
-POSTED = f"COALESCE(p.posted_at, {WHEN})"   # falls back to the release date
+POSTED = "p.posted_at"   # blank when the site doesn't give a posting date
 JOINS = ("FROM posts p JOIN accounts a ON a.id=p.account_id "
          "JOIN artists ar ON ar.id=a.artist_id ")
 # One row per track; a post whose tracks are not known yet still gets one row.
@@ -376,7 +376,7 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
         expr = TRACK_SORTS[sort]
         order = f"({expr}='') ASC, {expr} COLLATE NOCASE {way}, {newest}"
     elif sort == "posted":
-        order = f"{POSTED} {way}, p.id {way}, t.position ASC"
+        order = f"({POSTED} IS NULL) ASC, {POSTED} {way}, {newest}"
     elif sort == "duration":
         order = f"(t.duration IS NULL) ASC, t.duration {way}, {newest}"
     else:
