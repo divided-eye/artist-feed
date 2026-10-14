@@ -267,6 +267,36 @@ def root_of(url: str) -> str:
     return f"{p.scheme}://{p.netloc}"
 
 
+# Every track on every release page the lookup has ever opened, by normalised title.
+# Built once from the saved pages, then added to as new pages are read.
+_pages = {"index": None}
+
+
+def _index_release(index, rel):
+    if not rel or not rel.get("tracks"):
+        return
+    title = rel.get("title") or ""
+    extra = [rel.get("artist"), title.partition(" - ")[0] if " - " in title else ""]
+    for t in rel["tracks"]:
+        entry = {"name": t["title"], "artists": [t.get("artist")] + extra, "rel": rel}
+        index.setdefault(norm(t["title"]), []).append(entry)
+        rest = t["title"].partition(" - ")[2]
+        if rest:                                         # "Artist - Title" is also findable by its title
+            index.setdefault(norm(rest), []).append(entry)
+
+
+def page_index():
+    if _pages["index"] is None:
+        index = {}
+        for row in db.query("SELECT data FROM web_cache WHERE kind='release'"):
+            try:
+                _index_release(index, json.loads(row["data"]))
+            except ValueError:
+                pass
+        _pages["index"] = index
+    return _pages["index"]
+
+
 async def get_release(net, url):
     """A release or track page, reduced to what matching needs. Remembered for six months."""
     saved = cache_get("release", url, 180)
@@ -285,6 +315,7 @@ async def get_release(net, url):
             "release_url": rel["release_url"] or "", "label": rel["label"] or "",
             "tracks": [{"title": t.title, "artist": t.artist or ""} for t in rel["tracks"] or []]}
     cache_put("release", url, data)
+    _index_release(page_index(), data)
     return data
 
 
@@ -554,6 +585,8 @@ class Library:
             r["artists"] = [r["artist"]]
             self._add(self.feed, r["name"], r)
         self.owned_items = db.query("SELECT key, title, band, url, kind FROM collection_items ORDER BY rowid")
+        self.owned_urls = {i["url"] for i in self.owned_items}
+        self._by_artist = {}
         by_key = {i["key"]: i for i in self.owned_items}
         self.by_name = {}                                # normalised credited name -> purchases
         for item in self.owned_items:
@@ -575,13 +608,16 @@ class Library:
 
     def owned_by(self, artist):
         """Purchases credited to this artist (or titled "Artist - ...")."""
+        if artist in self._by_artist:
+            return self._by_artist[artist]
         wanted = artist_parts(artist)
         out = {}
         for name, items in self.by_name.items():
             if any(name_sim(w, name) >= 0.85 for w in wanted):
                 for item in items:
                     out.setdefault(item["key"], item)
-        return list(out.values())
+        self._by_artist[artist] = list(out.values())
+        return self._by_artist[artist]
 
 
 async def owned_step(net, lib, artist, title, steps):
@@ -816,12 +852,32 @@ async def find(net, lib, artist, title, state):
         return done({"status": "bandcamp", "site": "Bandcamp", "url": hit["url"], "release": hit["release"],
                      "year": (hit["published_at"] or "")[:4], "note": "In your feed",
                      "found": f"{hit['artist']} — {hit['name']}"})
+    # 1b. any release page read during an earlier lookup (all of its tracks were saved, not just the one wanted)
+    #     A release you own is preferred over another release that happens to carry the same track.
+    known = page_index().get(norm(title), [])
+    mine = [c for c in known if (c["rel"].get("release_url") or c["rel"].get("url")) in lib.owned_urls]
+    verdict, hit = best_candidate(artist, title, mine)
+    if verdict != "bandcamp":
+        verdict, hit = best_candidate(artist, title, known)
+    earlier = None
+    if hit:
+        rel = hit["rel"]
+        owned = (rel.get("release_url") or rel.get("url")) in lib.owned_urls
+        steps.append(f'pages read earlier: "{hit["name"]}" on "{rel.get("title")}"'
+                     + ("" if verdict == "bandcamp" else " (artist only partly matches)"))
+        earlier = release_result(rel, verdict, f'{rel.get("artist") or artist} \u2014 {hit["name"]}',
+                                 "In your purchases" if owned else "On a page read earlier")
+        if verdict == "bandcamp" and (owned or not lib.owned_by(artist)):
+            return done(earlier)
     if state["bandcamp_ok"] and title:
         try:
             # 2. your purchases
             result, check = await owned_step(net, lib, artist, title, steps)
             if result:
                 return done(result)
+            if earlier and earlier["status"] == "bandcamp":
+                return done(earlier)                   # not among your purchases: the page read earlier stands
+            check = check or earlier
             # 3. Bandcamp search
             try:
                 result = await search_step(net, artist, title, steps)
@@ -853,6 +909,7 @@ async def find(net, lib, artist, title, state):
                      "release": cand["item"]["title"], "note": "In your purchases",
                      "found": f'{cand["item"]["band"]} — {cand["name"]}'}
     # 5. fallbacks
+    check = check or earlier
     if check:
         return done(check)
     if pages:

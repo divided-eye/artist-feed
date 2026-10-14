@@ -456,6 +456,15 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     assert client.put("/api/lookup/link", json={"artist": "Pugilist", "title": "Asteroids", "url": ""}).json()["status"] == "none"
     assert one(False)["status"] == "bandcamp_artist"     # with your link removed, the searched answer is back
 
+    # Every track of a release that was opened is saved: a different track from one of those releases,
+    # asked for under a different artist credit, is answered without any new searching.
+    asked = len(searched)
+    j = client.post("/api/lookup", content="Artist\tTitle\nAaaa\tDissolution".encode()).json()
+    time.sleep(0.4)
+    hit = client.get(f"/api/lookup/{j['id']}").json()["rows"][0]
+    assert (hit["status"], hit["url"], hit["note"]) == ("bandcamp", "https://ccc.bandcamp.com/album/conduit", "On a page read earlier")
+    assert len(searched) == asked
+
     before = len(searched)                              # pages read once are not fetched again
     client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSomah\tRailroads".encode())
     time.sleep(0.5)

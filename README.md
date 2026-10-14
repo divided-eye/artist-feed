@@ -63,6 +63,10 @@ otherwise their SoundCloud page.
   purchases are checked before anything is searched. They are read on the
   first lookup, then topped up with new purchases once a day; **Read
   purchases** re-reads everything. The collection must be public.
+- Every release page the lookup opens is saved with its full track list, not
+  just the track being looked for. Later lookups check those saved track lists
+  before searching anything, so the more it has read, the more it answers
+  instantly.
 - The app paces itself: every request to Bandcamp, from the feed, the purchases
   reader and the lookup alike, goes through one queue. If Bandcamp answers
   "slow down" (429), everything waits as long as it asks and then carries on
@@ -106,7 +110,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v12. Labels, track lists and durations for Bandcamp
+is v13. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
