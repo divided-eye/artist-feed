@@ -15,7 +15,7 @@ from . import db, lookup, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "11"   # shown beside the title, so you can tell which version is running
+VERSION = "12"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -318,6 +318,36 @@ async def set_collection(body: FanIn):
     if fan:
         lookup.sync_in_background(full=True)
     return lookup.collection_status()
+
+
+class LinkIn(BaseModel):
+    artist: str = ""
+    title: str = ""
+    url: str = ""
+    year: str = ""
+    release: str = ""
+
+
+@app.put("/api/lookup/link")
+async def set_link(body: LinkIn):
+    """Save (or, with an empty url, remove) your own link for a track."""
+    if not (body.artist.strip() or body.title.strip()):
+        raise HTTPException(400, "Which track is this for?")
+    url = body.url.strip()
+    if not url:
+        lookup.clear_manual(body.artist, body.title)
+        result = {"status": "none", "note": "Your link was removed; run the lookup to search again"}
+    else:
+        if "://" not in url:
+            url = "https://" + url
+        if not re.fullmatch(r"https?://[^\s/]+\.[^\s]+", url):
+            raise HTTPException(400, "That doesn't look like a web address.")
+        year = body.year.strip()
+        if year and not re.fullmatch(r"(19|20)\d{2}", year):
+            raise HTTPException(400, "Year should be four digits, or left empty.")
+        result = await lookup.set_manual(body.artist, body.title, url, year, body.release.strip())
+    lookup.apply_to_jobs(body.artist, body.title, result)
+    return result
 
 
 @app.post("/api/lookup", status_code=201)

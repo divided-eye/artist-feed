@@ -82,6 +82,10 @@ otherwise their SoundCloud page.
   (no profile matched; the link opens a search).
 - **What was tried** under each result lists every step and what it found.
   It is also in the export, in the "steps" column.
+- **Edit** under any link lets you replace it with the correct one (and set
+  the year). Your link is saved for that artist and title and is used from
+  then on, even when you tick "Search again for saved results". **Remove my
+  link** goes back to searching.
 - **Export results** downloads the list with links, release, year and result.
 - Looked-up tracks are remembered, so repeating a list is instant. Tick
   "Search again for saved results" to redo them. Up to 500 tracks at a time.
@@ -102,7 +106,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v11. Labels, track lists and durations for Bandcamp
+is v12. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

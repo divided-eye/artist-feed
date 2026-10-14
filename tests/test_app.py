@@ -439,6 +439,23 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     assert r[("Masot", "02")]["note"] == "In your purchases" and r[("Somah", "Gnosis")]["note"] == "Found on the artist's page"
     assert "Other" not in " ".join(r[("Somah", "Gnosis")]["steps"]) and any("somahuk" in s for s in r[("Somah", "Gnosis")]["steps"])
 
+    # Correcting a result by hand: saved, shown in lookups on screen, and kept even when searching again.
+    fix = client.put("/api/lookup/link", json={"artist": "Pugilist", "title": "Asteroids", "url": "pugilist.bandcamp.com/album/blue"}).json()
+    assert (fix["status"], fix["url"], fix["year"], fix["release"]) == ("manual", "https://pugilist.bandcamp.com/album/blue", "2026", "Blue EP")
+    assert next(x for x in client.get(f"/api/lookup/{job['id']}").json()["rows"] if x["artist"] == "Pugilist")["status"] == "manual"
+    assert "Link you set" in client.get(f"/api/lookup/{job['id']}.csv").content.decode("utf-8-sig")
+    def one(fresh):
+        j = client.post("/api/lookup" + ("?fresh=true" if fresh else ""), content="Artist\tTitle\npugilist\tASTEROIDS".encode()).json()
+        time.sleep(0.4)
+        return client.get(f"/api/lookup/{j['id']}").json()["rows"][0]
+    assert one(False)["url"] == one(True)["url"] == "https://pugilist.bandcamp.com/album/blue"
+    other = client.put("/api/lookup/link", json={"artist": "Pugilist", "title": "Asteroids", "url": "https://example.org/x", "year": "1999"}).json()
+    assert (other["site"], other["year"]) == ("example.org", "1999")
+    assert client.put("/api/lookup/link", json={"artist": "Pugilist", "title": "Asteroids", "url": "not a link"}).status_code == 400
+    assert client.put("/api/lookup/link", json={"artist": "Pugilist", "title": "Asteroids", "url": "x.com/a", "year": "soon"}).status_code == 400
+    assert client.put("/api/lookup/link", json={"artist": "Pugilist", "title": "Asteroids", "url": ""}).json()["status"] == "none"
+    assert one(False)["status"] == "bandcamp_artist"     # with your link removed, the searched answer is back
+
     before = len(searched)                              # pages read once are not fetched again
     client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSomah\tRailroads".encode())
     time.sleep(0.5)

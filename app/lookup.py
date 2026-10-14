@@ -748,6 +748,47 @@ def _cache_key(artist, title):
     return f"{CACHE_VERSION}|{norm(artist)}|{norm(title)}"
 
 
+def _manual_key(artist, title):
+    # No version in this key: a link you set yourself outlives changes to the lookup.
+    return f"manual|{norm(artist)}|{norm(title)}"
+
+
+def site_of(url):
+    host = (urlparse(url).netloc or "").lower()
+    return "Bandcamp" if "bandcamp" in host else "SoundCloud" if "soundcloud" in host else host.removeprefix("www.")
+
+
+async def set_manual(artist, title, url, year="", release=""):
+    """Save your own link for a track. It is used from then on, whatever a search would find."""
+    result = {"status": "manual", "manual": True, "site": site_of(url), "url": url, "year": year,
+              "release": release, "found": "", "note": "", "steps": ["link set by you"]}
+    if "bandcamp" in url and not (year and release):
+        try:        # fill in the year and release name from the page, if that is quick
+            async with refresh.make_client() as client:
+                rel = await asyncio.wait_for(get_release(Net(client), url), timeout=10)
+            if rel:
+                result["year"] = year or rel.get("year") or ""
+                result["release"] = release or rel.get("release") or rel.get("title") or ""
+        except Exception:
+            pass
+    _remember(_manual_key(artist, title), result)
+    return result
+
+
+def clear_manual(artist, title):
+    db.execute("DELETE FROM lookup_cache WHERE key=?", (_manual_key(artist, title),))
+
+
+def apply_to_jobs(artist, title, result):
+    """Update rows for this track in lookups still on screen, so the table and export agree."""
+    key = (norm(artist), norm(title))
+    for job in jobs.values():
+        for row in job["rows"]:
+            if (norm(row["artist"]), norm(row["title"])) == key and row["status"] != "pending":
+                row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": []})
+                row.update(result)
+
+
 def _cached(key):
     rows = db.query("SELECT result FROM lookup_cache WHERE key=?", (key,))
     return json.loads(rows[0]["result"]) if rows else None
@@ -835,8 +876,11 @@ async def _run(job, fresh):
         net = Net(client, on_wait=lambda text: job.update(phase=text))
         for row in job["rows"]:
             key = _cache_key(row["artist"], row["title"])
-            result = None if fresh else _cached(key)
-            if result is None:
+            manual = _cached(_manual_key(row["artist"], row["title"]))
+            result = manual or (None if fresh else _cached(key))
+            if manual:
+                pass                                   # your own link always wins, even when searching again
+            elif result is None:
                 try:
                     result, keep = await find(net, lib, row["artist"], row["title"], state)
                 except Exception as e:
@@ -876,7 +920,7 @@ def start(tracks, fresh=False):
     return job
 
 
-STATUS_TEXT = {"bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
+STATUS_TEXT = {"manual": "Link you set", "bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
                "bandcamp_artist": "Bandcamp artist page",
                "soundcloud": "SoundCloud artist page", "soundcloud_search": "SoundCloud search",
                "none": "Not found", "error": "Error", "pending": "Not looked up yet"}

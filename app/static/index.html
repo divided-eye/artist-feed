@@ -146,7 +146,13 @@
   .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
   .tag.ok { color: #9be28f; border-color: #3d6b3a; } .tag.check { color: #e6b450; border-color: #6b5626; }
   .tag.sc { color: #ff9a66; border-color: #6b3a22; } .tag.bad { color: var(--danger); border-color: #6b2c2c; }
-  .tag.wait { color: var(--muted); } .tag.page { color: #7fc8dd; border-color: #2d5562; }
+  .tag.wait { color: var(--muted); } .tag.mine { color: var(--accent); border-color: #5d6a25; }
+  .res td.link .btn { margin-top: 4px; }
+  .res td.link { min-width: 230px; }
+  .linkform { display: grid; gap: 6px; }
+  .linkform input { width: 100%; padding: 5px 8px; font-size: 13px; }
+  .linkform .rowline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .linkform .rowline input { width: 78px; } .tag.page { color: #7fc8dd; border-color: #2d5562; }
   .res details { margin-top: 3px; } .res summary { color: var(--muted); font-size: 12px; cursor: pointer; }
   .res details ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
   .tools.second { padding-top: 8px; } .tools.second input { width: 170px; }
@@ -695,25 +701,58 @@ async function pollStatus() {
 }
 
 // ---- tracklist lookup ----
-const LOOKUP_TAGS = { bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
+const LOOKUP_TAGS = { manual: ["mine", "Link you set"], bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
   bandcamp_artist: ["page", "Bandcamp artist page"],
   soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
   none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Searching…"] };
-let lookupTimer = null;
+let lookupTimer = null, lookupJob = null, editingRow = null;
+
+// Replace a result with your own link (or remove it). Saved for this artist + title from then on.
+function linkEditor(r) {
+  const url = el("input", { type: "text", value: r.url || "", placeholder: "https://…bandcamp.com/album/…", "aria-label": "Link", spellcheck: "false" });
+  const year = el("input", { type: "text", value: r.year || "", placeholder: "Year", "aria-label": "Release year", inputmode: "numeric", maxlength: "4" });
+  const err = el("span", { class: "error" });
+  const send = async link => {
+    err.textContent = "";
+    try {
+      const saved = await api("/api/lookup/link", { method: "PUT", body: { artist: r.artist, title: r.title, url: link, year: link ? year.value : "" } });
+      const row = lookupJob.rows.find(x => x.n === r.n) || r;      // the newest copy of this row
+      Object.assign(row, { site: "", url: "", year: "", release: "", found: "", note: "", steps: [] }, saved);
+      editingRow = null; renderLookup(lookupJob);
+    } catch (x) { err.textContent = x.message; }
+  };
+  const form = el("form", { class: "linkform", onsubmit: e => { e.preventDefault(); send(url.value.trim()); } }, url,
+    el("div", { class: "rowline" }, year,
+      el("button", { class: "btn small primary", type: "submit", text: "Save" }),
+      el("button", { class: "btn small", type: "button", text: "Cancel", onclick: () => { editingRow = null; renderLookup(lookupJob); } }),
+      r.status === "manual" ? el("button", { class: "btn small ghost", type: "button", text: "Remove my link", onclick: () => send("") }) : null),
+    err);
+  setTimeout(() => { url.focus(); url.select(); }, 0);
+  return form;
+}
 
 function renderLookup(job) {
+  lookupJob = job;
+  renderLookupStatus(job);
+  if (editingRow !== null && $("lookupBody").querySelector(".linkform")) return;   // don't redraw under an open editor
   $("lookupHead").replaceChildren(el("tr", {}, ...["#", "Artist", "Title", "Link", "Found as", "Year", "Result"].map(t => el("th", { text: t }))));
   $("lookupBody").replaceChildren(...job.rows.map(r => {
     const [cls, label] = LOOKUP_TAGS[r.status] || ["wait", r.status];
     const url = safeUrl(r.url);
     return el("tr", {},
       el("td", { class: "n", text: String(r.n) }), el("td", { text: r.artist }), el("td", { text: r.title }),
-      el("td", { class: "link" }, url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null),
+      el("td", { class: "link" }, ...(editingRow === r.n ? [linkEditor(r)] : [
+        url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
+        r.status === "pending" ? null : el("div", {}, el("button", { class: "btn small", text: url ? "Edit" : "Add link",
+          title: "Set the correct link for this track; it is saved for future lookups", onclick: () => { editingRow = r.n; renderLookup(job); } }))])),
       el("td", {}, r.found || "", r.release ? el("small", { text: "on " + r.release }) : null),
       el("td", { text: r.year || "" }),
       el("td", {}, el("span", { class: "tag " + cls, text: label }), r.note ? el("small", { text: r.note }) : null,
         (r.steps || []).length ? el("details", {}, el("summary", { text: "What was tried" }), el("ol", {}, ...r.steps.map(t => el("li", { text: t })))) : null));
   }));
+}
+
+function renderLookupStatus(job) {
   const found = job.rows.filter(r => r.status === "bandcamp" || r.status === "bandcamp_check").length;
   $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` : (job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`);
   $("lookupError").textContent = job.warning || "";
