@@ -25,7 +25,11 @@ checks immediately.
   the site, artist and search filters; **Clear filters** resets all of them.
 - **Column widths** in List view: drag the right edge of a column heading.
   Double-click the edge to reset that column, or use **Reset column widths**.
-  Widths are remembered in the browser you set them in.
+  Widths are remembered in the browser you set them in. The page widens with
+  the columns, so sideways scrolling only starts once the list is wider than
+  the window.
+- **Page width** (right end of the filter row): Standard, Wide or Full window,
+  for both views.
 - **Export list** (in List view) downloads a CSV of every row that matches the
   current filters, in the current sort order.
 
@@ -49,7 +53,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v4. Labels, track lists and durations for Bandcamp
+is v5. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
