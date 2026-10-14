@@ -692,6 +692,8 @@ async function pollStatus() {
   try {
     const s = await api("/api/status");
     $("status").textContent = s.refreshing ? "Checking for new posts…" : (s.last_refresh ? "Updated " + ago(s.last_refresh) : "");
+    $("status").title = s.bandcamp_on_hold ? "Bandcamp checks are on hold while a lookup runs or Bandcamp has asked for a pause; they resume on the next refresh." : "";
+    if (s.bandcamp_on_hold && !s.refreshing) $("status").textContent += " · Bandcamp on hold";
     $("refreshBtn").disabled = s.refreshing;
     $("version").textContent = s.version ? "v" + s.version : "";
     if (wasRefreshing && !s.refreshing) await reload();
@@ -754,7 +756,8 @@ function renderLookup(job) {
 
 function renderLookupStatus(job) {
   const found = job.rows.filter(r => r.status === "bandcamp" || r.status === "bandcamp_check").length;
-  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` : (job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`);
+  const hold = job.paused > 0 ? ` · Bandcamp asked for a pause; carrying on in ${waitText(job.paused)}` : "";
+  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` : (job.phase && !hold ? job.phase : `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…${hold}`);
   $("lookupError").textContent = job.warning || "";
   $("lookupExport").hidden = !job.finished;
   $("lookupExport").href = `/api/lookup/${job.id}.csv`;
@@ -777,13 +780,14 @@ async function startLookup(body) {
   lookupTimer = setTimeout(poll, 600);
 }
 
+const waitText = s => s >= 90 ? `about ${Math.round(s / 60)} min` : `${s}s`;
 let fanTimer = null;
 async function loadFan(fill) {
   clearTimeout(fanTimer);
   try {
     const c = await api("/api/collection");
     if (fill) $("fanName").value = c.fan;
-    $("fanStatus").textContent = c.syncing ? (c.progress || "Reading your purchases…")
+    $("fanStatus").textContent = c.syncing ? (c.progress || "Reading your purchases…") + (c.paused > 0 ? ` · Bandcamp asked for a pause; carrying on in ${waitText(c.paused)}` : "")
       : c.error ? c.error
       : !c.fan ? "Not set: purchases won't be checked"
       : !c.complete && c.items ? `${c.items.toLocaleString()} purchases read so far; the rest are read on the next lookup`

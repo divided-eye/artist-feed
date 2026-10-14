@@ -11,11 +11,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import db, lookup, refresh
+from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "13"   # shown beside the title, so you can tell which version is running
+VERSION = "14"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -371,7 +371,7 @@ def lookup_csv(job_id: str):
 
 @app.get("/api/lookup/{job_id}")
 def lookup_status(job_id: str):
-    return _job(job_id)
+    return dict(_job(job_id), paused=pace.paused_seconds())
 
 
 @app.post("/api/refresh")
@@ -384,5 +384,6 @@ async def refresh_now():
 @app.get("/api/status")
 def status():
     return {"version": VERSION, "refreshing": refresh.state["refreshing"] > 0,
+            "bandcamp_on_hold": pace.on_hold() or refresh.state["held"] > 0,
             "last_refresh": refresh.state["last_refresh"],
             "refresh_minutes": refresh.REFRESH_MINUTES}

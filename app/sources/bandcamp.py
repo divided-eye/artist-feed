@@ -19,7 +19,7 @@ from .base import FetchResult, Post, Source, SourceError, Track, iso
 
 # Release pages opened per account per refresh. A long back catalogue fills in
 # over the next few refreshes instead of hammering the site on day one.
-MAX_NEW = int(os.environ.get("BANDCAMP_MAX_NEW", "12"))
+MAX_NEW = int(os.environ.get("BANDCAMP_MAX_NEW", "6"))
 PAUSE = float(os.environ.get("BANDCAMP_PAUSE_SECONDS", "0"))   # extra gap on top of the shared pace (see pace.py)
 
 
@@ -287,10 +287,11 @@ class Bandcamp(Source):
         return host, f"https://{host}"
 
     async def _get(self, client, url):
-        await pace.wait()
+        await pace.wait(background=True)      # the feed stands aside for lookups and pauses
         r = await client.get(url)
         if r.status_code == 429:
             pace.slow_down(pace.pause_for(r, 0))
+            raise pace.Busy()                 # stop this round; the next refresh picks up from here
         if r.status_code == 404:
             raise SourceError("Bandcamp page not found (check the name).")
         if r.status_code == 429:

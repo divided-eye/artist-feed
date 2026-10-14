@@ -471,6 +471,35 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     assert client.get("/api/collection").json()["items"] == 4
 
 
+def test_feed_stands_aside_for_lookups_and_pauses(client):
+    import asyncio
+    from app import db, pace
+    checked = db.query("SELECT last_checked, last_error FROM accounts WHERE source='bandcamp'")
+
+    async def background():
+        await pace.wait(background=True)
+    saved_lock, pace._state["lock"] = pace._state["lock"], None
+    try:
+        with pace.foreground():                        # a lookup is running
+            with pytest.raises(pace.Busy):
+                asyncio.run(background())
+            client.post("/api/refresh")                # a feed refresh now touches nothing on Bandcamp...
+            wait(client)
+            assert db.query("SELECT last_checked, last_error FROM accounts WHERE source='bandcamp'") == checked
+            assert client.get("/api/status").json()["bandcamp_on_hold"] is True
+        pace._state["lock"] = None
+        asyncio.run(background())                      # ...and is free to again afterwards
+        pace.slow_down(30)                             # Bandcamp asked for a pause
+        assert 25 < pace.paused_seconds() <= 30 and pace.on_hold()
+        with pytest.raises(pace.Busy):
+            asyncio.run(background())
+    finally:
+        pace._state.update(next=0.0, paused_until=0.0, lock=saved_lock)
+    client.post("/api/refresh")
+    wait(client)
+    assert client.get("/api/status").json()["bandcamp_on_hold"] is False
+
+
 def test_upgrade_from_first_version(client):
     """An older database gains the new columns, and its posts are re-read to fill them in."""
     import sqlite3

@@ -5,7 +5,7 @@ import os
 
 import httpx
 
-from . import db
+from . import db, pace
 from .sources import SOURCES
 from .sources.base import BROWSER_HEADERS, SourceError
 
@@ -14,7 +14,7 @@ log = logging.getLogger("artist-feed")
 REFRESH_MINUTES = float(os.environ.get("REFRESH_MINUTES", "60"))
 CONCURRENCY = int(os.environ.get("REFRESH_CONCURRENCY", "3"))
 
-state = {"refreshing": 0, "last_refresh": None}
+state = {"refreshing": 0, "last_refresh": None, "held": 0}
 _tasks = set()
 
 
@@ -30,6 +30,8 @@ async def _refresh_one(client, sem, account):
         try:
             result = await source.fetch(client, account, db.known_ids(account["id"]))
             db.save_result(account, result)
+        except pace.Busy:
+            state["held"] += 1      # not an error: tried again on the next refresh
         except SourceError as e:
             db.save_error(account["id"], str(e))
         except httpx.HTTPStatusError as e:
@@ -46,6 +48,7 @@ async def refresh(account_ids=None):
     if not accounts:
         return
     state["refreshing"] += 1
+    state["held"] = 0
     try:
         sem = asyncio.Semaphore(CONCURRENCY)
         async with make_client() as client:

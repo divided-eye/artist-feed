@@ -67,12 +67,13 @@ otherwise their SoundCloud page.
   just the track being looked for. Later lookups check those saved track lists
   before searching anything, so the more it has read, the more it answers
   instantly.
-- The app paces itself: every request to Bandcamp, from the feed, the purchases
-  reader and the lookup alike, goes through one queue. If Bandcamp answers
-  "slow down" (429), everything waits as long as it asks and then carries on
-  more slowly. A purchases read that gets interrupted keeps what it has and
-  continues from there next time. A large collection takes a few minutes to
-  read the first time.
+- The app paces itself: every request to Bandcamp goes through one queue, two
+  seconds apart. If Bandcamp answers "slow down" (429), everything waits as
+  long as it asks and then carries on more slowly; the status line says how
+  long the pause is. While a lookup or a purchases read is running, the feed's
+  own Bandcamp checks stand aside and resume on the next refresh. A purchases
+  read that gets interrupted keeps what it has and continues from there next
+  time.
 - Each track is looked for, in order, in: your feed; your purchases; Bandcamp
   search (as a track, by title alone, and as a release); and the artist's own
   Bandcamp page, where every release is opened and its track list read, since
@@ -110,8 +111,8 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v13. Labels, track lists and durations for Bandcamp
-releases already in your feed are filled in over the next refreshes (12 per
+is v14. Labels, track lists and durations for Bandcamp
+releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
 
@@ -153,7 +154,7 @@ tell whether one of the sites has changed something.
 
 **Bandcamp** has no public API or artist feed. The app reads the artist's public
 `/music` page, then opens each release it has not seen before once to get the
-release date. At most 12 new releases are opened per artist per refresh, so a
+release date. At most 6 new releases are opened per artist per refresh, so a
 long back catalogue fills in over a few refreshes. Custom domains work: paste
 the full address. Future-dated releases (pre-orders) show at the top as "out <date>".
 
@@ -172,11 +173,11 @@ Artists panel; everything already collected stays in the feed.
 | Setting | Default | Meaning |
 |---|---|---|
 | `REFRESH_MINUTES` | 60 | How often to check every artist (minimum 5) |
-| `BANDCAMP_MAX_NEW` | 12 | New Bandcamp releases opened per artist per refresh |
+| `BANDCAMP_MAX_NEW` | 6 | New Bandcamp releases opened per artist per refresh |
 | `SOUNDCLOUD_LIMIT` | 30 | Most recent SoundCloud uploads read per artist |
 | `SOUNDCLOUD_CLIENT_ID` | unset | Supply your own key instead of the automatic one |
 | `BANDCAMP_FAN` | unset | Bandcamp username whose purchases the tracklist lookup checks |
-| `BANDCAMP_GAP_SECONDS` | 1.5 | Gap between any two requests to Bandcamp, app-wide |
+| `BANDCAMP_GAP_SECONDS` | 2 | Gap between any two requests to Bandcamp, app-wide |
 | `BANDCAMP_BACKOFF_SECONDS` | 30 | First pause when Bandcamp says "slow down"; doubles each time |
 
 ## Adding Instagram (or another site) later

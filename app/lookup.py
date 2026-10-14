@@ -438,7 +438,8 @@ def collection_status():
                       " (SELECT COUNT(*) FROM collection_tracks) AS tracks")[0]
     return {"fan": collection_fan(), "items": counts["items"], "tracks": counts["tracks"],
             "synced_at": db.kv_get("collection_synced_at"),
-            "complete": db.kv_get("collection_complete") == "1", **collection_state}
+            "complete": db.kv_get("collection_complete") == "1", "paused": pace.paused_seconds(),
+            **collection_state}
 
 
 def _store_collection(fan, items, tracklists):
@@ -488,6 +489,7 @@ async def sync_collection(full=False, on_progress=None):
     if not fan or collection_state["syncing"]:
         return
     collection_state.update(syncing=True, error="", progress="Reading your Bandcamp purchases\u2026")
+    pace._state["foreground"] += 1
 
     def say(text):
         collection_state["progress"] = text
@@ -527,7 +529,9 @@ async def sync_collection(full=False, on_progress=None):
             total = info.get("item_count") or 0
             # Not finished yet: carry on from the saved place. Finished: only what is newer.
             token = (db.kv_get("collection_token") or info.get("last_token")) if not complete else info.get("last_token")
-            while token and (not complete or new):
+            asked = set()
+            while token and token not in asked and (not complete or new):
+                asked.add(token)                         # never ask for the same place twice
                 done = db.query("SELECT COUNT(*) AS n FROM collection_items")[0]["n"]
                 say(f"Reading your Bandcamp purchases: {done:,} of {total:,}" if total else
                     f"Reading your Bandcamp purchases: {done:,}")
@@ -552,6 +556,7 @@ async def sync_collection(full=False, on_progress=None):
                        "the next read carries on from there.")
         collection_state["error"] = reason
     finally:
+        pace._state["foreground"] -= 1
         collection_state.update(syncing=False, progress="")
 
 
@@ -967,7 +972,8 @@ def start(tracks, fresh=False):
 
     async def guarded():
         try:
-            await _run(job, fresh)
+            with pace.foreground():
+                await _run(job, fresh)
         except Exception as e:
             job["warning"] = f"The lookup stopped early: {type(e).__name__}: {e}"
             job["finished"] = True
