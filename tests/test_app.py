@@ -1123,3 +1123,30 @@ def test_brackets_that_only_describe_the_format_are_not_part_of_a_title():
     assert lookup.norm("Voyage [FREE DL]") == lookup.norm("Voyage (Out Now)") == "voyage"
     assert lookup.norm("Voyage (Part 2)") == "voyage part 2" and lookup.norm("Voyage (Night)") == "voyage night"
     assert lookup.norm("(Intro)") == "intro"                      # a title that is all bracket stays
+
+
+def test_profile_learned_from_a_found_track_is_reused(client):
+    """Two profiles are called River. A track of his found on SoundCloud settles which one is meant."""
+    from app import lookup
+
+    def run(text, fresh=True):
+        j = client.post("/api/lookup" + ("?fresh=true" if fresh else ""), content=("Artist\tTitle\n" + text).encode()).json()
+        for _ in range(200):
+            time.sleep(0.05)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                return got["rows"]
+        raise AssertionError("lookup never finished")
+
+    sc = lambda row: (row.get("options") or {}).get("soundcloud") or row
+    lookup.db.kv_set("soundcloud_profiles", "{}")
+    before = sc(run("River\tBoogaloo")[0])
+    assert before["url"] == "https://soundcloud.com/river" and "name only" in before["note"].lower()   # the bigger one: wrong
+    run("Sean Paul\tTemperature (River Dub Edit)")                 # found on SoundCloud, uploaded by riverirvine
+    assert lookup.known_profile(["river"]) == "https://soundcloud.com/riverirvine"
+    # the saved wrong answer is corrected without searching again, and new rows use what was learned
+    for row in run("River\tBoogaloo", fresh=False) + run("River\tBoogaloo VIP") + run("River\tSomething Else"):
+        assert sc(row)["url"] == "https://soundcloud.com/riverirvine", row
+    # a link you set by hand settles it too, and outweighs the rest
+    client.put("/api/lookup/link", json={"artist": "Nobody Known", "title": "Whatever", "url": "https://soundcloud.com/the-real-nobody/whatever"})
+    assert lookup.known_profile(["nobody known"]) == "https://soundcloud.com/the-real-nobody"

@@ -1269,6 +1269,81 @@ async def suggest_pages(name: str, cells: dict, skip=(), avoid=None) -> dict:
 
 # ---------- SoundCloud ----------
 
+# Which SoundCloud profile belongs to a name is learned from solid evidence - a track of theirs
+# found there, or a link you set by hand - and reused whenever only the name is left to go on.
+# Many profiles share a name ("River"); picking by name alone takes the most-followed one.
+def _profile_url(url: str) -> str:
+    """https://soundcloud.com/<profile> for any SoundCloud profile or track address, else ''."""
+    m = re.match(r"https?://(?:www\.|m\.)?soundcloud\.com/([A-Za-z0-9_-]+)", url or "")
+    return f"https://soundcloud.com/{m.group(1).lower()}" if m and m.group(1).lower() not in ("search", "discover", "you") else ""
+
+
+def _profiles() -> dict:
+    try:
+        return json.loads(db.kv_get("soundcloud_profiles") or "{}")
+    except ValueError:
+        return {}
+
+
+def learn_profile(names, url, weight=1):
+    """Remember that these (normalised) names go with this profile. A link you set outweighs the rest."""
+    profile, known = _profile_url(url), _profiles()
+    names = [n for n in dict.fromkeys(names) if n]
+    if not profile or not names:
+        return
+    for n in names:
+        known.setdefault(n, {})
+        known[n][profile] = known[n].get(profile, 0) + weight
+    db.kv_set("soundcloud_profiles", json.dumps(known))
+
+
+def known_profile(names) -> str:
+    """The profile learned for the first of these names that has one."""
+    known = _profiles()
+    for n in names:
+        if known.get(n):
+            return max(known[n], key=known[n].get)
+    return ""
+
+
+def seed_profiles():
+    """Once: learn from what earlier lookups already found (tracks on SoundCloud, links you set)."""
+    if db.kv_get("soundcloud_profiles_seeded") == "2":
+        return
+    for row in db.query("SELECT key, result FROM lookup_cache"):
+        try:
+            saved = json.loads(row["result"])
+        except ValueError:
+            continue
+        for r in [saved] + [o for o in (saved.get("options") or {}).values() if isinstance(o, dict)]:
+            if r.get("status") == "soundcloud_track" and r.get("found"):
+                learn_profile([norm(r["found"].split(" \u2014 ")[0])], r.get("url"))
+    db.kv_set("soundcloud_profiles_seeded", "2")
+
+
+def wanted_names(artist, title) -> list:
+    """Whose page a row falls back to: whoever made the version, else the artist. The whole
+    credit first, then the people in it."""
+    forms = list(remix_credits(title)) or [artist]
+    return list(dict.fromkeys(n for f in forms for n in artist_parts(f)))
+
+
+def with_known_profile(saved: dict, artist, title):
+    """A saved answer whose SoundCloud profile was only matched by name, corrected to the
+    profile since learned for that name. No request needed."""
+    def fix(r):
+        if not (isinstance(r, dict) and r.get("status") == "soundcloud" and "name only" in (r.get("note") or "").lower()):
+            return r
+        url = known_profile(wanted_names(artist, title))
+        if not url or url == _profile_url(r.get("url")):
+            return r
+        return dict(r, url=url, found=url.rsplit("/", 1)[1], note="Profile learned from an earlier result")
+    out = fix(saved)
+    if isinstance(saved.get("options"), dict):
+        out = dict(out, options={k: fix(v) for k, v in saved["options"].items()})
+    return out
+
+
 def _is_profile_of(user, names) -> tuple:
     """(tier, similarity): how well a SoundCloud user fits the wanted names. names[0] is the whole
     credit ("nightmare oni"); later ones are the individual people in it. Matching the whole credit
@@ -1335,6 +1410,8 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
             if best:                                     # the track itself: link straight to it
                 user, tr = best[1], best[3]
                 steps.append(f'SoundCloud: "{best[2]}" was uploaded by {user.get("username")}')
+                learn_profile([norm(user.get("username") or "")] + [names[0] for names in name_sets
+                              if _is_profile_of(user, names)[0]], user.get("permalink_url"))
                 free = bool(tr.get("downloadable")) or "free" in (tr.get("purchase_title") or "").lower()
                 when = tr.get("release_date") or tr.get("display_date") or tr.get("created_at") or ""
                 return {"status": "soundcloud_track", "site": "SoundCloud", "url": tr["permalink_url"],
@@ -1343,7 +1420,13 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
                         "note": ("Free download on " if free else "On ")
                                 + ("the remixer's SoundCloud" if credits else "the artist's SoundCloud")}
             steps.append("SoundCloud: the track isn't there under a matching profile")
-        # 2. a profile with the right name; the whole credit before the people in it
+        # 2. a profile already learned for this name, from a track of theirs or a link you set
+        learned = known_profile(every)
+        if learned:
+            steps.append(f"SoundCloud: {learned.replace('https://', '')}, learned from an earlier result")
+            return {"status": "soundcloud", "site": "SoundCloud", "url": learned, "found": learned.rsplit("/", 1)[1],
+                    "note": (whose + ", learned from an earlier result") if whose else "Profile learned from an earlier result"}
+        # 3. a profile with the right name; the whole credit before the people in it
         best = None
         for form, names in zip(forms, name_sets):
             for text in dict.fromkeys([form] + [n for n in names[1:3]]):
@@ -1401,6 +1484,8 @@ async def set_manual(artist, title, url, year="", release=""):
         except Exception:
             pass
     _remember(_manual_key(artist, title), result)
+    if _profile_url(url):                    # your link also settles whose profile that name means
+        learn_profile(wanted_names(artist, title)[:1], url, weight=100)
     return result
 
 
@@ -1650,6 +1735,8 @@ async def _run(job, fresh):
                     or re.search(r"\d", norm(row["title"])) or _WIP.search(_fold(row["title"]))):
                 saved = None                               # a miss from an older version: try again
             if saved and not manual:
+                saved = with_known_profile(saved, row["artist"], row["title"])
+            if saved and not manual:
                 saved = with_current_fallback(saved)
             if saved and not manual:
                 saved = dict(saved, steps=(saved.get("steps") or []) + ["(saved result from an earlier lookup)"])
@@ -1662,6 +1749,7 @@ async def _run(job, fresh):
         return left
 
     job["phase"] = "Checking what is already saved\u2026"
+    seed_profiles()
     await asyncio.sleep(0)
     lib = Library()
     todo = quick_pass(job["rows"], lib)

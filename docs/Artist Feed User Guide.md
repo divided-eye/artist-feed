@@ -4,7 +4,7 @@ Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 37. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 38. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -340,7 +340,7 @@ View, column widths, page width and Hide no-preview tracks are stored in the bro
 - **Bandcamp limits how fast it can be read.** The first read of a large purchase history takes hours, and a lookup of a track that is nowhere can take two to three minutes.
 - **Bandcamp's player cannot be started or controlled by the app.** One extra click is needed, and there is no shared volume control.
 - **Pre-orders.** Only the released tracks of a pre-order can be played. Bandcamp's player shows one of those whichever track you pick.
-- **Common artist names.** When a track is not on SoundCloud, a profile is picked by name alone and marked "matched by name only". For a name like River this can be the wrong person.
+- **Common artist names.** When a track is not on SoundCloud, a profile is picked by name alone and marked "matched by name only". For a name like River this can be the wrong person. The app learns the right profile for a name when it finds one of their tracks on SoundCloud, or when you set a SoundCloud link with Edit, and uses it from then on, including for answers already saved.
 - **Subscriber-only and unlisted tracks** are found only if the label's page is one you track or have bought from and it carries the artist. One known miss: Hannibal Rex, Manyothers on Dungeon Beats. This was left as is by choice.
 - **Labels that never name the artist.** A label release whose title, address and track list do not name the artist is not matched, because accepting title-only matches would give wrong links for common titles.
 - **Label is often blank in the feed.** On Bandcamp it is filled in when a release sits on a label's page. On SoundCloud it appears only when the uploader entered it.
@@ -413,10 +413,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 37 from 11 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 38 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 38 | Link Finder remembers which SoundCloud profile belongs to a name, from a track of theirs found there or a link you set, and uses it wherever a profile would otherwise be picked by name alone. Saved name-only answers are corrected without a new search. |
 | 37 | Link Finder: rows still waiting are tinted while a lookup runs, and the row being searched pulses. Brackets that only describe format or availability, such as "(Digital Download)", are ignored when matching titles; earlier misses are searched again once. |
 | 36 | Default list order swaps Release and Released: Artist, Track, Duration, Year, Release, Posted, Released, Label, Site. Link Finder export puts year before the link. |
 | 35 | Tracked Artists table: resizable columns, and the Artist column always fits the full name. Back catalogues load faster: catch-up visits every 10 minutes, and unreadable release pages no longer block the rest. |
