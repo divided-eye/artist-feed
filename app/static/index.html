@@ -247,6 +247,9 @@
   .toggles label.off { opacity: .45; cursor: default; }
   .toggles .order { color: var(--muted); font-size: 12px; }
   td.ytlook { text-align: center; }
+  #artistQ { width: 170px; }
+  #artistTable th .sortbtn { display: inline-flex; align-items: center; gap: 6px; }
+  .rowcount { color: var(--muted); font-size: 13px; }
   .tag.wait { color: var(--muted); } .tag.mine { color: var(--accent); border-color: #5d6a25; }
   .res td.link .btn { margin-top: 4px; }
   .res td.link { min-width: 230px; }
@@ -393,6 +396,8 @@
     <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
     <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
     <button class="btn" id="clearAllBtn" title="Empty the whole table (nothing is removed until you save)">Clear All</button>
+    <input type="text" id="artistQ" placeholder="Filter rows" aria-label="Show only rows containing these words" spellcheck="false" autocomplete="off">
+    <select id="artistShow" aria-label="Which rows to show"></select>
     <div class="spacer"></div>
     <span class="unsaved" id="unsaved" hidden>Unsaved changes</span>
     <button class="btn" id="revertBtn" hidden>Discard</button>
@@ -983,7 +988,8 @@ function rowEl(row) {
     });
     input.addEventListener("keydown", e => {
       if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-      const next = tr[e.key === "ArrowUp" ? "previousElementSibling" : "nextElementSibling"];
+      let next = tr[e.key === "ArrowUp" ? "previousElementSibling" : "nextElementSibling"];
+      while (next && next.hidden) next = next[e.key === "ArrowUp" ? "previousElementSibling" : "nextElementSibling"];
       if (next) { e.preventDefault(); next.querySelectorAll("input")[c].focus(); }
     });
     tr.append(el("td", {}, input));
@@ -1072,15 +1078,83 @@ window.addEventListener("resize", () => { if (!$("drawer").hidden) applyTableCol
 function renderTable() {
   if (!table.length || !isBlank(table[table.length - 1])) table.push(blankRow());
   $("artistCols").replaceChildren(...tcolKeys().map(() => el("col")));
-  $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }), el("th", {}, "Artist", tgrip("name", "Artist")),
-    ...sources.map(s => el("th", {}, el("span", { class: "dot", style: `background:${s.color};margin-right:6px` }), s.label, tgrip(s.key, s.label))),
+  const head = (key, label, ...extra) => {
+    const on = tview.sort === key;
+    return el("th", { "aria-sort": on ? (tview.dir === "asc" ? "ascending" : "descending") : null },
+      el("button", { class: "sortbtn", type: "button", title: on ? "Sorted by this column; click to change" : "Sort by this column",
+        onclick: () => sortTable(key) }, ...extra, label,
+        el("span", { class: "arrow", "aria-hidden": "true", text: on ? (tview.dir === "asc" ? " \u25B2" : " \u25BC") : "" })),
+      tgrip(key, label));
+  };
+  $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }), head("name", "Artist"),
+    ...sources.map(s => head(s.key, s.label, el("span", { class: "dot", style: `background:${s.color}` }))),
     ...(hasYoutube() ? [el("th", { text: "YouTube search", title: "Tick the artists and labels Link Finder may look for on YouTube (when YouTube is ticked for Link Finder in Settings)" })] : []),
     el("th", { text: "Rescan", title: "Tick a row to have Find missing links search its cleared cells again" }),
-    el("th", {}, "Status", tgrip("state", "Status")), el("th", {})));
+    head("state", "Status"), el("th", {})));
   $("tbody").replaceChildren(...table.map(rowEl));
   applyTableCols();
+  applyTableView();
   paintFill();
 }
+
+// ---- Tracked Artists: sorting and filtering (only what is shown; the list itself is unchanged) ----
+const tview = { sort: "", dir: "asc", q: "", show: "" };
+let tviewSeq = 0;                                   // the order rows were loaded or added in, to go back to
+const isChecking = row => row.problems.length > 0 && row.problems.every(p => /checking…$/.test(p));
+const hasIssue = row => row.errors.length > 0 || row.problems.some(p => !/checking…$/.test(p));
+const TSHOW = [["", "All rows", () => true],
+  ["issue", "Needs attention", hasIssue],
+  ["checking", "Still being checked", isChecking],
+  ["empty", "No posts yet", r => r.id !== null && !r.post_count],
+  ["new", "New, not saved yet", r => r.id === null],
+  ["youtube", "Ticked for YouTube search", r => !!r.youtube_lookup]];
+function statusRank(row) {                          // problems first, then fewest posts
+  return [hasIssue(row) ? 0 : isChecking(row) ? 1 : 2, row.id === null ? -1 : row.post_count || 0];
+}
+function rowMatches(row) {
+  if (isBlank(row)) return true;                    // the empty row to type into always shows
+  const test = (TSHOW.find(x => x[0] === tview.show) || TSHOW[0])[2];
+  if (!test(row)) return false;
+  const words = tview.q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = [row.name, ...Object.values(row.cells), ...row.problems, ...row.errors].join(" ").toLowerCase();
+  return words.every(w => text.includes(w));
+}
+function sortTable(key) {
+  if (tview.sort !== key) Object.assign(tview, { sort: key, dir: "asc" });
+  else if (tview.dir === "asc") tview.dir = "desc";
+  else Object.assign(tview, { sort: "", dir: "asc" });
+  orderTable();
+  renderTable();
+}
+// Put the table in the chosen order (also after loading or saving, which bring rows back in name order).
+function orderTable() {
+  table.forEach(r => { if (r._order === undefined) r._order = ++tviewSeq; });
+  const blanks = table.filter(isBlank), rest = table.filter(r => !isBlank(r));
+  const val = r => tview.sort === "state" ? statusRank(r) : [(getCell(r, tview.sort) || "").toLowerCase()];
+  rest.sort((a, b) => {
+    if (!tview.sort) return a._order - b._order;
+    const x = val(a), y = val(b);
+    const emptyA = x[0] === "", emptyB = y[0] === "";
+    if (emptyA !== emptyB) return emptyA ? 1 : -1;                // empty cells last either way
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return (x[i] < y[i] ? -1 : 1) * (tview.dir === "asc" ? 1 : -1);
+    return a._order - b._order;
+  });
+  table = [...rest, ...blanks];
+}
+function applyTableView() {
+  const opts = TSHOW.filter(x => x[0] !== "youtube" || hasYoutube());
+  const counted = table.filter(r => !isBlank(r));
+  $("artistShow").replaceChildren(...opts.map(([key, label, test]) =>
+    el("option", { value: key, text: `${label} (${counted.filter(test).length})` })));
+  if (!opts.some(x => x[0] === tview.show)) tview.show = "";
+  $("artistShow").value = tview.show;
+  $("artistShow").classList.toggle("on", !!tview.show);
+  $("artistQ").classList.toggle("on", !!tview.q.trim());
+  [...$("tbody").children].forEach((tr, i) => { tr.hidden = !rowMatches(table[i]); });
+}
+$("artistQ").oninput = e => { tview.q = e.target.value; applyTableView(); };
+$("artistShow").onchange = e => { tview.show = e.target.value; applyTableView(); };
 
 // Fill in whatever each row is missing (the other site's page, or the name), one row at a time.
 let filling = false;
@@ -1140,9 +1214,10 @@ async function fillMissing() {
 function pasteGrid(grid, startRow, startCol) {
   const cols = columns();
   if (startCol === 0 && grid.length && grid[0][0].trim().toLowerCase() === "name") grid = grid.slice(1);
+  const targets = table.slice(startRow).filter(r => r === table[startRow] || rowMatches(r));   // rows filtered out are left alone
   grid.forEach((cells, r) => {
-    while (table.length <= startRow + r) table.push(blankRow());
-    cells.forEach((v, c) => { if (startCol + c < cols.length) setCell(table[startRow + r], cols[startCol + c], v.trim()); });
+    while (targets.length <= r) { const row = blankRow(); table.push(row); targets.push(row); }
+    cells.forEach((v, c) => { if (startCol + c < cols.length) setCell(targets[r], cols[startCol + c], v.trim()); });
   });
   setDirty(true); renderTable();
 }
@@ -1211,6 +1286,7 @@ async function loadTable() {
   const rows = await api("/api/table");
   table = rows.map(r => ({ ...r, errors: [] }));
   savedIds = rows.map(r => r.id);
+  tviewSeq = 0; orderTable();
   $("tableError").textContent = ""; $("fillStatus").textContent = "";
   setDirty(false); renderTable();
 }
@@ -1235,6 +1311,7 @@ async function saveTable() {
   }
   table = data.rows.map(row => ({ ...row, errors: [] }));
   savedIds = data.rows.map(row => row.id);
+  tviewSeq = 0; orderTable();
   $("fillStatus").textContent = "";                  // saved as they stand: the highlights go
   setDirty(false); renderTable();
   artists = await api("/api/artists"); renderArtists(); await loadFacets(); await loadFeed();

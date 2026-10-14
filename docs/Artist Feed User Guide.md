@@ -117,9 +117,11 @@ The **Tracked Artists** button opens a table with one row per artist or label an
 - Nothing changes until you press **Save changes**. If any row has a problem, nothing is saved and that row shows the reason.
 - Deleting a row and saving stops tracking that artist and removes their posts. It asks you to confirm.
 - **Export CSV** downloads the saved list. **Import CSV** adds a file's rows to the table for you to review and save.
-- After a save, rows are sorted by artist name.
+- After a save, rows are sorted by artist name, or by the column you sorted on.
 
 The Status column shows how many posts each artist has, and any problem reading one of their pages.
+
+To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, and Ticked for YouTube search. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
 
 Labels work the same way as artists: add the label's Bandcamp page as a row. A release that reaches the feed through both an artist's page and a label's page is shown once.
 
@@ -470,6 +472,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 56 | Tracked Artists: Filter rows box, a menu of row types (Needs attention, Still being checked, No posts yet, New, Ticked for YouTube search) with counts, and sortable columns. |
 | 55 | YouTube as a third site: channels in the feed and player, a YouTube button at the top, a YouTube column and a YouTube search column in Tracked Artists. A new Settings button switches sites off completely and chooses which sites Link Finder searches (Bandcamp, then SoundCloud, then YouTube; YouTube off by default). Saved results has a "Searched in the last lookup" filter. |
 | 54 | Feed search: only the newest search is shown when answers arrive out of order, Enter searches at once, and a failed load is reported instead of silently leaving the old list. |
 | 53 | Forget in Saved results opens a choice: Saved answer, List entry (including the closest list entry), or Both. |
