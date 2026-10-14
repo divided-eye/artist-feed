@@ -135,6 +135,66 @@ def parse_music_grid(html: str, base: str) -> list:
     return items
 
 
+# A line of a written-out track list: "1. Serpentine", "02 - High Priest (5:41)", "A1: Disclosed".
+_LIST_LINE = re.compile(
+    r"^\s*(?:(\d{1,2})|([A-Ha-h]{1,2}\d{1,2}|AA|BB))\s*[.)\]:\-\u2013\u2014]\s*(\S.{0,150}?)\s*$")
+_TRAILING_TIME = re.compile(r"[\s\-\u2013\u2014]*[\(\[]?\d{1,2}:\d{2}[\)\]]?\s*$")
+
+
+def listed_titles(texts) -> list:
+    """Track names written out as a numbered list in free text.
+
+    Some releases have one playable item (a preview mix, say) and name the real tracks only in
+    the description: "1. Serpentine / 2. High Priest / ...". A run of at least two consecutive
+    lines numbered 1, 2, 3... (or vinyl sides A1, A2, B1...) is taken as such a list.
+    """
+    found = []
+
+    def keep(run):
+        if len(run) >= 2:
+            found.extend(t for t in run if t not in found)
+
+    for text in texts:
+        run, expect, sides = [], None, False
+        for line in re.split(r"[\r\n]+", text or ""):
+            m = _LIST_LINE.match(line)
+            title = _TRAILING_TIME.sub("", m.group(3)).strip(" -\u2013\u2014") if m else ""
+            if not m or not title or "http" in title or len(title) > 120:
+                keep(run)
+                run, expect, sides = [], None, False
+            elif m.group(1) is not None:
+                n = int(m.group(1))
+                if run and not sides and expect <= n <= expect + 2:    # a skipped line or two is tolerated
+                    run.append(title)
+                else:
+                    keep(run)
+                    run = [title] if n in (0, 1) else []
+                    sides = False
+                expect = n + 1
+            else:                                   # A1, A2, B1 ...
+                if not (run and sides):
+                    keep(run)
+                    run = []
+                run.append(title)
+                sides, expect = True, None
+        keep(run)
+    return found
+
+
+def _strings(value, out):
+    """Every multi-line string inside a JSON value."""
+    if isinstance(value, str):
+        if "\n" in value or "\r" in value:
+            out.append(value)
+    elif isinstance(value, dict):
+        for v in value.values():
+            _strings(v, out)
+    elif isinstance(value, list):
+        for v in value:
+            _strings(v, out)
+    return out
+
+
 def parse_search(html: str) -> list:
     """Results from a bandcamp.com/search page: type, name, url, artist, album, released."""
     soup = BeautifulSoup(html, "lxml")
@@ -165,8 +225,8 @@ def parse_release(html: str, url: str) -> dict:
     out = {"url": _clean(url), "title": None, "image": None, "author": None,
            "published_at": None, "is_release": False,
            "label": None, "release": None, "embed": None, "tracks": None, "posted_at": None,
-           "release_url": None}
-    ld_tracks, publisher = [], None
+           "release_url": None, "listed_tracks": []}
+    ld_tracks, publisher, texts = [], None, []
 
     for script in soup.find_all("script", type="application/ld+json"):
         try:
@@ -175,6 +235,7 @@ def parse_release(html: str, url: str) -> dict:
             continue
         if not isinstance(ld, dict):
             continue
+        _strings(ld, texts)
         if ld.get("@type") in ("MusicAlbum", "MusicRecording"):
             out["is_release"] = True
         out["title"] = ld.get("name") or out["title"]
@@ -217,6 +278,20 @@ def parse_release(html: str, url: str) -> dict:
                             _clean(urljoin(url, link)) if link else None))
     if tracks or ld_tracks:
         out["tracks"] = tracks or ld_tracks
+    # Track names that are only written out in the description (see listed_titles).
+    _strings(tralbum, texts)
+    for holder in soup.find_all(attrs={"data-blob": True}):       # other data the page carries
+        try:
+            _strings(json.loads(holder["data-blob"]), texts)
+        except ValueError:
+            pass
+    body = soup.body or soup
+    for junk in body.find_all(["script", "style", "noscript"]):
+        junk.extract()
+    texts.append(body.get_text("\n"))
+    playable = {re.sub(r"\W+", "", t.title).casefold() for t in out["tracks"] or []}
+    out["listed_tracks"] = [t for t in listed_titles(texts)
+                            if re.sub(r"\W+", "", t).casefold() not in playable]
     # When it went up on Bandcamp, which is not always the stated release date.
     out["posted_at"] = (_parse_date(current.get("publish_date"))
                         or _parse_date(tralbum.get("album_publish_date"))

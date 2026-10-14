@@ -134,6 +134,12 @@ PAGES = {
         "byArtist": {"name": "Dub Den Records"}, "inAlbum": {"name": "Dubs From The Den Vol. 7", "@id": "https://dubdenrecords.bandcamp.com/album/dubs-from-the-den-vol-7"}}),
     ("dnorecords.bandcamp.com", "/track/trigger-activation"): release("Trigger Activation", "29 May 2026 00:00:00 GMT", "MusicRecording", {
         "byArtist": {"name": "DNO Records"}, "inAlbum": {"name": "Open The Door LP", "@id": "https://dnorecords.bandcamp.com/album/dno021-kercha-open-the-door-lp"}}),
+    # one playable "mini mix"; the real track names are only written out under the buy box
+    ("quantumsoul.bandcamp.com", "/music"): grid("Quantum Soul", ("evolution-part-1", "Evolution Part 1"), ("older-ep", "Older EP")),
+    ("quantumsoul.bandcamp.com", "/album/older-ep"): album("Older EP", "Quantum Soul", "One", "Two"),
+    ("quantumsoul.bandcamp.com", "/album/evolution-part-1"): album("Evolution Part 1", "Quantum Soul", "Evolution Part 1 - Mini Mix").replace(
+        "</body>", '<ul><li class="buyItem digital"><h3>Digital Album</h3><div class="bd">Includes unlimited streaming via the free Bandcamp app.'
+                   '<br><br>1. Serpentine<br>2. High Priest<br>3. The Message<br>4. Otherside<br>6. Dema Dub<br>7. Raw Signal (5:41)<br>8. Unite The Tribes</div></li></ul></body>'),
     ("somahuk.bandcamp.com", "/music"): grid("Somah UK", ("older", "Older Thing"), ("gnosis-railroads", "Gnosis / Railroads")),
     ("somahuk.bandcamp.com", "/album/older"): album("Older Thing", "Somah", "Aaa", "Bbb"),
     ("somahuk.bandcamp.com", "/album/gnosis-railroads"): album("Gnosis / Railroads", "Somah", "Gnosis", "Railroads"),
@@ -360,6 +366,31 @@ def test_artist_named_only_in_release_title_or_address():
         assert lib.owns(page)
     finally:
         db.execute("DELETE FROM collection_items WHERE key='a999'")
+
+
+def test_track_names_written_in_the_description(client):
+    from app import db, lookup
+    from app.sources.bandcamp import listed_titles, parse_release
+    assert listed_titles(["Intro text\r\n1. Serpentine\r\n2. High Priest - 4:10\n3) The Message (6:02)\nThanks!\n1. only one"]) == [
+        "Serpentine", "High Priest", "The Message"]
+    assert listed_titles(["A1. Disclosed\nA2. Forbidden Truth\nB1 - Open The Door"]) == ["Disclosed", "Forbidden Truth", "Open The Door"]
+    assert listed_titles(["3. starts mid-way\n4. so not a track list", "Released 2026\n1. lonely line", "1. Go to https://x.y\n2. Click"]) == []
+    page = parse_release(PAGES[("quantumsoul.bandcamp.com", "/album/evolution-part-1")], "https://quantumsoul.bandcamp.com/album/evolution-part-1")
+    assert [t.title for t in page["tracks"]] == ["Evolution Part 1 - Mini Mix"]            # the feed still shows what is playable
+    assert page["listed_tracks"] == ["Serpentine", "High Priest", "The Message", "Otherside", "Dema Dub", "Raw Signal", "Unite The Tribes"]
+
+    # As saved by an earlier version: one playable track, no written list. It is read again.
+    url = "https://quantumsoul.bandcamp.com/album/evolution-part-1"
+    lookup.cache_put("release", url, {"url": url, "title": "Evolution Part 1", "artist": "Quantum Soul", "year": "2026",
+                                      "tracks": [{"title": "Evolution Part 1 - Mini Mix", "artist": ""}]})
+    j = client.post("/api/lookup", content="Artist\tTitle\nQuantum Soul\tUnite The Tribes\nQuantum Soul\tRaw Signal".encode()).json()
+    for _ in range(100):
+        time.sleep(0.02)
+        got = client.get(f"/api/lookup/{j['id']}").json()
+        if got["finished"]:
+            break
+    assert [(r["status"], r["url"], r["year"]) for r in got["rows"]] == [("bandcamp", url, "2026")] * 2
+    assert got["rows"][1]["found"] == "Quantum Soul \u2014 Raw Signal"
 
 
 def test_tracklist_lookup(client):

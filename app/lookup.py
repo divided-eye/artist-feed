@@ -44,7 +44,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 3             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 4             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -324,10 +324,19 @@ def page_index():
     return _pages["index"]
 
 
+PAGE_FORMAT = 2   # 2: also keeps track names that are only written out in the description
+
+
+def needs_rereading(saved, url) -> bool:
+    """Saved by a version that only kept playable tracks, and it found at most one on an album:
+    the real track list may be in the description (a preview mix plus a written list)."""
+    return bool(saved) and saved.get("v", 1) < PAGE_FORMAT and "/album/" in url and len(saved.get("tracks") or []) <= 1
+
+
 async def get_release(net, url):
     """A release or track page, reduced to what matching needs. Remembered for six months."""
     saved = cache_get("release", url, 180)
-    if saved is not None:
+    if saved is not None and not needs_rereading(saved, url):
         return saved or None
     r = await net.get(url)
     if r.status_code == 429:
@@ -340,7 +349,9 @@ async def get_release(net, url):
     data = {"url": rel["url"], "asked": url, "title": rel["title"] or "", "artist": rel["author"] or "",
             "year": (rel["published_at"] or "")[:4], "release": rel["release"] or "",
             "release_url": rel["release_url"] or "", "label": rel["label"] or "",
-            "tracks": [{"title": t.title, "artist": t.artist or ""} for t in rel["tracks"] or []]}
+            "tracks": [{"title": t.title, "artist": t.artist or ""} for t in rel["tracks"] or []]
+                      + [{"title": t, "artist": "", "listed": True} for t in rel["listed_tracks"]],
+            "v": PAGE_FORMAT}
     cache_put("release", url, data)
     _index_release(page_index(), data)
     return data
@@ -622,6 +633,13 @@ async def deep_read():
         todo = [r["url"] for r in db.query(
             "SELECT url, MIN(rowid) AS first FROM collection_items WHERE url NOT IN "
             "(SELECT key FROM web_cache WHERE kind='release') GROUP BY url ORDER BY first")]
+        for r in db.query("SELECT w.key, w.data FROM web_cache w WHERE w.kind='release' AND w.key IN "
+                          "(SELECT url FROM collection_items)"):
+            try:                                     # pages worth a second look (see needs_rereading)
+                if needs_rereading(json.loads(r["data"]), r["key"]):
+                    todo.append(r["key"])
+            except ValueError:
+                pass
         if not todo:
             return
         async with refresh.make_client() as client:

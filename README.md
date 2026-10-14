@@ -104,6 +104,10 @@ otherwise their SoundCloud page.
   Records). The artist appearing there as a whole word counts as a match, and
   a search result with the right title but an unrecognised artist is opened
   to check before it is passed over.
+- Some releases have a single playable item (a preview mix, say) and name the
+  real tracks only as a numbered list in the description. Those written-out
+  names are read too, so a track that exists only there is still matched to
+  the release.
 - **What was tried** under each result lists every step and what it found.
   It is also in the export, in the "steps" column.
 - **Edit** under any link lets you replace it with the correct one (and set
@@ -130,7 +134,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v17. Labels, track lists and durations for Bandcamp
+is v18. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
