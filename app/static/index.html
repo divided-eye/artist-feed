@@ -156,6 +156,7 @@
   .res details { margin-top: 3px; } .res summary { color: var(--muted); font-size: 12px; cursor: pointer; }
   .res details ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
   .tools.second { padding-top: 8px; } .tools.second input { width: 170px; }
+  .tools.second select { padding: 4px 8px; font-size: 13px; }
   label.opt { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
   [hidden] { display: none !important; }
 </style>
@@ -248,6 +249,12 @@
     <label class="opt" for="fanName">Your Bandcamp username</label>
     <input type="text" id="fanName" placeholder="username" spellcheck="false" autocomplete="off">
     <button class="btn small" id="fanSync">Read purchases</button>
+    <div class="spacer"></div>
+    <label class="opt" for="fallbackPref">If a track isn't found, link to the artist's</label>
+    <select id="fallbackPref" aria-label="Artist link to use when a track isn't found">
+      <option value="bandcamp">Bandcamp page, else SoundCloud</option>
+      <option value="soundcloud">SoundCloud profile, else Bandcamp</option>
+    </select>
     <button class="btn small" id="fanDeep" hidden title="Open each purchased release and save its whole track list, so tracks you own are found instantly">Read full track lists</button>
     <span class="status" id="fanStatus"></span>
   </div>
@@ -803,7 +810,10 @@ async function loadFan(fill) {
   } catch {}
 }
 
-function lookupPanel(open) { $("lookup").hidden = !open; $("scrim").hidden = !open; if (open) loadFan(true); }
+function lookupPanel(open) {
+  $("lookup").hidden = !open; $("scrim").hidden = !open;
+  if (open) { loadFan(true); api("/api/lookup/settings").then(s => { $("fallbackPref").value = s.fallback; }).catch(() => {}); }
+}
 
 async function drawer(open) {
   if (!open && dirty && !confirm("Discard unsaved changes to the artist table?")) return;
@@ -820,6 +830,10 @@ document.addEventListener("keydown", e => {
 });
 $("lookupBtn").onclick = () => lookupPanel(true);
 $("lookupClose").onclick = () => lookupPanel(false);
+$("fallbackPref").onchange = async e => {
+  await api("/api/lookup/settings", { method: "PUT", body: { fallback: e.target.value } });
+  if (lookupJob) { editingRow = null; renderLookup(await api(`/api/lookup/${lookupJob.id}`)); }   // rows on screen follow the choice
+};
 $("fanDeep").onclick = async () => { await api("/api/collection/tracklists", { method: "POST" }); setTimeout(loadFan, 400); };
 $("fanSync").onclick = async () => {
   try { await api("/api/collection", { method: "POST", body: { fan: $("fanName").value } }); } catch (x) { $("fanStatus").textContent = x.message; return; }

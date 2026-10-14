@@ -569,6 +569,26 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     again = client.get(f"/api/lookup/{j['id']}").json()["rows"]
     assert again[0]["status"] == "soundcloud_search" and (again[1]["status"], again[1]["url"]) == ("bandcamp", "https://old.bandcamp.com")
 
+    # Which artist link to give when the track isn't found is a setting; switching it re-points
+    # saved and on-screen results without searching again.
+    lookup.cache_put("artistpage", lookup.norm("Anecho"), [["https://anecho.bandcamp.com", "Anecho"]])
+    lookup.cache_put("grid", "https://anecho.bandcamp.com", {"name": "Anecho", "items": []})
+    def both(fresh=False):
+        j = client.post("/api/lookup" + ("?fresh=true" if fresh else ""), content="Artist\tTitle\nAnecho\tUFO\nPugilist\tAsteroids".encode()).json()
+        time.sleep(0.5)
+        return j["id"], [(x["status"], x["url"]) for x in client.get(f"/api/lookup/{j['id']}").json()["rows"]]
+    assert client.get("/api/lookup/settings").json() == {"fallback": "bandcamp"}
+    job_id, rows = both(fresh=True)                      # Anecho has both; Pugilist only a Bandcamp page
+    assert rows == [("bandcamp_artist", "https://anecho.bandcamp.com"), ("bandcamp_artist", "https://pugilist.bandcamp.com")]
+    asked = calls["requests"]
+    assert client.put("/api/lookup/settings", json={"fallback": "soundcloud"}).json() == {"fallback": "soundcloud"}
+    on_screen = [(x["status"], x["url"]) for x in client.get(f"/api/lookup/{job_id}").json()["rows"]]
+    assert on_screen == [("soundcloud", "https://soundcloud.com/anechoicchamber"), ("bandcamp_artist", "https://pugilist.bandcamp.com")]
+    assert both()[1] == on_screen and calls["requests"] == asked          # saved answers follow, nothing fetched
+    assert client.put("/api/lookup/settings", json={"fallback": "spotify"}).status_code == 400
+    client.put("/api/lookup/settings", json={"fallback": "bandcamp"})
+    assert both()[1] == rows
+
     before = len(searched)                              # pages read once are not fetched again
     client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSomah\tRailroads".encode())
     time.sleep(0.5)

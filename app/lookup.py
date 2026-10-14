@@ -1051,12 +1051,59 @@ async def find(net, lib, artist, title, state):
     check = check or earlier
     if check:
         return done(check)
+    # Both possible artist links are worked out and kept, so the preference can change later
+    # without searching again.
+    options = {"bandcamp": None, "soundcloud": None, "search": None}
     if pages:
-        return done({"status": "bandcamp_artist", "site": "Bandcamp", "url": pages[0][0], "found": pages[0][1],
-                     "release": "", "year": "",
-                     "note": "Artist's page; the track isn't on any release there now"})
-    result = await from_soundcloud(net, artist, steps)
-    return done(result or {"status": "none", "note": "No artist name to search for"})
+        options["bandcamp"] = {"status": "bandcamp_artist", "site": "Bandcamp", "url": pages[0][0],
+                               "found": pages[0][1], "release": "", "year": "",
+                               "note": "Artist's page; the track isn't on any release there now"}
+    sc = await from_soundcloud(net, artist, steps)
+    if sc:
+        options["soundcloud" if sc["status"] == "soundcloud" else "search"] = sc
+    return done(dict(pick_fallback(options), options=options))
+
+
+FALLBACK_STATUSES = ("bandcamp_artist", "soundcloud", "soundcloud_search", "none")
+
+
+def fallback_pref() -> str:
+    """Which artist link to give when the track itself isn't found: "bandcamp" or "soundcloud"."""
+    value = (db.kv_get("lookup_fallback") or os.environ.get("LOOKUP_FALLBACK") or "bandcamp").strip().lower()
+    return value if value in ("bandcamp", "soundcloud") else "bandcamp"
+
+
+def pick_fallback(options: dict) -> dict:
+    """The preferred artist link if there is one, else the other, else a SoundCloud search."""
+    order = ("soundcloud", "bandcamp") if fallback_pref() == "soundcloud" else ("bandcamp", "soundcloud")
+    for key in order + ("search",):
+        if options.get(key):
+            return dict(options[key])
+    return {"status": "none", "note": "No artist name to search for"}
+
+
+def with_current_fallback(saved: dict):
+    """A saved not-found answer, re-pointed to the currently preferred artist link.
+    Returns None when it was saved before both links were kept and needs searching again."""
+    if saved.get("status") not in FALLBACK_STATUSES:
+        return saved
+    if saved.get("options"):
+        out = dict(saved)
+        out.update({k: "" for k in ("site", "url", "found", "note", "release", "year")})
+        out.update(pick_fallback(saved["options"]))
+        return out
+    if fallback_pref() == "soundcloud" and saved.get("status") == "bandcamp_artist":
+        return None                    # no SoundCloud link was looked for at the time
+    return saved
+
+
+def set_fallback(value: str):
+    db.kv_set("lookup_fallback", value)
+    for job in jobs.values():          # lookups still on screen follow the new choice
+        for row in job["rows"]:
+            if row.get("options") and row.get("status") in FALLBACK_STATUSES:
+                row.update({k: "" for k in ("site", "url", "found", "note", "release", "year")})
+                row.update(pick_fallback(row["options"]))
 
 
 def find_local(lib, artist, title):
@@ -1100,7 +1147,8 @@ def find_local(lib, artist, title):
 
 
 def _fill(row, result):
-    row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": []})
+    row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": [],
+                "options": None})
     row.update(result)
 
 
@@ -1119,6 +1167,8 @@ async def _run(job, fresh):
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
             if saved and not manual and saved.get("status") != "bandcamp" and saved.get("engine", 0) < ENGINE:
                 saved = None                               # a miss from an older version: try again
+            if saved and not manual:
+                saved = with_current_fallback(saved)
             if saved and not manual:
                 saved = dict(saved, steps=(saved.get("steps") or []) + ["(saved result from an earlier lookup)"])
             result = saved or find_local(lib, row["artist"], row["title"])

@@ -15,7 +15,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "18"   # shown beside the title, so you can tell which version is running
+VERSION = "19"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -370,6 +370,24 @@ async def start_lookup(request: Request, fresh: bool = False):
     except lookup.TracklistError as e:
         raise HTTPException(400, str(e))
     return lookup.start(tracks, fresh)
+
+
+class LookupSettings(BaseModel):
+    fallback: str
+
+
+@app.get("/api/lookup/settings")
+def lookup_settings():
+    return {"fallback": lookup.fallback_pref()}
+
+
+@app.put("/api/lookup/settings")
+def set_lookup_settings(body: LookupSettings):
+    """Which artist link to give when a track isn't found: "bandcamp" or "soundcloud"."""
+    if body.fallback not in ("bandcamp", "soundcloud"):
+        raise HTTPException(400, 'Choose "bandcamp" or "soundcloud".')
+    lookup.set_fallback(body.fallback)
+    return {"fallback": lookup.fallback_pref()}
 
 
 @app.get("/api/lookup/{job_id}.csv")
