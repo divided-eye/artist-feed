@@ -15,7 +15,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "27"   # shown beside the title, so you can tell which version is running
+VERSION = "28"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -239,9 +239,12 @@ def delete_account(account_id: int):
 
 
 def more_filters(year: Optional[str] = None, label: Optional[str] = None,
-                 kind: Optional[str] = None, length: Optional[str] = None, hidden: Optional[str] = None):
-    """The optional filters every view and the export accept. hidden=1 also shows hidden items."""
-    return {"year": year, "label": label, "kind": kind, "length": length, "hidden": hidden == "1"}
+                 kind: Optional[str] = None, length: Optional[str] = None, hidden: Optional[str] = None,
+                 preview: Optional[str] = None):
+    """The optional filters every view and the export accept. hidden=1 also shows hidden items;
+    preview=1 leaves out tracks that can't be listened to yet."""
+    return {"year": year, "label": label, "kind": kind, "length": length, "hidden": hidden == "1",
+            "preview": preview == "1"}
 
 
 class HiddenIn(BaseModel):

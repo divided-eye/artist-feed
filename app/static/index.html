@@ -125,8 +125,8 @@
   .rowplay { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
     display: grid; place-items: center; font-size: 11px; color: var(--text); padding: 0; }
   .rowplay:hover { background: var(--accent); color: #14160a; border-color: var(--accent); }
-  .rowplay.nostream { border: 2px dashed #e6b450; color: #e6b450; background: transparent; font-size: 12px; }
-  .rowplay.nostream:hover { background: #e6b450; color: #14160a; border-style: solid; }
+  .rowplay.nostream { border: 2px dashed #6d6d6d; color: #6d6d6d; background: transparent; font-size: 12px; }
+  .rowplay.nostream:hover { background: #6d6d6d; color: #474747; border-style: solid; }
 
   #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--panel);
     border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.4); }
@@ -138,7 +138,7 @@
   #dockFrame iframe { display: block; width: 100%; border: 0; border-radius: 6px; background: var(--panel-2); }
 
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9; }
-  /* the Links Lookup panel: a slow light-blue pulse */
+  /* the Link Finder panel: a slow light-blue pulse */
   @keyframes lookup-glow {
     0%, 100% { box-shadow: 0 0 18px 2px rgba(125, 200, 255, .22), -1px 0 0 rgba(125, 200, 255, .35); }
     50% { box-shadow: 0 0 46px 10px rgba(125, 200, 255, .55), -1px 0 0 rgba(125, 200, 255, .9); }
@@ -208,8 +208,8 @@
     <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
     <span class="status" id="status"></span>
     <div class="actions">
-      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find Bandcamp or SoundCloud links for a tracklist">Links Lookup</button>
-      <button class="btn" id="refreshBtn">Refresh</button>
+      <button class="btn" id="refreshBtn" title="Check every tracked artist for new posts now">Refresh Feed</button>
+      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find Bandcamp or SoundCloud links for a tracklist">Link Finder</button>
       <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
     </div>
   </div>
@@ -224,6 +224,7 @@
       <option value="">Any length</option><option value="short">Under 3 min</option><option value="medium">3–6 min</option>
       <option value="long">6–10 min</option><option value="extended">Over 10 min</option>
     </select>
+    <label class="opt" title="Leave out Bandcamp tracks that can't be listened to yet, such as the unreleased tracks of a pre-order"><input type="checkbox" id="fPreview"> Hide no-preview tracks</label>
     <label class="opt" title="Show the items you have hidden, so you can put them back"><input type="checkbox" id="fHidden"> Show hidden (<span id="hiddenCount">0</span>)</label>
     <button class="btn small" id="clearFilters" hidden>Clear filters</button>
     <div class="spacer"></div>
@@ -270,8 +271,8 @@
   <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
 </aside>
 
-<aside id="lookup" hidden aria-label="Links lookup">
-  <header><h2>Links Lookup</h2><button class="btn" id="lookupClose">Close</button></header>
+<aside id="lookup" hidden aria-label="Link finder">
+  <header><h2>Link Finder</h2><button class="btn" id="lookupClose">Close</button></header>
   <div class="tools">
     <button class="btn" id="lookupFileBtn">Choose file…</button>
     <input type="file" id="lookupFile" accept=".xlsx,.csv,.tsv,.txt,text/csv" hidden>
@@ -305,6 +306,8 @@
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
 let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "" }, offset = 0, wasRefreshing = false;
+let hideNoPreview = false;      // a standing preference, kept in this browser; not cleared by "Clear filters"
+try { hideNoPreview = localStorage.getItem("hideNoPreview") === "1"; } catch {}
 let view = "grid", sort = { key: "date", dir: "desc" }, playing = null;
 try { if (localStorage.getItem("view") === "list") view = "list"; } catch {}
 
@@ -446,6 +449,7 @@ function filterQuery(extra) {
   if (filter.q.trim()) q.set("q", filter.q.trim());
   for (const k of EXTRA_FILTERS) if (filter[k]) q.set(k, filter[k]);
   if (filter.hidden) q.set("hidden", "1");
+  if (hideNoPreview) q.set("preview", "1");
   return q;
 }
 
@@ -927,6 +931,12 @@ $("viewGrid").onclick = () => setView("grid");
 $("viewList").onclick = () => setView("list");
 $("dockClose").onclick = closePlayer;
 $("fHidden").onchange = e => { filter.hidden = e.target.checked ? "1" : ""; loadFeed(); };
+$("fPreview").checked = hideNoPreview;
+$("fPreview").onchange = e => {
+  hideNoPreview = e.target.checked;
+  try { localStorage.setItem("hideNoPreview", hideNoPreview ? "1" : "0"); } catch {}
+  loadFeed();
+};
 $("pageWidth").onchange = e => setPageWidth(e.target.value);
 { let w = "1280px"; try { w = localStorage.getItem("pageWidth") || w; } catch {} setPageWidth(w); }
 for (const k of EXTRA_FILTERS) $(FILTER_SELECTS[k]).onchange = e => { filter[k] = e.target.value; loadFeed(); };

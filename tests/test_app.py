@@ -353,6 +353,18 @@ def test_track_list(client):
     assert titles("?year=2026&source=bandcamp") == ["Second"]
     assert len(client.get("/api/tracks.csv?year=2025").content.decode("utf-8-sig").splitlines()) == 3
 
+    # "Hide no-preview tracks": a Bandcamp track with no length has no stream yet. Third has no track list at all
+    # (nothing known either way) and SoundCloud uploads always play, so they stay.
+    from app import db
+    db.execute("UPDATE tracks SET duration=NULL WHERE title='Intro'")
+    assert [r["track"] for r in get("?preview=1")] == ["Demo", "Second", "No Art", "Long One", ""]
+    assert "First" in titles("?preview=1")                                   # one of its tracks still plays
+    assert "Intro" not in client.get("/api/tracks.csv?preview=1").content.decode("utf-8-sig")
+    db.execute("UPDATE tracks SET duration=NULL WHERE title='Long One'")
+    assert "First" not in titles("?preview=1") and "First" in titles("")    # nothing on it plays: gone from the grid too
+    db.execute("UPDATE tracks SET duration=61.5 WHERE title='Intro'")
+    db.execute("UPDATE tracks SET duration=3725 WHERE title='Long One'")
+
     first = next(p for p in client.get("/api/feed?q=intro").json())
     assert (first["title"], first["embed"], first["track_count"], first["duration"]) == ("First", "album=111", 2, 3786.5)
 

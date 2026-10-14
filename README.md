@@ -11,7 +11,7 @@ docker compose up -d --build
 
 Open http://localhost:8080 (or `http://<that machine's address>:8080` from another
 device). Click **Tracked Artists**, fill in the table, and press **Save changes**; the
-posts appear a few seconds later. The app re-checks every hour; **Refresh**
+posts appear a few seconds later. The app re-checks every hour; **Refresh Feed**
 checks immediately.
 
 ## Views, search and export
@@ -46,9 +46,9 @@ Pre-orders appear with their future release date. Tracks that are not out yet
 have no duration, and a pre-order with nothing streamable yet has no play
 button.
 
-## Links Lookup
+## Link Finder
 
-The **Links Lookup** button takes a list of tracks and returns a link for each one:
+The **Link Finder** button takes a list of tracks and returns a link for each one:
 the Bandcamp release the track is on, plus its release year. When the track
 isn't on Bandcamp, you get the artist's Bandcamp page if they have one, and
 otherwise their SoundCloud page.
@@ -179,6 +179,11 @@ stream yet, which is usual for the unreleased tracks of a pre-order. Bandcamp's
 player then shows the track the release does have available, not the one you
 picked.
 
+Tick **Hide no-preview tracks** in the filter row to leave those out: in List
+view the individual tracks go, in Grid view a release goes only when none of
+its tracks can be played. The choice is remembered in the browser, and the
+export follows it.
+
 In List view the column headings stay in place while the list scrolls.
 
 A row or card with an arrow instead of a play button has not had its details
@@ -189,9 +194,9 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v27. Labels, track lists and durations for Bandcamp
+is v28. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
-artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
+artist each time; press **Refresh Feed** to speed it up). SoundCloud fills in on the
 first refresh.
 
 ## The artist table

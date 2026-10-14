@@ -337,6 +337,13 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
     if more.get("kind") in ("album", "track"):
         where.append("p.kind=?")
         args.append(more["kind"])
+    if more.get("preview"):                    # leave out what can't be listened to yet
+        # A Bandcamp track with no length has no stream (the unreleased tracks of a pre-order).
+        if per_track:
+            where.append("NOT (a.source='bandcamp' AND t.id IS NOT NULL AND t.duration IS NULL)")
+        else:   # a release goes only when none of its tracks can be played
+            where.append("NOT (a.source='bandcamp' AND EXISTS(SELECT 1 FROM tracks WHERE post_id=p.id)"
+                         " AND NOT EXISTS(SELECT 1 FROM tracks WHERE post_id=p.id AND duration IS NOT NULL))")
     if more.get("length") in LENGTHS:
         low, high = LENGTHS[more["length"]]
         test = "{d}>=?" + (" AND {d}<?" if high is not None else "")
