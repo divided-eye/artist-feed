@@ -179,6 +179,8 @@
   td.state { font-size: 12px; color: var(--muted); padding: 9px 10px; min-width: 170px; border-right: 0; }
   td.state .warn { color: #e6b450; display: block; }
   td.state .bad { color: var(--danger); display: block; }
+  td.state .dim { display: block; }
+  td.state .btn { margin-top: 6px; }
   td input[type=text] { width: 100%; border: 0; border-radius: 0; background: transparent; padding: 9px 10px; }
   td input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg); }
   tr.has-error td { background: rgba(255,107,107,.07); }
@@ -956,10 +958,24 @@ function setDirty(v) {
 
 function stateCell(row) {
   const td = el("td", { class: "state" });
-  if (row.errors.length) row.errors.forEach(m => td.append(el("span", { class: "bad", text: m })));
-  else if (row.id === null) td.append(isBlank(row) ? "" : "new");
+  if (row.errors.length) {
+    row.errors.forEach(m => td.append(el("span", { class: "bad", text: m })));
+    if (row.sameName) td.append(el("button", { class: "btn small", type: "button", text: "Different artists, keep both",
+      title: "These rows are different artists who share a name: save them as separate rows. Link Finder can't tell them apart by name.",
+      onclick: () => {                                  // every row in the clash is let through
+        const msg = row.errors.find(e => /^Same name as row/.test(e)) || "";
+        const nums = (msg.match(/row ([\d, ]+):/) || ["", ""])[1].split(",").map(x => Number(x.trim()) - 1);
+        [row, ...nums.map(i => table[i])].forEach(r => { if (!r) return;
+          r.keep_separate = true; r.sameName = false; r.errors = r.errors.filter(e => !/^Same name as row/.test(e)); });
+        setDirty(true); renderTable();
+      } }));
+    return td;
+  }
+  if (row.id === null) td.append(isBlank(row) ? "" : row.keep_separate ? "new · kept separate" : "new");
   else {
     td.append(row.post_count + " posts");
+    if (row.same_name) td.append(el("span", { class: "dim", text: "Shares its name with another row (different artists)",
+      title: "Saved as separate artists. Rename one to stop sharing the name." }));
     row.problems.forEach(m => td.append(el("span", { class: "warn", text: m })));
   }
   return td;
@@ -1304,12 +1320,12 @@ async function saveTable() {
   if (removed && !confirm(`This stops tracking ${removed} artist${removed > 1 ? "s" : ""} and removes their posts from the feed. Continue?`)) { renderTable(); return; }
   $("tableError").textContent = "";
   const r = await fetch("/api/table", { method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected,
+    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup, keep_separate }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected, keep_separate: !!keep_separate,
       ...(hasYoutube() ? { youtube_lookup: !!youtube_lookup } : {}) })) }) });
   const data = await r.json().catch(() => ({}));
-  table.forEach(row => row.errors = []);
+  table.forEach(row => { row.errors = []; row.sameName = false; });
   if (!r.ok) {
-    (data.errors || []).forEach(e => table[e.row] && table[e.row].errors.push(e.message));
+    (data.errors || []).forEach(e => { const r = table[e.row]; if (!r) return; r.errors.push(e.message); if (e.kind === "same_name") r.sameName = true; });
     $("tableError").textContent = typeof data.detail === "string" ? data.detail : "Couldn't save.";
     renderTable();
     return;

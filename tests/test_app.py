@@ -1713,3 +1713,35 @@ def test_hiding_one_track_from_the_list_leaves_the_rest_of_the_release(client):
     client.post(f"/api/posts/{pid}/hidden", json={"hidden": False, "track": key})
     assert len([x for x in client.get("/api/tracks?limit=1000").json() if x["post_id"] == pid]) == len(siblings)
     assert db.query("SELECT COUNT(*) n FROM hidden_tracks")[0]["n"] == 0
+
+
+def test_two_rows_for_one_artist_are_refused_until_merged(client):
+    table = client.get("/api/table").json()
+    first = next(r for r in table if r["name"] == "Tube Band")
+    dup = {"id": None, "name": "tube band", "cells": {"soundcloud": "tubebandsc"}}
+    r = client.put("/api/table", json={"rows": table + [dup]})
+    assert r.status_code == 400
+    errors = r.json()["errors"]
+    new_at, old_at = len(table), table.index(first)
+    assert any(e["row"] == new_at and f"row {old_at + 1}" in e["message"] for e in errors)
+    assert any(e["row"] == old_at and f"row {new_at + 1}" in e["message"] for e in errors)
+    # another name in the Artist cell counts too
+    alias = {"id": None, "name": "Someone New, Tube Band", "cells": {"soundcloud": "someonenew"}}
+    assert client.put("/api/table", json={"rows": table + [alias]}).status_code == 400
+    assert client.get("/api/table").json() == table                     # nothing was saved
+
+
+def test_rows_sharing_a_name_can_be_kept_as_different_artists(client):
+    table = client.get("/api/table").json()
+    dup = {"id": None, "name": "Tube Band", "cells": {"soundcloud": "othertubeband"}}
+    r = client.put("/api/table", json={"rows": table + [dup]})
+    assert r.status_code == 400 and all(e.get("kind") == "same_name" for e in r.json()["errors"])
+    r = client.put("/api/table", json={"rows": table + [dict(dup, keep_separate=True)]})
+    assert r.status_code == 200, r.text
+    rows = [x for x in r.json()["rows"] if x["name"] == "Tube Band"]
+    assert len(rows) == 2 and all(x["same_name"] for x in rows)
+    # remembered: saving again needs no override; once the clash is gone, so is the note
+    assert client.put("/api/table", json={"rows": r.json()["rows"]}).status_code == 200
+    left = [x for x in r.json()["rows"] if not (x["name"] == "Tube Band" and x["cells"].get("soundcloud") == "othertubeband")]
+    after = client.put("/api/table", json={"rows": left}).json()["rows"]
+    assert not next(x for x in after if x["name"] == "Tube Band")["same_name"]

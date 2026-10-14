@@ -123,6 +123,8 @@ The Status column shows how many posts each artist has, and any problem reading 
 
 To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, and Ticked for YouTube search. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
 
+Each artist belongs on one row. Save is refused, with a message on every row involved, when two rows have the same page, or share a name (any of the names in their Artist cells). Both usually happen after **Import CSV**, which adds the file's rows as new rows rather than updating the ones you have: move the new pages into the existing row and delete the extra one. Two rows for one artist would leave Link Finder using whichever it finds first. If two rows really are different artists who share a name (in different genres, say), press **Different artists, keep both** on one of them and save. That is remembered, and both rows then say "Shares its name with another row". Link Finder still can't tell them apart by name, so give the right link with Edit when it picks the wrong one. Renaming one of them ends it.
+
 Labels work the same way as artists: add the label's Bandcamp page as a row. A release that reaches the feed through both an artist's page and a label's page is shown once.
 
 ### Adding many at once
@@ -472,6 +474,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 58 | Tracked Artists: two rows sharing a name are refused on Save, like two rows with the same page, unless you mark them as different artists with "Different artists, keep both". |
 | 57 | List view: the hide column is titled Hide, and its ✕ hides only that track instead of the whole release. Cards still hide whole releases. |
 | 56 | Tracked Artists: Filter rows box, a menu of row types (Needs attention, Still being checked, No posts yet, New, Ticked for YouTube search) with counts, and sortable columns. |
 | 55 | YouTube as a third site: channels in the feed and player, a YouTube button at the top, a YouTube column and a YouTube search column in Tracked Artists. A new Settings button switches sites off completely and chooses which sites Link Finder searches (Bandcamp, then SoundCloud, then YouTube; YouTube off by default). Saved results has a "Searched in the last lookup" filter. |

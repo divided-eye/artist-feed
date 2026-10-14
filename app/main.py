@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "57"   # shown beside the title, so you can tell which version is running
+VERSION = "58"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -153,6 +153,7 @@ class TableRow(BaseModel):
     name: str = ""
     cells: dict[str, str] = {}
     youtube_lookup: Optional[bool] = None   # Link Finder may search YouTube for this artist or label
+    keep_separate: bool = False             # shares a name with another row on purpose (different artists)
     skip: list[str] = []                 # cells cleared on purpose: "Find missing links" leaves them alone
     rejected: dict[str, list[str]] = {}  # guesses turned down, never offered again
 
@@ -165,12 +166,20 @@ def _left_empty() -> dict:
         return {}
 
 
+def _same_name_ok() -> set:
+    """Names that more than one row shares on purpose (different artists with the same name)."""
+    try:
+        return set(json.loads(db.kv_get("same_name_ok") or "[]"))
+    except ValueError:
+        return set()
+
+
 class TableIn(BaseModel):
     rows: list[TableRow]
 
 
 def _table_rows():
-    rows, remembered, on, youtube = [], _left_empty(), sites.enabled(), sites.youtube_names()
+    rows, remembered, on, youtube, same = [], _left_empty(), sites.enabled(), sites.youtube_names(), _same_name_ok()
     for a in db.list_artists():
         cells = {key: [] for key in on}
         problems = []
@@ -188,6 +197,7 @@ def _table_rows():
         shown = lookup.join_names([a["name"]] + lookup.split_names(a.get("aliases") or ""))
         rows.append({"id": a["id"], "name": shown, "post_count": a["post_count"],
                      "youtube_lookup": lookup.norm(a["name"]) in youtube,
+                     "same_name": lookup.norm(a["name"]) in same,
                      "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
                      "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
                      "rejected": note.get("rejected") or {}})
@@ -237,7 +247,8 @@ async def suggest_row(body: SuggestIn):
 async def save_table(body: TableIn):
     """Replace the whole artist list with the rows sent. Nothing changes unless every row is valid."""
     existing = {a["id"]: a for a in db.list_artists()}
-    errors, claimed, plan, remember, youtube = [], {}, [], {}, set()
+    errors, claimed, plan, remember, youtube, claimed_names = [], {}, [], {}, set(), {}
+    allowed = _same_name_ok()
     on = set(sites.enabled())
     for index, row in enumerate(body.rows):
         pages = []
@@ -265,6 +276,11 @@ async def save_table(body: TableIn):
         name, aliases = (names[0] if names else ""), lookup.join_names(names[1:])
         if not name and not pages:
             continue  # a blank row; for an existing artist this removes them
+        for n in dict.fromkeys(lookup.norm(x) for x in names):
+            if n:
+                claimed_names.setdefault(n, []).append(index)
+                if row.keep_separate:
+                    allowed.add(n)
         plan.append((row.id if row.id in existing else None, name or pages[0][1], pages, aliases))
         filled = {key for key, _, _ in pages}
         note = {"skip": [k for k in row.skip if k in SOURCES and k not in filled],
@@ -273,6 +289,16 @@ async def save_table(body: TableIn):
             remember[lookup.norm(plan[-1][1])] = note
         if row.youtube_lookup:                      # every name the artist goes by
             youtube.update(lookup.norm(n) for n in [plan[-1][1]] + lookup.split_names(aliases))
+    # Two rows for one artist (by any of their names) would leave Link Finder picking one of them:
+    # they have to be merged, or one renamed - unless you say they are different artists.
+    shared = {n: rows for n, rows in claimed_names.items() if len(rows) > 1}
+    for n, rows in shared.items():
+        if n in allowed:
+            continue
+        for i in rows:
+            others = ", ".join(str(j + 1) for j in rows if j != i)
+            errors.append({"row": i, "kind": "same_name", "message": f'Same name as row {others}: merge the rows '
+                           "(keep every page in one), rename one, or keep both if they are different artists."})
     if errors:
         return JSONResponse({"detail": "Some rows need fixing; nothing was saved.",
                              "errors": errors}, status_code=400)
@@ -292,6 +318,7 @@ async def save_table(body: TableIn):
         new_accounts += [(artist_id, s, h, u) for s, h, u in pages if (s, h) not in have]
     added = db.apply_table(keep, drop_accounts, renames, new_accounts, new_artists)
     db.kv_set("table_left_empty", json.dumps(remember))
+    db.kv_set("same_name_ok", json.dumps(sorted(n for n in shared if n in allowed)))   # only names still shared
     if any(r.youtube_lookup is not None for r in body.rows):       # sent only while YouTube is on
         sites.set_youtube_names(youtube)
     lookup.forget_aliases()
