@@ -17,6 +17,7 @@ os.environ["DISABLE_SCHEDULER"] = "1"
 os.environ["BANDCAMP_PAUSE_SECONDS"] = "0"
 os.environ["BANDCAMP_MAX_NEW"] = "2"
 os.environ["LOOKUP_PAUSE_SECONDS"] = "0"
+os.environ["LOOKUP_RETRY_SECONDS"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -60,8 +61,8 @@ SECOND = release("Second", "01 Sep 2026 00:00:00 GMT", "MusicRecording",
                  '<meta property="og:video" content="https://bandcamp.com/EmbeddedPlayer/v=2/track=222/size=large/">')
 
 
-def result(name, url, sub, released="released 2 May 2023"):
-    return (f'<li class="searchresult data-search"><div class="result-info"><div class="itemtype">TRACK</div>'
+def result(name, url, sub, released="released 2 May 2023", kind="TRACK"):
+    return (f'<li class="searchresult data-search"><div class="result-info"><div class="itemtype">{kind}</div>'
             f'<div class="heading"><a href="{url}?from=search">\n {name}\n</a></div>'
             f'<div class="subhead">\n {sub}\n</div><div class="released">{released}</div>'
             f'<div class="itemurl"><a href="{url}?from=search">{url}</a></div></div></li>')
@@ -72,6 +73,65 @@ SEARCHES = {   # what the stand-in Bandcamp search returns for a query
     "Other Guy Especies Endémicas": result("Especies Endémicas", "https://masot.bandcamp.com/track/especies-end-micas", "from Flora by Masot"),
     "idpa State I": result("Idpa - State I (Original Mix)", "https://somelabel.bandcamp.com/track/state-i", "from VA 004 by Some Label", "released 9 January 2021")
               + result("State Of Mind", "https://x.bandcamp.com/track/state", "by Idpa"),
+}
+SEARCHES.update({
+    "Siadic Air": result("Air", "https://siadic.bandcamp.com/track/air", "from Traction EP by Siadic"),
+    "What A World": result("YDX - What A World", "https://dubdenrecords.bandcamp.com/track/ydx-what-a-world",
+                           "from Dubs From The Den Vol. 7 by Dub Den Records"),
+    ("a", "Allen Mock Dragon Language"): result("Dragon Language", "https://observatory-records.bandcamp.com/album/dragon-language",
+                                                "by Allen Mock", "released 3 March 2026", "ALBUM")
+                                         + result("Dragon Language", "https://x.bandcamp.com/album/dl", "by Somebody Else", kind="ALBUM"),
+    ("b", "somah"): result("Somah UK", "https://somahuk.bandcamp.com", "Bristol, UK", "", "ARTIST")
+                    + result("Somahaus", "https://somahaus.bandcamp.com", "Berlin", "", "ARTIST"),
+    ("b", "bbbb cccc"): result("Cccc", "https://ccc.bandcamp.com", "", "", "ARTIST"),
+})
+
+
+def grid(name, *albums):
+    items = "".join(f'<li><a href="/album/{slug}"><p class="title">{title}</p></a></li>' for slug, title in albums)
+    return f'<html><head><meta property="og:site_name" content="{name}"></head><body><ol id="music-grid">{items}</ol></body></html>'
+
+
+def album(name, artist, *tracks, date="06 Jun 2026 00:00:00 GMT", extra=None):
+    data = {"current": {"type": "album"}, "artist": artist,
+            "trackinfo": [{"title": t, "duration": 200, "track_id": i + 1} for i, t in enumerate(tracks)]}
+    return release(name, date, ld_extra=dict({"byArtist": {"name": artist}}, **(extra or {}))).replace(
+        "</head>", "</head><body><script data-tralbum='" + json.dumps(data) + "'></script></body>")
+
+
+import html as html_lib  # noqa: E402
+
+FAN_BLOB = {"fan_data": {"fan_id": 77},
+            "collection_data": {"sequence": ["a1", "a2"], "item_count": 4, "last_token": "tok1"},
+            "item_cache": {"collection": {
+                "a1": {"tralbum_type": "a", "tralbum_id": 1, "item_title": "Archivos Pt. 1", "band_name": "Masot",
+                       "item_url": "https://masot.bandcamp.com/album/archivos-pt-1", "featured_track": 11},
+                "a2": {"tralbum_type": "a", "tralbum_id": 2, "item_title": "WPR091 - Phoenix", "band_name": "Blocklab",
+                       "item_url": "https://whitepeach.bandcamp.com/album/wpr091-phoenix", "featured_track": 21}}},
+            "tracklists": {"collection": {"a1": [{"id": 11, "title": "01", "track_number": 1}, {"id": 12, "title": "02", "track_number": 2}],
+                                          "a2": [{"id": 21, "title": "Phoenix"}]}}}
+FAN_MORE = {"items": [{"tralbum_type": "a", "tralbum_id": 3, "item_title": "Especies Endémicas", "band_name": "Masot",
+                       "item_url": "https://masot.bandcamp.com/album/especies-endemicas", "featured_track": 31},
+                      {"tralbum_type": "a", "tralbum_id": 4, "item_title": "Half Empty", "band_name": "contactghost",
+                       "item_url": "https://artikalmusic.bandcamp.com/album/half-empty?from=fanpub"}],
+            "tracklists": {"a3": [{"id": 31, "title": "Intro Piece"}]}, "more_available": False, "last_token": "tok2"}
+PAGES = {
+    ("bandcamp.com", "/divided_eye"): '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(FAN_BLOB)) + '"></div>',
+    ("masot.bandcamp.com", "/album/archivos-pt-1"): album("Archivos Pt. 1", "Masot", "01", "02"),
+    ("masot.bandcamp.com", "/album/especies-endemicas"): album("Especies Endémicas", "Masot", "Intro Piece", "Especies Endémicas"),
+    ("whitepeach.bandcamp.com", "/album/wpr091-phoenix"): album("WPR091 - Phoenix", "Blocklab", "Phoenix", "Gargantua", date="01 Feb 2025 00:00:00 GMT"),
+    ("artikalmusic.bandcamp.com", "/album/half-empty"): album("Half Empty", "contactghost", "Half Empty", "Spelling Mitsake"),
+    ("siadic.bandcamp.com", "/track/air"): release("Air", "09 Sep 2024 00:00:00 GMT", "MusicRecording", {
+        "byArtist": {"name": "Siadic"}, "inAlbum": {"name": "Traction EP", "@id": "https://siadic.bandcamp.com/album/traction-ep"}}),
+    ("dubdenrecords.bandcamp.com", "/track/ydx-what-a-world"): release("YDX - What A World", "01 Jan 2026 00:00:00 GMT", "MusicRecording", {
+        "byArtist": {"name": "Dub Den Records"}, "inAlbum": {"name": "Dubs From The Den Vol. 7", "@id": "https://dubdenrecords.bandcamp.com/album/dubs-from-the-den-vol-7"}}),
+    ("somahuk.bandcamp.com", "/music"): grid("Somah UK", ("older", "Older Thing"), ("gnosis-railroads", "Gnosis / Railroads")),
+    ("somahuk.bandcamp.com", "/album/older"): album("Older Thing", "Somah", "Aaa", "Bbb"),
+    ("somahuk.bandcamp.com", "/album/gnosis-railroads"): album("Gnosis / Railroads", "Somah", "Gnosis", "Railroads"),
+    ("pugilist.bandcamp.com", "/music"): grid("Pugilist", ("blue", "Blue EP")),
+    ("pugilist.bandcamp.com", "/album/blue"): album("Blue EP", "Pugilist", "Blue", "Green"),
+    ("ccc.bandcamp.com", "/music"): grid("Cccc", ("conduit", "Conduit / Dissolution")),
+    ("ccc.bandcamp.com", "/album/conduit"): album("Conduit / Dissolution", "Aaaa & Cccc", "Deep Thing", "Dissolution"),
 }
 searched = []
 calls = {"expired_once": False}
@@ -89,14 +149,23 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text='<html><head><meta property="og:site_name" content="Deep Label"></head><body>'
                               '<ol id="music-grid"><li><a href="https://nightferry.bandcamp.com/album/first?label=9">'
                               '<p class="title">First</p></a></li></ol></body></html>')
+    if (host, path) in PAGES:
+        return httpx.Response(200, text=PAGES[(host, path)])
+    if host == "bandcamp.com" and path == "/api/fancollection/1/collection_items":
+        body = json.loads(request.content)
+        assert body["fan_id"] == 77 and body["older_than_token"] == "tok1"
+        return httpx.Response(200, json=FAN_MORE)
     if host == "bandcamp.com" and path == "/search":
-        searched.append(request.url.params["q"])
-        return httpx.Response(200, text="<ul>" + SEARCHES.get(request.url.params["q"], "") + "</ul>")
+        q, kind = request.url.params["q"], request.url.params["item_type"]
+        searched.append(q)
+        found = SEARCHES.get((kind, q), SEARCHES.get(q, "") if kind == "t" else "")
+        return httpx.Response(200, text="<ul>" + found + "</ul>")
     if host == "masot.bandcamp.com" and path == "/track/especies-end-micas":
         return httpx.Response(200, text=release("Especies Endémicas", "02 May 2023 00:00:00 GMT", "MusicRecording", {
             "byArtist": {"name": "Masot"}, "inAlbum": {"name": "Flora", "@id": "https://masot.bandcamp.com/album/flora"}}))
     if host == "api-v2.soundcloud.com" and path == "/search/users" and request.url.params.get("client_id") == CID:
-        users = {"Nobody Known": [{"username": "nobody known fan", "permalink_url": "https://soundcloud.com/fan", "followers_count": 9000},
+        users = {"Anecho": [{"username": "ANECHO", "permalink": "anechoicchamber", "permalink_url": "https://soundcloud.com/anechoicchamber"}],
+                 "Nobody Known": [{"username": "nobody known fan", "permalink_url": "https://soundcloud.com/fan", "followers_count": 9000},
                                   {"username": "Nobody Known", "permalink_url": "https://soundcloud.com/nobodyknown", "followers_count": 12}]}
         return httpx.Response(200, json={"collection": users.get(request.url.params["q"], [])})
     if host == "solo.bandcamp.com" and path == "/music":
@@ -289,12 +358,13 @@ def test_tracklist_lookup(client):
     assert r[5]["status"] == "soundcloud_search" and r[5]["url"].endswith("people?q=Ghost%20Person")
     # 6: same title by someone else is not accepted as a match
     assert r[6]["status"] == "soundcloud_search"
-    # 7: not on Bandcamp, but the artist's SoundCloud page is one you track
-    assert (r[7]["status"], r[7]["url"]) == ("soundcloud", "https://soundcloud.com/nightferry")
+    # 7: the artist has a Bandcamp page but the track isn't on it -> that page, labelled as such
+    assert (r[7]["status"], r[7]["url"]) == ("bandcamp_artist", "https://nightferry.bandcamp.com")
+    assert all(row["steps"] for row in got["rows"])       # every row says what was tried
 
     lines = client.get(f"/api/lookup/{got['id']}.csv").content.decode("utf-8-sig").splitlines()
-    assert lines[0] == "#,artist,title,link,site,release,year,result,found as,note"
-    assert lines[2] == "2,Masot,Especies Endémicas,https://masot.bandcamp.com/album/flora,Bandcamp,Flora,2023,Bandcamp release,Masot — Especies Endémicas,"
+    assert lines[0] == "#,artist,title,link,site,release,year,result,found as,note,steps"
+    assert lines[2].startswith("2,Masot,Especies Endémicas,https://masot.bandcamp.com/album/flora,Bandcamp,Flora,2023,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
 
     count = len(searched)
     again = run(listing)                                  # remembered: no new searches
@@ -303,6 +373,62 @@ def test_tracklist_lookup(client):
     assert len(searched) > count
     assert client.post("/api/lookup", content=b"Artist\tAlbum\nMasot\tFlora").status_code == 400
     assert client.get("/api/lookup/nope").status_code == 404
+
+
+def test_lookup_uses_purchases_and_artist_pages(client):
+    """The situations in a real list: purchases, label releases, clumsy search, removed tracks."""
+    assert client.post("/api/collection", json={"fan": "https://bandcamp.com/divided_eye"}).json()["fan"] == "divided_eye"
+    for _ in range(100):
+        time.sleep(0.02)
+        status = client.get("/api/collection").json()
+        if not status["syncing"] and status["synced_at"]:
+            break
+    assert (status["items"], status["tracks"], status["error"]) == (4, 4, "")
+
+    rows = [("Masot", "02"), ("Masot", "Especies Endémicas"), ("Blocklab", "Gargantua"), ("contactghost", "Spelling Mitsake"),
+            ("Siadic", "Air"), ("Somah", "Gnosis"), ("Pugilist", "Asteroids"), ("Anecho", "UFO"),
+            ("Allen Mock", "Dragon Language"), ("YDX", "What A World"), ("Aaaa & Bbbb Cccc", "Deep Thing")]
+    text = "Artist\tTitle\n" + "\n".join(f"{a}\t{t}" for a, t in rows)
+    job = client.post("/api/lookup?fresh=true", content=text.encode()).json()
+    for _ in range(300):
+        time.sleep(0.02)
+        got = client.get(f"/api/lookup/{job['id']}").json()
+        if got["finished"]:
+            break
+    assert got["finished"] and not got["warning"]
+    r = {(row["artist"], row["title"]): row for row in got["rows"]}
+    want = {   # (status, link, year)
+        # purchases: the track list that comes with the collection (a two-character title)
+        ("Masot", "02"): ("bandcamp", "https://masot.bandcamp.com/album/archivos-pt-1", "2026"),
+        # purchases: a release named after the track
+        ("Masot", "Especies Endémicas"): ("bandcamp", "https://masot.bandcamp.com/album/especies-endemicas", "2026"),
+        # purchases: on a label's page, track not in the collection's own list -> the release is opened
+        ("Blocklab", "Gargantua"): ("bandcamp", "https://whitepeach.bandcamp.com/album/wpr091-phoenix", "2025"),
+        ("contactghost", "Spelling Mitsake"): ("bandcamp", "https://artikalmusic.bandcamp.com/album/half-empty", "2026"),
+        # search finds the track; the link given is the release it is on
+        ("Siadic", "Air"): ("bandcamp", "https://siadic.bandcamp.com/album/traction-ep", "2024"),
+        # search finds nothing; the artist's page (named differently) is scanned release by release
+        ("Somah", "Gnosis"): ("bandcamp", "https://somahuk.bandcamp.com/album/gnosis-railroads", "2026"),
+        # the artist's page exists but the track is gone -> the page itself
+        ("Pugilist", "Asteroids"): ("bandcamp_artist", "https://pugilist.bandcamp.com", ""),
+        # no Bandcamp presence -> SoundCloud profile, matched on its name
+        ("Anecho", "UFO"): ("soundcloud", "https://soundcloud.com/anechoicchamber", ""),
+        # only findable as an album, on a label's page; the same title by someone else is ignored
+        ("Allen Mock", "Dragon Language"): ("bandcamp", "https://observatory-records.bandcamp.com/album/dragon-language", "2026"),
+        # only findable by title alone, listed as "Artist - Title" on a label compilation
+        ("YDX", "What A World"): ("bandcamp", "https://dubdenrecords.bandcamp.com/album/dubs-from-the-den-vol-7", "2026"),
+        # two artists: found on the second artist's own page
+        ("Aaaa & Bbbb Cccc", "Deep Thing"): ("bandcamp", "https://ccc.bandcamp.com/album/conduit", "2026"),
+    }
+    for key, expected in want.items():
+        assert (r[key]["status"], r[key]["url"], r[key]["year"]) == expected, (key, r[key])
+    assert r[("Masot", "02")]["note"] == "In your purchases" and r[("Somah", "Gnosis")]["note"] == "Found on the artist's page"
+    assert "Other" not in " ".join(r[("Somah", "Gnosis")]["steps"]) and any("somahuk" in s for s in r[("Somah", "Gnosis")]["steps"])
+
+    before = len(searched)                              # pages read once are not fetched again
+    client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSomah\tRailroads".encode())
+    time.sleep(0.5)
+    assert client.get("/api/collection").json()["items"] == 4
 
 
 def test_upgrade_from_first_version(client):

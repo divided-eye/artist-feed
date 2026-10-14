@@ -49,20 +49,33 @@ button.
 ## Tracklist lookup
 
 The **Tracklist** button takes a list of tracks and returns a link for each one:
-the Bandcamp release the track is on, or the artist's SoundCloud page when it
-isn't found on Bandcamp, plus the release year when Bandcamp gives one.
+the Bandcamp release the track is on, plus its release year. When the track
+isn't on Bandcamp, you get the artist's Bandcamp page if they have one, and
+otherwise their SoundCloud page.
 
 - Upload an Excel (.xlsx) or CSV file, or paste rows copied from a spreadsheet.
   With a header row, the **Artist** column and the first **Title** column are
   used; other columns (crate, series, a second "Title" for the mix, times) are
   ignored. Without a header it expects number, artist, title, or artist, title,
   or one "Artist - Title" per line.
-- Each row is checked against your own feed first, then Bandcamp's search, then
-  SoundCloud. It takes a few seconds per track; results appear as they arrive.
-- The **Result** column says how far to trust each link: "Bandcamp release" is
-  a match on both title and artist, "Bandcamp · check match" is a partial
-  match worth a look, "SoundCloud artist page" is the fallback, and
-  "SoundCloud search" means no profile matched and the link opens a search.
+- **Your Bandcamp username** (in the panel, or `BANDCAMP_FAN` in
+  `docker-compose.yml`) lets the lookup read your public collection page. Your
+  purchases are checked before anything is searched. They are read on the
+  first lookup, then topped up with new purchases once a day; **Read
+  purchases** re-reads everything. The collection must be public.
+- Each track is looked for, in order, in: your feed; your purchases; Bandcamp
+  search (as a track, by title alone, and as a release); and the artist's own
+  Bandcamp page, where every release is opened and its track list read, since
+  Bandcamp's search often misses tracks. Easy tracks take a second or two;
+  ones that need an artist's page scanned can take up to a minute the first
+  time. Pages read once are remembered.
+- The **Result** column says what each link is: "Bandcamp release" (title and
+  artist both matched), "Bandcamp · check match" (partial match, worth a
+  look), "Bandcamp artist page" (the artist is on Bandcamp but the track isn't
+  on any release there now), "SoundCloud artist page", or "SoundCloud search"
+  (no profile matched; the link opens a search).
+- **What was tried** under each result lists every step and what it found.
+  It is also in the export, in the "steps" column.
 - **Export results** downloads the list with links, release, year and result.
 - Looked-up tracks are remembered, so repeating a list is instant. Tick
   "Search again for saved results" to redo them. Up to 500 tracks at a time.
@@ -83,7 +96,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v9. Labels, track lists and durations for Bandcamp
+is v10. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

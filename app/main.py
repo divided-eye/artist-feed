@@ -15,7 +15,7 @@ from . import db, lookup, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "9"   # shown beside the title, so you can tell which version is running
+VERSION = "10"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -297,6 +297,27 @@ def _job(job_id: str):
     if job is None:
         raise HTTPException(404, "That lookup is no longer available; run it again.")
     return job
+
+
+class FanIn(BaseModel):
+    fan: str = ""
+
+
+@app.get("/api/collection")
+def collection():
+    return lookup.collection_status()
+
+
+@app.post("/api/collection")
+async def set_collection(body: FanIn):
+    """Set the Bandcamp account whose purchases the lookup uses, and read them."""
+    fan = body.fan.strip().rstrip("/").rsplit("/", 1)[-1]        # a name or the page's address
+    if fan and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", fan):
+        raise HTTPException(400, "That doesn't look like a Bandcamp username.")
+    db.kv_set("bandcamp_fan", fan)
+    if fan:
+        lookup.sync_in_background(full=True)
+    return lookup.collection_status()
 
 
 @app.post("/api/lookup", status_code=201)

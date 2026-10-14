@@ -62,6 +62,12 @@ CREATE INDEX IF NOT EXISTS posts_url ON posts(url);
 CREATE INDEX IF NOT EXISTS posts_when ON posts(COALESCE(published_at, first_seen) DESC);
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS lookup_cache(key TEXT PRIMARY KEY, result TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS web_cache(kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, at TEXT NOT NULL,
+  PRIMARY KEY(kind, key));
+CREATE TABLE IF NOT EXISTS collection_items(key TEXT PRIMARY KEY, fan TEXT NOT NULL, title TEXT NOT NULL,
+  band TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS collection_tracks(item_key TEXT NOT NULL, position INTEGER, title TEXT NOT NULL, artist TEXT);
+CREATE INDEX IF NOT EXISTS collection_tracks_item ON collection_tracks(item_key);
 """
 
 
