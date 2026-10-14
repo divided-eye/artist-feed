@@ -16,7 +16,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "33"   # shown beside the title, so you can tell which version is running
+VERSION = "34"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -278,11 +278,15 @@ def delete_account(account_id: int):
 
 def more_filters(year: Optional[str] = None, label: Optional[str] = None,
                  kind: Optional[str] = None, length: Optional[str] = None, hidden: Optional[str] = None,
-                 preview: Optional[str] = None):
+                 preview: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None,
+                 date_by: Optional[str] = None):
     """The optional filters every view and the export accept. hidden=1 also shows hidden items;
-    preview=1 leaves out tracks that can't be listened to yet."""
+    preview=1 leaves out tracks that can't be listened to yet; since/until (YYYY-MM-DD) keep a
+    date range, by posted date (date_by=posted, the default) or release date (date_by=released)."""
+    day = lambda v: v if v and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else None
     return {"year": year, "label": label, "kind": kind, "length": length, "hidden": hidden == "1",
-            "preview": preview == "1"}
+            "preview": preview == "1", "since": day(since), "until": day(until),
+            "date_by": "released" if date_by == "released" else "posted"}
 
 
 class HiddenIn(BaseModel):
@@ -341,13 +345,14 @@ def tracks(source: Optional[str] = None, artist_id: Optional[int] = None,
 @app.get("/api/tracks.csv")
 def tracks_csv(source: Optional[str] = None, artist_id: Optional[int] = None,
                q: Optional[str] = None, sort: str = "date", dir: str = "desc",
-               more: dict = Depends(more_filters)):
-    """The list view as a spreadsheet: every matching row, not just the ones on screen."""
+               max: Optional[int] = None, more: dict = Depends(more_filters)):
+    """The list view as a spreadsheet: every matching row, not just the ones on screen
+    (or the first `max` of them, when the list is limited to a number of results)."""
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(["artist", "label", "release", "track", "duration", "year",
                      "released", "posted", "site", "url"])
-    for r in db.tracks(source, artist_id, q, sort, dir, more=more):
+    for r in db.tracks(source, artist_id, q, sort, dir, limit=max if max and max > 0 else None, more=more):
         day = (r["published_at"] or "")[:10]
         site = SOURCES[r["source"]].label if r["source"] in SOURCES else r["source"]
         writer.writerow([r["artist"], r["label"], r["release"], r["track"],

@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 10             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 11             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -146,6 +146,7 @@ _REMIX_WORD = (r"remix|rmx|re-?mix|edit|re-?edit|bootleg|boot|flip|refix|re-?fix
                r"remake|re-?lick|mash-?up|redo|re-?twist|re-?fit|cover|treatment|version|mix|dub|vip")
 _REMIX_TAG = re.compile(r"[\(\[]\s*([^\)\]]*?)\s*\b(%s)\b\s*[\)\]]" % _REMIX_WORD, re.I)
 _VIP_TAG = re.compile(r"[\(\[]([^\)\]]*)\bvip\b([^\)\]]*)[\)\]]", re.I)
+_WIP = re.compile(r"[\(\[]\s*(?:wip|w\.i\.p\.?|work in progress)[^\)\]]*[\)\]]|(?<=\S)\s+[-–]?\s*\b(?:wip|w\.i\.p\.?)(?=\s*(?:$|[\(\[]))", re.I)
 _ANY_TAG = re.compile(r"[\(\[][^\)\]]*(?:mix|edit|version|remaster|bonus|free|dub|\b(?:%s)\b)[^\)\]]*[\)\]]" % _REMIX_WORD)
 # Words in such a tag that describe the version rather than name a person.
 _GENERIC = set("""original extended radio club instrumental vocal dub vip album single full short long clean
@@ -165,7 +166,8 @@ def _fold(text: str) -> str:
 def norm(text: str) -> str:
     """For comparing titles and names: no accents, case, punctuation, "feat. X", or version tags
     such as "(Original Mix)" and "(IOWLA Flip)" (who made a version is checked separately)."""
-    text = _ANY_TAG.sub(" ", _fold(text))
+    text = _WIP.sub(" ", _fold(text))            # "work in progress" is a status, not part of the title
+    text = _ANY_TAG.sub(" ", text)
     text = re.sub(r"\b(feat|ft|featuring)\b.*$", " ", text)
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
@@ -1629,7 +1631,7 @@ async def _run(job, fresh):
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
             if saved and not manual and saved.get("engine", 0) < ENGINE and (
                     saved.get("status") != "bandcamp" or vip_words(row["title"]) is not None
-                    or re.search(r"\d", norm(row["title"]))):
+                    or re.search(r"\d", norm(row["title"])) or _WIP.search(_fold(row["title"]))):
                 saved = None                               # a miss from an older version: try again
             if saved and not manual:
                 saved = with_current_fallback(saved)

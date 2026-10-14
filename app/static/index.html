@@ -108,17 +108,17 @@
   .grip::after { content: ""; position: absolute; top: 7px; bottom: 7px; right: 3px; width: 2px; border-radius: 1px; background: var(--line); }
   .grip:hover::after, .grip.dragging::after { background: var(--accent); }
   body.resizing { cursor: col-resize; user-select: none; }
-  .list th button { all: unset; cursor: pointer; display: block; padding: 9px 14px 9px 10px; width: 100%; box-sizing: border-box; }
-  .list th button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .list th button:disabled { cursor: default; }
-  .list th button:hover, .list th[aria-sort] button { color: var(--text); }
-  .list th button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .list th .thb { all: unset; cursor: pointer; display: block; padding: 9px 14px 9px 10px; width: 100%; box-sizing: border-box; }
+  .list th .thb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list th .thb:disabled { cursor: default; }
+  .list th .thb:hover, .list th[aria-sort] .thb { color: var(--text); }
+  .list th .thb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .list td { padding: 7px 10px; border-right: 0; vertical-align: middle; }
   .list tr:last-child td { border-bottom: 0; }
   .list tbody tr:hover td { background: var(--panel-2); }
   .list td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list td.dim { color: var(--muted); }
-  .list td.n, .list th.n button { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .list td.n, .list th.n .thb { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .list td.go { padding: 4px 6px 4px 10px; }
   .list td.site a { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
   .list td.site a:hover { color: var(--text); }
@@ -201,6 +201,24 @@
   .tools.second { padding-top: 8px; } .tools.second input { width: 170px; }
   .tools.second select { padding: 4px 8px; font-size: 13px; }
   .pair { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .range { display: inline-flex; gap: 6px; align-items: center; }
+  input[type=date] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; color-scheme: dark; }
+  input[type=date].on { border-color: var(--accent); }
+  .colwrap { position: relative; }
+  .colmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 8; width: 250px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  .colmenu-hint { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .colmenu ul { list-style: none; margin: 0 0 10px; padding: 0; }
+  .colmenu li { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+  .colmenu li label { flex: 1; display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+  .colmenu li button { all: unset; cursor: pointer; width: 24px; height: 24px; text-align: center; border-radius: 5px; color: var(--muted); }
+  .colmenu li button:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+  .colmenu li button:disabled { opacity: .3; cursor: default; }
+  .colmenu li button:focus-visible { outline: 2px solid var(--accent); }
+  .list th.dragging { opacity: .45; }
+  .list th.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+  .list th.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
+  .list th[draggable=true] .thb { cursor: grab; }
   label.opt { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
   [hidden] { display: none !important; }
 </style>
@@ -237,6 +255,23 @@
     </select>
     <label class="opt" title="Leave out Bandcamp tracks that can't be listened to yet, such as the unreleased tracks of a pre-order"><input type="checkbox" id="fPreview"> Hide no-preview tracks</label>
     <label class="opt" title="Show the items you have hidden, so you can put them back"><input type="checkbox" id="fHidden"> Show hidden (<span id="hiddenCount">0</span>)</label>
+    <select id="fRange" aria-label="Filter by date">
+      <option value="">Any date</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option><option value="365">Last 12 months</option><option value="custom">Date range…</option>
+    </select>
+    <span id="rangeBox" class="range" hidden>
+      <input type="date" id="fSince" aria-label="From date" title="From this date">
+      <span class="lbl">to</span>
+      <input type="date" id="fUntil" aria-label="To date" title="Up to and including this date">
+    </span>
+    <select id="fDateBy" aria-label="Which date the date filter uses" title="Which date the date filter uses" hidden>
+      <option value="posted">by posted date</option><option value="released">by release date</option>
+    </select>
+    <span class="lbl">Show</span>
+    <select id="fMax" aria-label="How many results to show" title="Limit how many results are shown">
+      <option value="">All results</option><option value="25">First 25</option><option value="50">First 50</option>
+      <option value="100">First 100</option><option value="250">First 250</option><option value="500">First 500</option>
+    </select>
     <button class="btn small" id="clearFilters" hidden>Clear filters</button>
     <div class="spacer"></div>
     <span class="lbl">Page width</span>
@@ -244,6 +279,14 @@
       <option value="1280px">Standard</option><option value="1600px">Wide</option><option value="100vw">Full window</option>
     </select>
     <button class="btn small" id="resetCols" hidden title="Put the list columns back to their original widths">Reset column widths</button>
+    <span class="colwrap">
+      <button class="btn small" id="colsBtn" hidden aria-expanded="false" aria-controls="colsMenu" title="Choose which list columns are shown, and their order">Columns</button>
+      <div class="colmenu" id="colsMenu" hidden role="dialog" aria-label="List columns">
+        <div class="colmenu-hint">Tick the columns to show. Use the arrows here, or drag a heading in the list, to reorder.</div>
+        <ul id="colsList"></ul>
+        <button class="btn small" id="colsReset">Reset to default</button>
+      </div>
+    </span>
   </div>
 </header>
 
@@ -325,7 +368,7 @@
 <script>
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
-let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "" }, offset = 0, wasRefreshing = false;
+let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted" }, offset = 0, wasRefreshing = false;
 let hideNoPreview = false;      // a standing preference, kept in this browser; not cleared by "Clear filters"
 try { hideNoPreview = localStorage.getItem("hideNoPreview") === "1"; } catch {}
 let view = "grid", sort = { key: "posted", dir: "desc" }, playing = null;
@@ -406,6 +449,7 @@ async function setHidden(postId, hidden, nodes) {
   $("hiddenCount").textContent = r.hidden;
   if (filter.hidden) return loadFeed();                 // showing hidden items: redraw with the new state
   nodes.forEach(n => n.remove());
+  listRows = listRows.filter(x => x.post_id !== postId);
   offset = Math.max(0, offset - (view === "list" ? nodes.length : 1));
   if (!$("grid").children.length && !$("listBody").children.length) loadFeed();
 }
@@ -446,7 +490,12 @@ const FILTER_SELECTS = { year: "fYear", label: "fLabel", kind: "fKind", length: 
 
 function syncFilterControls() {
   for (const k of EXTRA_FILTERS) { $(FILTER_SELECTS[k]).value = filter[k]; $(FILTER_SELECTS[k]).classList.toggle("on", !!filter[k]); }
-  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden);
+  $("fRange").value = filter.range; $("fRange").classList.toggle("on", !!filter.range);
+  $("rangeBox").hidden = filter.range !== "custom"; $("fDateBy").hidden = !filter.range;
+  $("fSince").value = filter.since; $("fUntil").value = filter.until; $("fDateBy").value = filter.dateBy;
+  $("fSince").classList.toggle("on", !!filter.since); $("fUntil").classList.toggle("on", !!filter.until);
+  $("fMax").classList.toggle("on", !!maxResults);
+  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden || filter.range);
 }
 
 async function loadFacets() {
@@ -470,30 +519,72 @@ function filterQuery(extra) {
   for (const k of EXTRA_FILTERS) if (filter[k]) q.set(k, filter[k]);
   if (filter.hidden) q.set("hidden", "1");
   if (hideNoPreview) q.set("preview", "1");
+  const [since, until] = dateRange();
+  if (since) q.set("since", since);
+  if (until) q.set("until", until);
+  if (since || until) q.set("date_by", filter.dateBy);
   return q;
 }
+
+// The date filter as [from, to] days (YYYY-MM-DD, either may be empty).
+function dateRange() {
+  if (!filter.range) return ["", ""];
+  if (filter.range === "custom") return [filter.since, filter.until];
+  const d = new Date(); d.setDate(d.getDate() - Number(filter.range));
+  const pad = n => String(n).padStart(2, "0");
+  return [`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, ""];
+}
+
+// "Show: first N" caps how many results are listed (and exported); 0 means all of them.
+let maxResults = 0;
+try { maxResults = Number(localStorage.getItem("maxResults")) || 0; } catch {}
+const pageSize = size => maxResults ? Math.max(0, Math.min(size, maxResults - offset)) : size;
 
 function showEmpty(none) {
   $("empty").hidden = !none;
   if (!none) return;
-  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]);
+  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]) || filter.range;
   $("empty").replaceChildren(el("b", { text: !artists.length ? "No artists yet" : filtered ? "Nothing matches" : "Nothing here yet" }),
     !artists.length ? "Use the Tracked Artists button to add your first one." : filtered ? "Try a different search or filter." : "New posts appear after the next refresh.");
 }
 
 async function loadGrid(reset) {
-  const posts = await api("/api/feed?" + filterQuery({ limit: PAGE, offset }));
+  const want = pageSize(PAGE);
+  const posts = want ? await api("/api/feed?" + filterQuery({ limit: want, offset })) : [];
   if (reset) $("grid").replaceChildren();
   posts.forEach(p => $("grid").append(card(p)));
   offset += posts.length;
-  $("moreBtn").hidden = posts.length < PAGE;
+  $("moreBtn").hidden = posts.length < PAGE || (maxResults && offset >= maxResults);
 }
 
-const LIST_COLUMNS = [["artist", "Artist"], ["label", "Label"], ["release", "Release"], ["track", "Track"],
-  ["duration", "Duration", "n"], ["date", "Year", "n"], ["released", "Released", "n"], ["posted", "Posted", "n"]];
+// The list's columns: [key, heading, heading class, sortable]. The play and hide columns are fixed at the ends.
+const LIST_COLUMNS = [["artist", "Artist", "", true], ["track", "Track", "", true], ["duration", "Duration", "n", true],
+  ["date", "Year", "n", true], ["released", "Released", "n", true], ["posted", "Posted", "n", true],
+  ["release", "Release", "", true], ["label", "Label", "", true], ["site", "Site", "", false]];
+const COL_INFO = Object.fromEntries(LIST_COLUMNS.map(c => [c[0], c]));
+const DEFAULT_ORDER = LIST_COLUMNS.map(c => c[0]);
+// Which columns show and in what order; remembered in this browser. Change with the Columns button or by dragging a heading.
+let colOrder = [...DEFAULT_ORDER], colHidden = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem("listLayout") || "{}");
+  const order = (saved.order || []).filter(k => COL_INFO[k]);
+  colOrder = [...new Set([...order, ...DEFAULT_ORDER])];
+  colHidden = new Set((saved.hidden || []).filter(k => COL_INFO[k]));
+  if (colHidden.size >= colOrder.length) colHidden.clear();
+} catch {}
+const shownCols = () => ["go", ...colOrder.filter(k => !colHidden.has(k)), "hide"];
+const defaultLayout = () => colOrder.every((k, i) => k === DEFAULT_ORDER[i]) && !colHidden.size;
+function saveLayout() { try { localStorage.setItem("listLayout", JSON.stringify({ order: colOrder, hidden: [...colHidden] })); } catch {} }
+function moveCol(key, toIndex) {
+  const from = colOrder.indexOf(key);
+  if (from < 0) return;
+  colOrder.splice(from, 1);
+  colOrder.splice(Math.max(0, Math.min(colOrder.length, toIndex)), 0, key);
+  saveLayout();
+}
 
 // Column widths (px) in the list. Drag the edge of a heading to resize; widths are remembered in this browser.
-const COL_DEFAULTS = { go: 48, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 116, posted: 116, site: 130, hide: 40 };
+const COL_DEFAULTS = { go: 48, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 124, posted: 124, site: 130, hide: 40 };
 const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "released", "posted", "site", "hide"];
 const COL_MIN = 48;
 let colW = { ...COL_DEFAULTS };
@@ -504,7 +595,7 @@ try {
 
 // The page widens to fit the list (up to the window) so resized columns don't force sideways scrolling.
 function fitPage(tableWidth) {
-  const total = tableWidth || COL_ORDER.reduce((sum, k) => sum + colW[k], 0);
+  const total = tableWidth || shownCols().reduce((sum, k) => sum + colW[k], 0);
   document.documentElement.style.setProperty("--fit", view === "list" ? (total + 34) + "px" : "0px");
 }
 
@@ -517,11 +608,14 @@ function setPageWidth(value) {
 
 function applyColumns() {
   const cols = $("listCols").children;
-  COL_ORDER.forEach((k, i) => { if (cols[i]) cols[i].style.width = colW[k] + "px"; });
-  const total = COL_ORDER.reduce((sum, k) => sum + colW[k], 0);
+  const shown = shownCols();
+  shown.forEach((k, i) => { if (cols[i]) cols[i].style.width = colW[k] + "px"; });
+  const total = shown.reduce((sum, k) => sum + colW[k], 0);
   $("listTable").style.width = total + "px";
   fitPage(total);
   $("resetCols").hidden = view !== "list" || COL_ORDER.every(k => colW[k] === COL_DEFAULTS[k]);
+  $("colsBtn").hidden = view !== "list";
+  if (view !== "list") colsMenu(false);
 }
 
 function saveColumns() { try { localStorage.setItem("listColumns", JSON.stringify(colW)); } catch {} }
@@ -551,14 +645,80 @@ function grip(key, label) {
 }
 
 function listHead() {
-  const th = ([key, label, cls]) => el("th", { class: cls || "", "aria-sort": sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : null },
-    el("button", { title: "Sort by " + label.toLowerCase(), onclick: () => {
+  const clearMarks = () => $("listHead").querySelectorAll("th").forEach(x => x.classList.remove("drop-before", "drop-after", "dragging"));
+  const th = key => {
+    const [, label, cls, sortable] = COL_INFO[key];
+    const sortBy = () => {
       sort = sort.key === key ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: ["date", "released", "posted", "duration"].includes(key) ? "desc" : "asc" };
       loadFeed();
-    } }, label + (sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "")), grip(key, label));
-  $("listCols").replaceChildren(...COL_ORDER.map(() => el("col")));
-  $("listHead").replaceChildren(el("tr", {}, el("th", {}), ...LIST_COLUMNS.map(th), el("th", {}, el("button", { disabled: "", text: "Site" }), grip("site", "Site")), el("th", {})));
+    };
+    // Not a <button>: browsers won't start a drag from one, and the heading is dragged to move its column.
+    const btn = el("div", { class: "thb", role: "button", tabindex: "0", "aria-disabled": sortable ? null : "true",
+      title: (sortable ? "Sort by " + label.toLowerCase() + " · " : "") + "drag to move this column" },
+      label + (sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""));
+    if (sortable) {
+      btn.addEventListener("click", sortBy);
+      btn.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sortBy(); } });
+    }
+    const cell = el("th", { class: cls || "", "data-col": key, draggable: "true", "aria-sort": sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : null }, btn, grip(key, label));
+    // Drag a heading onto another to move its column there.
+    cell.addEventListener("dragstart", e => {
+      if (e.target.closest && e.target.closest(".grip")) { e.preventDefault(); return; }      // the edge resizes
+      dragCol = key; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", key); cell.classList.add("dragging");
+    });
+    cell.addEventListener("dragend", () => { dragCol = null; clearMarks(); });
+    cell.addEventListener("dragover", e => {
+      if (!dragCol || dragCol === key) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      const box = cell.getBoundingClientRect(), after = e.clientX > box.left + box.width / 2;
+      clearMarks(); cell.classList.add(after ? "drop-after" : "drop-before");
+    });
+    cell.addEventListener("drop", e => {
+      if (!dragCol || dragCol === key) return;
+      e.preventDefault();
+      const box = cell.getBoundingClientRect(), after = e.clientX > box.left + box.width / 2, moved = dragCol;
+      colOrder.splice(colOrder.indexOf(moved), 1);
+      colOrder.splice(colOrder.indexOf(key) + (after ? 1 : 0), 0, moved);
+      dragCol = null; saveLayout(); relayList();
+    });
+    return cell;
+  };
+  const shown = shownCols();
+  $("listCols").replaceChildren(...shown.map(() => el("col")));
+  $("listHead").replaceChildren(el("tr", {}, ...shown.map(k => k === "go" || k === "hide" ? el("th", {}) : th(k))));
   applyColumns();
+}
+let dragCol = null;
+
+// Redraw the list after its columns change, keeping the rows already loaded.
+let listRows = [];
+function relayList() {
+  listHead();
+  $("listBody").replaceChildren(...listRows.map(listRow));
+  renderColsMenu();
+}
+
+function renderColsMenu() {
+  $("colsList").replaceChildren(...colOrder.map((key, i) => {
+    const label = COL_INFO[key][1];
+    const box = el("input", { type: "checkbox" });
+    box.checked = !colHidden.has(key);
+    box.disabled = box.checked && colOrder.length - colHidden.size <= 1;      // always keep one column
+    box.addEventListener("change", () => { box.checked ? colHidden.delete(key) : colHidden.add(key); saveLayout(); relayList(); });
+    const arrow = (text, to, name) => {
+      const b = el("button", { text, title: `Move ${label} ${name}`, "aria-label": `Move ${label} ${name}`,
+        onclick: () => { moveCol(key, to); relayList(); const same = $("colsList").children[to]; if (same) (same.querySelectorAll("button")[name === "up" ? 0 : 1] || same.querySelector("button")).focus(); } });
+      b.disabled = to < 0 || to >= colOrder.length;
+      return b;
+    };
+    return el("li", {}, el("label", {}, box, label), arrow("↑", i - 1, "up"), arrow("↓", i + 1, "down"));
+  }));
+  $("colsReset").disabled = defaultLayout() && shownCols().every(k => colW[k] === COL_DEFAULTS[k]);
+}
+
+function colsMenu(open) {
+  $("colsMenu").hidden = !open; $("colsBtn").setAttribute("aria-expanded", String(open));
+  if (open) renderColsMenu();
 }
 
 function listRow(r) {
@@ -572,16 +732,18 @@ function listRow(r) {
   const cell = (text, cls) => el("td", { class: cls, title: text || null, text: text || "" });
   tr.append(
     el("td", { class: "go" }, player(it)
-      ? el("button", { class: "rowplay" + (it.nostream ? " nostream" : ""), "aria-label": `Play ${name}`, text: it.nostream ? "▷" : "▶", onclick: () => play(it, tr),
+      ? el("button", { class: "rowplay" + (it.nostream ? " nostream" : ""), "aria-label": `Play ${name}`, text: it.nostream ? "▷" : "▶", onclick: () => { r.played = 1; play(it, tr); },
           title: it.nostream ? "No preview yet: Bandcamp isn't streaming this track (usually a pre-order). The player will show the track the release does have." : null })
       : el("a", { class: "rowplay", href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${name} on ${s.label}`, text: "↗" })),
-    cell(r.artist, "t"), cell(r.label, "t dim"), cell(r.release, "t"), cell(r.track, "t"),
-    el("td", { class: "n dim", text: clock(r.duration) }),
-    el("td", { class: "n dim", text: (r.published_at || "").slice(0, 4), title: r.published_at ? "Released " + r.published_at.slice(0, 10) : null }),
-    el("td", { class: "n dim", text: (r.published_at || "").slice(0, 10), title: r.published_at ? "Release date given by the artist" : "No release date given" }),
-    el("td", { class: "n dim", text: (r.posted || "").slice(0, 10), title: r.posted ? "Posted " + new Date(r.posted).toLocaleString() : null }),
-    el("td", { class: "site" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", title: `Open on ${s.label}` },
-      el("span", { class: "dot", style: `background:${s.color}` }), s.label)),
+    ...colOrder.filter(k => !colHidden.has(k)).map(k => ({
+      artist: () => cell(r.artist, "t"), label: () => cell(r.label, "t dim"), release: () => cell(r.release, "t"), track: () => cell(r.track, "t"),
+      duration: () => el("td", { class: "n dim", text: clock(r.duration) }),
+      date: () => el("td", { class: "n dim", text: (r.published_at || "").slice(0, 4), title: r.published_at ? "Released " + r.published_at.slice(0, 10) : null }),
+      released: () => el("td", { class: "n dim", text: (r.published_at || "").slice(0, 10), title: r.published_at ? "Release date given by the artist" : "No release date given" }),
+      posted: () => el("td", { class: "n dim", text: (r.posted || "").slice(0, 10), title: r.posted ? "Posted " + new Date(r.posted).toLocaleString() : null }),
+      site: () => el("td", { class: "site" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", title: `Open on ${s.label}` },
+        el("span", { class: "dot", style: `background:${s.color}` }), s.label)),
+    })[k]()),
     el("td", { class: "hide" }, el("button", { class: "rowhide", text: r.hidden ? "↺" : "✕",
       title: r.hidden ? "Put this release back in the feed" : "Hide this release from the feed",
       "aria-label": (r.hidden ? "Put back in the feed: " : "Hide from the feed: ") + (r.release || name),
@@ -590,12 +752,14 @@ function listRow(r) {
 }
 
 async function loadList(reset) {
-  const rows = await api("/api/tracks?" + filterQuery({ limit: LIST_PAGE, offset, sort: sort.key, dir: sort.dir }));
-  if (reset) { $("listBody").replaceChildren(); listHead(); }
+  const want = pageSize(LIST_PAGE);
+  const rows = want ? await api("/api/tracks?" + filterQuery({ limit: want, offset, sort: sort.key, dir: sort.dir })) : [];
+  if (reset) { $("listBody").replaceChildren(); listRows = []; listHead(); }
+  listRows.push(...rows);
   rows.forEach(r => $("listBody").append(listRow(r)));
   offset += rows.length;
-  $("moreBtn").hidden = rows.length < LIST_PAGE;
-  $("exportBtn").href = "/api/tracks.csv?" + filterQuery({ sort: sort.key, dir: sort.dir });
+  $("moreBtn").hidden = rows.length < LIST_PAGE || (maxResults && offset >= maxResults);
+  $("exportBtn").href = "/api/tracks.csv?" + filterQuery({ sort: sort.key, dir: sort.dir, ...(maxResults ? { max: maxResults } : {}) });
 }
 
 // The title bar's height changes as it wraps; the list frame is sized to what is left of the window.
@@ -615,6 +779,8 @@ async function loadFeed(reset = true) {
   $("exportBtn").hidden = !list;
   fitPage();
   $("resetCols").hidden = !list || COL_ORDER.every(k => colW[k] === COL_DEFAULTS[k]);
+  $("colsBtn").hidden = !list;
+  if (!list) colsMenu(false);
   syncFilterControls();
   showEmpty(offset === 0);
 }
@@ -1057,11 +1223,22 @@ $("pageWidth").onchange = e => setPageWidth(e.target.value);
 { let w = "1280px"; try { w = localStorage.getItem("pageWidth") || w; } catch {} setPageWidth(w); }
 for (const k of EXTRA_FILTERS) $(FILTER_SELECTS[k]).onchange = e => { filter[k] = e.target.value; loadFeed(); };
 $("clearFilters").onclick = () => {
-  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "" });
+  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "" });
   $("fHidden").checked = false;
   $("search").value = ""; $("artistFilter").value = ""; renderChips(); loadFeed();
 };
 $("resetCols").onclick = () => { colW = { ...COL_DEFAULTS }; saveColumns(); applyColumns(); };
+$("colsBtn").onclick = e => { e.stopPropagation(); colsMenu($("colsMenu").hidden); };
+$("colsMenu").onclick = e => e.stopPropagation();
+document.addEventListener("click", () => { if (!$("colsMenu").hidden) colsMenu(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("colsMenu").hidden) { colsMenu(false); $("colsBtn").focus(); } });
+$("colsReset").onclick = () => { colOrder = [...DEFAULT_ORDER]; colHidden.clear(); colW = { ...COL_DEFAULTS }; saveLayout(); saveColumns(); relayList(); };
+$("fRange").onchange = e => { filter.range = e.target.value; syncFilterControls(); if (filter.range !== "custom" || filter.since || filter.until) loadFeed(); };
+$("fSince").onchange = e => { filter.since = e.target.value; loadFeed(); };
+$("fUntil").onchange = e => { filter.until = e.target.value; loadFeed(); };
+$("fDateBy").onchange = e => { filter.dateBy = e.target.value; loadFeed(); };
+$("fMax").value = maxResults ? String(maxResults) : "";
+$("fMax").onchange = e => { maxResults = Number(e.target.value) || 0; try { localStorage.setItem("maxResults", String(maxResults)); } catch {} loadFeed(); };
 let searchTimer;
 $("search").oninput = e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filter.q = e.target.value; loadFeed(); }, 250); };
 $("artistFilter").onchange = e => { filter.artist_id = e.target.value; loadFeed(); };

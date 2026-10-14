@@ -334,6 +334,14 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
     elif more.get("label"):
         where.append("p.label=?")
         args.append(more["label"])
+    if more.get("since") or more.get("until"):
+        when = WHEN if more.get("date_by") == "released" else f"COALESCE({POSTED}, {WHEN})"
+        if more.get("since"):
+            where.append(f"substr({when},1,10)>=?")
+            args.append(more["since"])
+        if more.get("until"):
+            where.append(f"substr({when},1,10)<=?")
+            args.append(more["until"])
     if more.get("kind") in ("album", "track"):
         where.append("p.kind=?")
         args.append(more["kind"])

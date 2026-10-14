@@ -1,10 +1,10 @@
 # Artist Feed: User Guide
 
-Oct 10, 2026
+Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 33. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 34. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -63,14 +63,14 @@ The feed shows everything collected from your tracked artists, newest first. It 
 ### Views
 
 - **Grid** shows one card per release or upload, with cover, artist, label, track count, length and age.
-- **List** shows one row per track: artist, label, release, track, duration, year, release date, posted date and site.
+- **List** shows one row per track: artist, track, duration, year, release date, posted date, release, label and site. It opens sorted by Posted, newest first.
 - The app remembers which view you last used.
 
 ### List view
 
 - Click a column heading to sort by it. Click again to reverse.
 - Drag the right edge of a heading to resize the column. Double-click the edge to reset it. **Reset column widths** resets all of them.
-- The headings stay in place while the list scrolls.
+- The headings stay in place while the list scrolls. Drag a heading onto another to move that column. The Columns button (List view only) opens a menu to tick columns on or off and reorder them with arrows; Reset to default restores the original order, visibility and widths. The layout is remembered in this browser.
 - **Export list** downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
 - **Released** is the release date the artist set. **Posted** is when the item went up on the site. Posted is blank when the site does not give it.
 
@@ -87,7 +87,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 | Clear filters | Resets everything above except Hide no-preview tracks |
 | Page width | Standard, Wide or Full window |
 
-Filters apply to both views and to the export.
+Filters apply to both views and to the export. Two more controls sit in the same row. The date menu keeps the last 7, 30, 90 days or 12 months, or a range you pick with two dates; a second menu chooses whether that goes by posted date (the release date is used where a post has none) or by release date. Show limits the page to the first 25 to 500 results in the current sort order, and the export is limited the same way.
 
 ### Listening
 
@@ -244,7 +244,7 @@ The search pass tries these in order and stops at the first confident match:
 - A match needs both the title and the artist. Short or common titles such as "Air" or "02" never match on title alone.
 - The artist counts as matching when named in the track's credit, an "Artist - Title" track name, the release title, or the page address. Labels often credit a release to themselves and name the artist only there.
 - Track names written as a numbered list in a release's description count as tracks of that release.
-- When the same track is on a release you own and on another, the one you own is returned. Numbers in a title must agree exactly, so "Hybrid Kit 6" does not match "Hybrid Kit 2". A track page is swapped for the album it belongs to.
+- When the same track is on a release you own and on another, the one you own is returned. Numbers in a title must agree exactly, so "Hybrid Kit 6" does not match "Hybrid Kit 2". A WIP marker ("Title WIP", "Title (WIP)") is a status, not part of the title, and is ignored. A track page is swapped for the album it belongs to.
 
 ## What to personalise
 
@@ -411,10 +411,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, version 34 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 34 | List columns can be dragged to reorder and shown or hidden from a Columns menu; new default order Artist, Track, Duration, Year, Released, Posted, Release, Label, Site. Date filter (last N days or a date range, by posted or release date). Show-first-N limit on results and export. WIP markers ignored when matching titles. Guide included in the zip under docs. |
 | 33 | Numbers in titles must agree: "Hybrid Kit 6" no longer matches "Hybrid Kit 2" or "Hybrid Kit". Saved results for titles containing a number are looked up again once. |
 | 32 | Tracked Artists: cleared cells are remembered and skipped by Find missing links; removed guesses are never offered again; per-row Rescan checkbox to search a row's cleared cells again. |
 | 31 | Tracked Artists: Find missing links fills empty Bandcamp, SoundCloud and name cells with highlighted guesses that clear on save. Paste-a-list box under the table. Clear All button with confirmation. |

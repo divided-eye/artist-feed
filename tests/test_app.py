@@ -1051,3 +1051,29 @@ def test_numbers_in_titles_must_agree():
     assert lookup.match_in_release("Allen Mock", "Hybrid Kit", epoch) == ("bandcamp", "Hybrid Kit")
     assert lookup.match_in_release("Allen Mock", "Beat 538", epoch)[0] == "bandcamp"
     assert lookup.match_in_release("Allen Mock", "10000h", epoch)[0] == "bandcamp"
+
+
+def test_date_range_and_result_cap(client):
+    client.post("/api/artists", json={"accounts": [
+        {"source": "bandcamp", "handle": "nightferry"}, {"source": "soundcloud", "handle": "nightferry"}]})
+    wait(client)
+    every = client.get("/api/tracks?limit=1000").json()
+    assert len(every) >= 3
+    days = sorted({(r["posted"] or r["released"] or "")[:10] for r in every} - {""})
+    mid = days[len(days) // 2]
+    got = client.get(f"/api/tracks?limit=1000&since={mid}").json()
+    assert got and len(got) < len(every) and all((r["posted"] or r["released"])[:10] >= mid for r in got)
+    got = client.get(f"/api/tracks?limit=1000&until={days[0]}&date_by=released").json()
+    assert all(r["released"][:10] <= days[0] for r in got)
+    assert len(client.get(f"/api/feed?since={mid}").json()) < len(client.get("/api/feed").json())
+    assert client.get("/api/tracks?since=not-a-date&limit=1000").json() == every          # ignored, not an error
+    lines = client.get("/api/tracks.csv?max=2").content.decode("utf-8-sig").strip().splitlines()
+    assert len(lines) == 3                                                               # header + 2
+
+
+def test_wip_is_not_part_of_a_title():
+    from app import lookup
+    for written in ("Sunken (WIP)", "Sunken [WIP v3]", "Sunken WIP", "Sunken - wip", "Sunken (Work In Progress)"):
+        assert lookup.norm(written) == "sunken", written
+    assert lookup.norm("Swip Wip Song") == "swip wip song" and lookup.norm("Wipeout") == "wipeout"
+    assert lookup.judge(*lookup.score("A", "Sunken WIP", {"name": "Sunken", "artists": ["A"]})) == "bandcamp"
