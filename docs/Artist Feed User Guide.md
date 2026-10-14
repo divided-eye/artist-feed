@@ -80,7 +80,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 | --- | --- |
 | All / Bandcamp / SoundCloud | Show one site or both |
 | All artists | Show one tracked artist |
-| Search | Matches artist, label, release and track names |
+| Search | Matches artist, label, release and track names, a moment after you stop typing (Enter searches at once). If the feed can't be loaded, a red message beside the status line says so. |
 | Year, Label, Type, Length | Narrow by release year, label (or no label), albums and EPs versus single tracks, and track length |
 | Hide no-preview tracks | Leaves out Bandcamp tracks that cannot be played yet |
 | Show hidden | Shows releases you have hidden, dimmed, so you can restore them |
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 54 | Feed search: only the newest search is shown when answers arrive out of order, Enter searches at once, and a failed load is reported instead of silently leaving the old list. |
 | 53 | Forget in Saved results opens a choice: Saved answer, List entry (including the closest list entry), or Both. |
 | 52 | Forget is now on every row in Saved results, including tracks that are only in your imported list, and it can take a track out of your list. |
 | 51 | Saved results: tracks whose saved name doesn't match your list exactly show the closest list entry, marked as such. Edit spelling / Add spelling sets a track's artist and title spelling in place. |

@@ -281,7 +281,7 @@
     </div>
     <div class="spacer"></div>
     <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
-    <span class="status" id="status"></span>
+    <span class="status" id="status"></span> <span class="error" id="feedError" role="alert"></span>
     <div class="actions">
       <button class="btn" id="refreshBtn" title="Check every tracked artist for new posts now">Refresh Feed</button>
       <button class="btn" id="lookupBtn" aria-pressed="false" title="Find Bandcamp or SoundCloud links for a tracklist">Link Finder</button>
@@ -621,9 +621,10 @@ function showEmpty(none) {
     !artists.length ? "Use the Tracked Artists button to add your first one." : filtered ? "Try a different search or filter." : "New posts appear after the next refresh.");
 }
 
-async function loadGrid(reset) {
+async function loadGrid(reset, seq) {
   const want = pageSize(PAGE);
   const posts = want ? await api("/api/feed?" + filterQuery({ limit: want, offset })) : [];
+  if (seq !== feedSeq) return false;               // a newer search or filter has started
   if (reset) $("grid").replaceChildren();
   posts.forEach(p => $("grid").append(card(p)));
   offset += posts.length;
@@ -824,9 +825,10 @@ function listRow(r) {
   return tr;
 }
 
-async function loadList(reset) {
+async function loadList(reset, seq) {
   const want = pageSize(LIST_PAGE);
   const rows = want ? await api("/api/tracks?" + filterQuery({ limit: want, offset, sort: sort.key, dir: sort.dir })) : [];
+  if (seq !== feedSeq) return false;               // a newer search or filter has started
   if (reset) { $("listBody").replaceChildren(); listRows = []; listHead(); }
   listRows.push(...rows);
   rows.forEach(r => $("listBody").append(listRow(r)));
@@ -842,11 +844,22 @@ function measureBar() {
 window.addEventListener("resize", measureBar);
 if (window.ResizeObserver) new ResizeObserver(measureBar).observe(document.querySelector("body > header"));
 
+// Each load is numbered: when you type faster than the server answers, only the newest answer is shown.
+let feedSeq = 0;
 async function loadFeed(reset = true) {
-  if (reset) offset = 0;
+  const seq = ++feedSeq;
   measureBar();
   const list = view === "list";
-  await (list ? loadList(reset) : loadGrid(reset));
+  try {
+    if (reset) offset = 0;
+    if (await (list ? loadList(reset, seq) : loadGrid(reset, seq)) === false) return;
+    $("feedError").textContent = "";
+  } catch (x) {
+    if (seq !== feedSeq) return;
+    $("feedError").textContent = "Couldn't load the feed: " + x.message.replace(/\.?$/, ".") + " Nothing below has changed.";
+    syncFilterControls();
+    return;
+  }
   $("grid").hidden = list || offset === 0;
   $("listWrap").hidden = !list || offset === 0;
   $("exportBtn").hidden = !list;
@@ -1640,6 +1653,7 @@ $("fMax").value = maxResults ? String(maxResults) : "";
 $("fMax").onchange = e => { maxResults = Number(e.target.value) || 0; try { localStorage.setItem("maxResults", String(maxResults)); } catch {} loadFeed(); };
 let searchTimer;
 $("search").oninput = e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filter.q = e.target.value; loadFeed(); }, 250); };
+$("search").onkeydown = e => { if (e.key === "Enter") { clearTimeout(searchTimer); filter.q = e.target.value; loadFeed(); } };
 $("artistFilter").onchange = e => { filter.artist_id = e.target.value; loadFeed(); };
 $("refreshBtn").onclick = async () => {
   const r = await api("/api/refresh", { method: "POST" });
