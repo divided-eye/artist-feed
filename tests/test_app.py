@@ -1077,3 +1077,38 @@ def test_wip_is_not_part_of_a_title():
         assert lookup.norm(written) == "sunken", written
     assert lookup.norm("Swip Wip Song") == "swip wip song" and lookup.norm("Wipeout") == "wipeout"
     assert lookup.judge(*lookup.score("A", "Sunken WIP", {"name": "Sunken", "artists": ["A"]})) == "bandcamp"
+
+
+def test_unreadable_releases_do_not_hold_up_a_back_catalogue(client):
+    """Two release pages that always fail used to take both of a refresh's slots, every time."""
+    import asyncio
+    from app import db
+    from app.sources import SOURCES
+    grid = '<html><body><p id="band-name-location"><span class="title">Stuck Label</span></p><ol id="music-grid">' + "".join(
+        f'<li data-item-id="album-{n}" class="music-grid-item"><a href="/album/r{n}"><div class="art"><img src="https://f4.bcbits.com/img/a{n}_2.jpg"></div>'
+        f'<p class="title">R{n}</p></a></li>' for n in range(1, 6)) + "</ol></body></html>"
+
+    def site(request):
+        path = request.url.path
+        if path == "/music":
+            return httpx.Response(200, text=grid)
+        if path in ("/album/r1", "/album/r2"):
+            return httpx.Response(500)
+        return httpx.Response(200, text=release(path[-2:].upper(), "07 Mar 2025 00:00:00 GMT"))
+
+    account = {"id": 987654, "url": "https://stucklabel.bandcamp.com", "meta": {}}
+    known, warnings = set(), []
+
+    async def rounds():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
+            for _ in range(7):
+                got = await SOURCES["bandcamp"].fetch(c, account, known)
+                known.update(p.external_id for p in got.posts)
+                warnings.append(got.warning)
+    try:
+        asyncio.run(rounds())
+    finally:
+        db.execute("DELETE FROM kv WHERE key='bandcamp_unread:987654'")
+    assert {u.rsplit("/", 1)[1] for u in known} == {"r3", "r4", "r5"}, (known, warnings)   # 2 per round in the tests
+    assert "2 release page(s) could not be read" in warnings[-1] and "still to load" not in warnings[-1]
+    assert "still to load" in warnings[0]

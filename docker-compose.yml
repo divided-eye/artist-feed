@@ -11,4 +11,5 @@ services:
       REFRESH_MINUTES: "60"  # how often to check for new posts
       # LOOKUP_FALLBACK: "bandcamp"   # artist link when a track isn't found; default is their SoundCloud profile (also settable in the Link Finder panel)
       BANDCAMP_FAN: ""   # your Bandcamp username; Link Finder checks its purchases first (can also be set in the Link Finder panel)
+      # CATCH_UP_MINUTES: "10"   # how often pages with older releases still to load are visited between refreshes
       # SOUNDCLOUD_CLIENT_ID: ""   # optional; found automatically when unset

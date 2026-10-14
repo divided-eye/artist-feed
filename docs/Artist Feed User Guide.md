@@ -4,7 +4,7 @@ Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 34. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 35. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -108,7 +108,7 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 
 ## Tracked Artists
 
-The **Tracked Artists** button opens a table with one row per artist or label and one column per site. This is the list the feed is built from.
+The **Tracked Artists** button opens a table with one row per artist or label and one column per site. This is the list the feed is built from. The Artist column is always wide enough to show the longest name in full, and the site columns share what is left; if the window is too narrow the table scrolls sideways. Drag the edge of the Artist, site or Status heading to set a width yourself, and double-click the edge to return it to automatic.
 
 - A cell takes a short name (`artistname`) or a full page address. Leave it empty if the artist is not on that site.
 - For several pages on one site, separate them with commas in the same cell.
@@ -198,7 +198,7 @@ Neither site offers an official way to do what the app does, so it reads their p
 
 ### Reading Bandcamp
 
-Bandcamp has no public API or artist feed. For each tracked page the app reads the `/music` page, which lists the releases, then opens each release it has not read before to get the release date, posting date, label, track list, durations and the id its player needs. At most 6 new releases are opened per artist per refresh, so a long back catalogue fills in over several refreshes.
+Bandcamp has no public API or artist feed. For each tracked page the app reads the `/music` page, which lists the releases, then opens each release it has not read before to get the release date, posting date, label, track list, durations and the id its player needs. At most 6 new releases are opened per artist per refresh, so a long back catalogue fills in over several visits. Between the hourly refreshes, pages that still have older releases to load are visited again every 10 minutes (CATCH_UP_MINUTES in docker-compose.yml), 6 releases at a time. A release page that cannot be read is retried after the unread ones, so it cannot hold up the rest.
 
 ### Reading SoundCloud
 
@@ -379,6 +379,8 @@ These are the questions that came up while the app was being built.
 
 **Can I change the colour of the no-preview icons?** Yes. Search `app/static/index.html` for `rowplay.nostream` and change the colour values. They are currently `#6d6d6d`.
 
+**The Status column keeps saying "N older release(s) still to load". Is it stuck?** Usually not. A page's back catalogue loads 6 releases per visit, only while the app is running, and visits are skipped while a lookup or purchases read is running or Bandcamp has asked for a pause. The number should fall each time you look. Up to version 34 it could stall: release pages that failed to load were retried first on every visit and could use up all 6 places. Since version 35 those are retried last and reported separately as "could not be read", and backlog pages are visited every 10 minutes.
+
 ### Link Finder
 
 **What does "Search again for saved results" do?** Unticked, any track looked up before gets its saved answer at once. Ticked, saved answers are ignored and every step runs again, still reusing saved pages. Use it when a track saved as not found has since been released or bought.
@@ -411,10 +413,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, version 34 from 11 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 and 35 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 35 | Tracked Artists table: resizable columns, and the Artist column always fits the full name. Back catalogues load faster: catch-up visits every 10 minutes, and unreadable release pages no longer block the rest. |
 | 34 | List columns can be dragged to reorder and shown or hidden from a Columns menu; new default order Artist, Track, Duration, Year, Released, Posted, Release, Label, Site. Date filter (last N days or a date range, by posted or release date). Show-first-N limit on results and export. WIP markers ignored when matching titles. Guide included in the zip under docs. |
 | 33 | Numbers in titles must agree: "Hybrid Kit 6" no longer matches "Hybrid Kit 2" or "Hybrid Kit". Saved results for titles containing a number are looked up again once. |
 | 32 | Tracked Artists: cleared cells are remembered and skipped by Find missing links; removed guesses are never offered again; per-row Rescan checkbox to search a row's cleared cells again. |

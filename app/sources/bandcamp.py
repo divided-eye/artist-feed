@@ -14,12 +14,13 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
-from .. import pace
+from .. import db, pace
 from .base import FetchResult, Post, Source, SourceError, Track, iso
 
 # Release pages opened per account per refresh. A long back catalogue fills in
 # over the next few refreshes instead of hammering the site on day one.
 MAX_NEW = int(os.environ.get("BANDCAMP_MAX_NEW", "6"))
+GIVE_WAY_AFTER = 3   # a release page that failed this often no longer takes a slot ahead of unread ones
 PAUSE = float(os.environ.get("BANDCAMP_PAUSE_SECONDS", "0"))   # extra gap on top of the shared pace (see pace.py)
 
 
@@ -403,14 +404,27 @@ class Bandcamp(Source):
             return result
 
         new = [it for it in items if it["url"] not in known_ids]
+        # Pages that could not be read are remembered, and tried after the ones not yet tried,
+        # so a few unreadable releases cannot hold up the rest of a back catalogue.
+        fail_key = f"bandcamp_unread:{account['id']}"
+        try:
+            fails = json.loads(db.kv_get(fail_key) or "{}")
+        except ValueError:
+            fails = {}
+        fails = {it["url"]: fails[it["url"]] for it in new if it["url"] in fails}
+        new.sort(key=lambda it: min(fails.get(it["url"], 0), GIVE_WAY_AFTER))    # stable: page order otherwise
         for i, it in enumerate(new[:MAX_NEW]):
             if i:
                 await asyncio.sleep(PAUSE)
             try:
                 page = await self._get(client, it["url"])
                 rel = parse_release(page.text, it["url"])
+            except pace.Busy:
+                break     # a lookup is running or Bandcamp asked for a pause: keep what loaded, stop for now
             except Exception:
-                continue  # try again next refresh
+                fails[it["url"]] = fails.get(it["url"], 0) + 1
+                continue  # try again on a later refresh
+            fails.pop(it["url"], None)
             result.posts.append(Post(
                 external_id=it["url"], url=it["url"],
                 title=rel["title"] or it["title"],
@@ -420,7 +434,14 @@ class Bandcamp(Source):
                 published_at=rel["published_at"], posted_at=rel["posted_at"],
                 label=rel["label"], release=rel["release"] or rel["title"] or it["title"],
                 embed=rel["embed"], tracks=rel["tracks"]))
-        left = len(new) - len(result.posts)
+        db.kv_set(fail_key, json.dumps(fails))
+        unreadable = sum(1 for n in fails.values() if n >= GIVE_WAY_AFTER)
+        left = len(new) - len(result.posts) - unreadable
+        notes = []
         if left > 0:
-            result.warning = f"{left} older release(s) still to load; they fill in over the next refreshes."
+            notes.append(f"{left} older release(s) still to load; {MAX_NEW} more load every few minutes while the app is running.")
+        if unreadable:
+            notes.append(f"{unreadable} release page(s) could not be read after several tries; still retrying.")
+        if notes:
+            result.warning = " ".join(notes)
         return result

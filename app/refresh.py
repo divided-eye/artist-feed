@@ -13,6 +13,8 @@ log = logging.getLogger("artist-feed")
 
 REFRESH_MINUTES = float(os.environ.get("REFRESH_MINUTES", "60"))
 CONCURRENCY = int(os.environ.get("REFRESH_CONCURRENCY", "3"))
+# Pages whose back catalogue is still loading are visited again this often, between full refreshes.
+CATCH_UP_MINUTES = float(os.environ.get("CATCH_UP_MINUTES", "10"))
 
 state = {"refreshing": 0, "last_refresh": None, "held": 0}
 _tasks = set()
@@ -66,11 +68,31 @@ def refresh_in_background(account_ids=None):
     task.add_done_callback(_tasks.discard)
 
 
+def backlog_accounts() -> list:
+    """Accounts with older releases still to load (see the Bandcamp source's warning)."""
+    return [a["id"] for a in db.list_accounts() if "still to load" in (a.get("last_error") or "")]
+
+
 async def scheduler():
+    """A full refresh every REFRESH_MINUTES. In between, pages with a back catalogue still to
+    load get short catch-up visits, so a long catalogue takes hours rather than days."""
     state["last_refresh"] = db.kv_get("last_refresh")
+    every, step = max(REFRESH_MINUTES, 5) * 60, max(CATCH_UP_MINUTES, 2) * 60
     while True:
         try:
             await refresh()
         except Exception:
             log.exception("scheduled refresh failed")
-        await asyncio.sleep(max(REFRESH_MINUTES, 5) * 60)
+        waited = 0.0
+        while waited < every:
+            nap = min(step, every - waited)
+            await asyncio.sleep(nap)
+            waited += nap
+            if waited >= every:
+                break
+            try:
+                behind = backlog_accounts()
+                if behind and not pace.on_hold() and not state["refreshing"]:
+                    await refresh(behind)
+            except Exception:
+                log.exception("catch-up refresh failed")
