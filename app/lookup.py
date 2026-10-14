@@ -2320,6 +2320,24 @@ def rekey_known() -> int:
     return moved
 
 
+def set_spelling(key: str, artist: str, title: str, variant: str = "", like: tuple = ()) -> dict:
+    """Your spelling for one saved track, typed in Saved results. key is the track's saved entry;
+    variant names the list entry being corrected, if it had one. Both empty removes the entry."""
+    artist, title = " ".join((artist or "").split()), " ".join((title or "").split())
+    old = (db.query("SELECT * FROM known_tracks WHERE key=? AND variant=?", (key, variant)) or [{}])[0] if variant else {}
+    if old:
+        db.execute("DELETE FROM known_tracks WHERE key=? AND variant=?", (key, variant))
+    elif like:                                       # the closest entry it was shown with: keep its year, link and note
+        old = (db.query("SELECT * FROM known_tracks WHERE key=? AND variant=?", tuple(like)) or [{}])[0]
+    if artist or title:
+        db.execute("INSERT INTO known_tracks(key, variant, artist, title, year, url, others, note, at) VALUES(?,?,?,?,?,?,?,?,?) "
+                   "ON CONFLICT(key, variant) DO UPDATE SET artist=excluded.artist, title=excluded.title, at=excluded.at",
+                   (key, plain(title) if title else variant, artist, title, old.get("year", ""), old.get("url", ""),
+                    old.get("others", ""), old.get("note", ""), db.now()))
+    _known_cache.clear()
+    return known_counts()
+
+
 def known_counts() -> dict:
     return {"known_tracks": db.query("SELECT COUNT(*) AS n FROM known_tracks")[0]["n"],
             "known_artists": db.query("SELECT COUNT(*) AS n FROM known_artists")[0]["n"]}

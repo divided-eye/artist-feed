@@ -1509,3 +1509,34 @@ def test_skipping_a_row_while_it_is_searched_or_before(client, monkeypatch):
     assert lookup._saved_for("Slow One", "Stuck Tune Aaa") is None                                  # nothing saved for a skip
     assert client.post(f"/api/lookup/{j['id']}/skip", json={"n": 1}).status_code == 409
     client.delete("/api/saved", params={"key": "slow two|next tune bbb"})
+
+
+def test_saved_results_closest_list_entry_and_editing_a_spelling(client):
+    from app import db, lookup
+    put = lambda key, **r: db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)", (key, json.dumps(r), db.now()))
+    client.post("/api/known", content=("Artist,Track,Link\nNaz,You Owe Me (Nitemare & Onee 140 Bootleg),https://soundcloud.com/no\n"
+                                       "Shaun Pal,Warmth (Rivver Dub Edit),https://soundcloud.com/rivver\n").encode())
+    put("manual|naz|you owe me nitemare onee 140 bootleg", status="manual", url="https://soundcloud.com/no")
+    put("manual|shaun pal|warmth", status="manual", url="https://soundcloud.com/rivver")
+    put("manual|nobody|unlisted", status="manual", url="https://soundcloud.com/x")
+    rows = {r["key"]: r for q in ("naz", "shaun", "nobody") for r in client.get(f"/api/saved?limit=1000&q={q}").json()["rows"]}
+    assert rows["naz|you owe me nitemare onee 140 bootleg"]["list_title"] == "You Owe Me (Nitemare & Onee 140 Bootleg)"
+    assert rows["shaun pal|warmth"]["list_title"] == "Warmth (Rivver Dub Edit)" and rows["shaun pal|warmth"]["list_guess"]
+    assert rows["nobody|unlisted"]["list_title"] == ""
+    guess = rows["shaun pal|warmth"]
+    client.put("/api/known/entry", json={"key": guess["key"], "artist": "Shaun Pal", "title": "Warmth (Rivver Dub Edit)",
+                                         "like_key": guess["list_key"], "like_variant": guess["list_variant"]})
+    mine = next(r for r in client.get("/api/saved?limit=1000&q=shaun").json()["rows"] if r["key"] == "shaun pal|warmth")
+    assert not mine["list_guess"] and mine["list_link"] == "https://soundcloud.com/rivver"
+    # typing a spelling for a track that has none
+    client.put("/api/known/entry", json={"key": "nobody|unlisted", "artist": "NoBody", "title": "UnListed"})
+    row = next(r for r in client.get("/api/saved?limit=1000&q=nobody").json()["rows"] if r["key"] == "nobody|unlisted")
+    assert (row["list_artist"], row["list_title"], row["list_guess"]) == ("NoBody", "UnListed", False)
+    # correcting it keeps one entry; removing it takes it out
+    client.put("/api/known/entry", json={"key": "nobody|unlisted", "artist": "NoBody", "title": "Unlisted!", "variant": row["list_variant"]})
+    assert [r["title"] for r in db.query("SELECT title FROM known_tracks WHERE key='nobody|unlisted'")] == ["Unlisted!"]
+    client.put("/api/known/entry", json={"key": "nobody|unlisted", "variant": "unlisted"})
+    assert db.query("SELECT * FROM known_tracks WHERE key='nobody|unlisted'") == []
+    for k in ("naz|you owe me nitemare onee 140 bootleg", "shaun pal|warmth", "nobody|unlisted"):
+        client.delete("/api/saved", params={"key": k})
+    client.delete("/api/known")

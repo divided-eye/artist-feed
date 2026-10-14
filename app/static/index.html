@@ -111,6 +111,9 @@
   .list th .thb { all: unset; cursor: pointer; display: block; padding: 9px 14px 9px 10px; width: 100%; box-sizing: border-box; }
   .list th .thb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list th .thb:disabled { cursor: default; }
+  .res td.spellform input { width: 100%; min-width: 9em; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 7px; font: inherit; }
+  .res td small.guess { color: #e6b450; }
   .sortbtn { all: unset; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; }
   .sortbtn:hover, th[aria-sort] .sortbtn { color: var(--text); }
   .sortbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
@@ -1421,6 +1424,38 @@ async function loadSaved(reset) {
 const oldTitle = r => !r.version ? r.tidy_title : /^vip\b/.test(r.version) ? `${r.tidy_title} (${(r.version.replace(/^vip\s*/, "") + " VIP").trim()})` : `${r.tidy_title} (${r.version} Remix)`;
 const savedNames = r => ({ artist: r.artist || r.list_artist || r.tidy_artist, title: r.title || r.list_title || oldTitle(r) });
 
+// Your spelling, shown in two cells and editable in place.
+let editingSpell = null;
+const spellId = r => r.key + "~" + (r.list_variant || "");
+function spellingCells(r) {
+  if (editingSpell !== spellId(r)) {
+    const guess = r.list_guess ? el("small", { class: "guess", text: "closest in your list", title: "This track's saved name doesn't match your list exactly; this is the nearest entry. Edit it if it's wrong." }) : null;
+    return [el("td", {}, r.list_artist || el("small", { text: "none on file" })),
+      el("td", {}, r.list_title || el("small", { text: "none on file" }), guess,
+        el("div", { class: "rowbtns" }, el("button", { class: "btn small ghost", text: r.list_title || r.list_artist ? "Edit spelling" : "Add spelling",
+          title: "Set how this artist and title should be written", onclick: () => { editingSpell = spellId(r); renderSaved(); } })))];
+  }
+  const names = savedNames(r);
+  const artist = el("input", { type: "text", value: r.list_artist || names.artist || "", "aria-label": "Artist, as it should be written", spellcheck: "false" });
+  const title = el("input", { type: "text", value: r.list_title || names.title || "", "aria-label": "Title, as it should be written", spellcheck: "false" });
+  const err = el("span", { class: "error" });
+  const save = async (a, t) => {
+    try {
+      await api("/api/known/entry", { method: "PUT", body: { key: r.key, artist: a, title: t, variant: r.list_guess ? "" : (r.list_variant || ""),
+        like_key: r.list_guess ? r.list_key : "", like_variant: r.list_guess ? r.list_variant : "" } });
+      editingSpell = null; await loadSaved(true);
+    } catch (x) { err.textContent = x.message; }
+  };
+  const keys = e => { if (e.key === "Enter") save(artist.value.trim(), title.value.trim()); if (e.key === "Escape") { editingSpell = null; renderSaved(); } };
+  artist.onkeydown = keys; title.onkeydown = keys;
+  setTimeout(() => title.focus(), 0);
+  return [el("td", { class: "spellform" }, artist),
+    el("td", { class: "spellform" }, title, el("div", { class: "rowbtns" },
+      el("button", { class: "btn small", text: "Save", onclick: () => save(artist.value.trim(), title.value.trim()) }),
+      el("button", { class: "btn small ghost", text: "Cancel", onclick: () => { editingSpell = null; renderSaved(); } }),
+      r.list_title && !r.list_guess ? el("button", { class: "btn small ghost", text: "Remove", title: "Take this track out of your list", onclick: () => save("", "") }) : null), err)];
+}
+
 function renderSaved() {
   $("savedHead").replaceChildren(el("tr", {}, ...SAVED_COLUMNS.map(([key, label]) => {
     const on = savedState.sort === key;
@@ -1441,8 +1476,7 @@ function renderSaved() {
       el("td", {}, r.tidy_artist, r.artist && r.artist.toLowerCase() !== r.tidy_artist ? el("small", { text: "typed: " + r.artist }) : null),
       el("td", {}, r.tidy_title, r.version ? el("span", { class: "ver", text: ` [${r.version}]` }) : null,
         r.title && r.title.toLowerCase() !== r.tidy_title ? el("small", { text: "typed: " + r.title }) : null),
-      el("td", {}, r.list_artist || el("small", { text: "none on file" })),
-      el("td", {}, r.list_title || el("small", { text: "none on file" })),
+      ...spellingCells(r),
       el("td", { class: "link" },
         url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
         r.list_note ? el("small", { text: "note: " + r.list_note }) : null,

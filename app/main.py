@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "50"   # shown beside the title, so you can tell which version is running
+VERSION = "51"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -481,6 +481,24 @@ def saved_csv(q: str = "", filter: str = "", sort: str = "", dir: str = "asc"):
 def forget_saved(key: str):
     """Forget the saved answer (and any link you set) for one track; it is searched for next time."""
     return {"removed": saved.forget(key)}
+
+
+class SpellingIn(BaseModel):
+    key: str                 # the saved track, as Saved results lists it
+    artist: str = ""
+    title: str = ""
+    variant: str = ""        # the list entry being corrected, when it had one
+    like_key: str = ""       # the closest entry it was shown with, whose year, link and note are kept
+    like_variant: str = ""
+
+
+@app.put("/api/known/entry")
+def set_spelling(body: SpellingIn):
+    """Your spelling of one track's artist and title, typed in Saved results."""
+    if "|" not in body.key:
+        raise HTTPException(400, "Which track is this for?")
+    like = (body.like_key, body.like_variant) if body.like_key else ()
+    return lookup.set_spelling(body.key.partition("~")[0], body.artist, body.title, body.variant, like)
 
 
 @app.get("/api/known")

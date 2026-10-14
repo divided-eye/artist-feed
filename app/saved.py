@@ -17,7 +17,7 @@ def _entry(rest: str) -> dict:
     base, _, version = tkey.partition("#")
     return {"key": rest, "tidy_artist": tidy_artist, "tidy_title": base, "version": version.replace("+", ", "),
             "artist": "", "title": "", "status": "", "url": "", "site": "", "year": "", "release": "", "found": "",
-            "note": "", "at": "", "searched": False, "list_artist": "", "list_title": "", "list_link": "", "list_note": ""}
+            "note": "", "at": "", "searched": False, "list_artist": "", "list_title": "", "list_link": "", "list_note": "", "list_key": "", "list_variant": "", "list_guess": False}
 
 
 def all_rows() -> list:
@@ -52,7 +52,15 @@ def all_rows() -> list:
             if t["url"]:
                 extra.update({k: v for k, v in lookup.from_list(t).items() if k != "steps"}, at=t["at"])
             _from_list(extra, t)
+    by_artist = {}
+    for key, entries in tracks.items():
+        by_artist.setdefault(key.partition("|")[0], []).extend(entries)
     for row in out.values():
+        if not (row["list_title"] or row["list_link"]):        # nothing under this exact entry: the closest one
+            guess = _closest(by_artist.get(row["tidy_artist"], []), row)
+            if guess:
+                _from_list(row, guess)
+                row["list_guess"] = True
         if not row["list_artist"]:
             row["list_artist"] = artists.get(row["tidy_artist"], "")
         row["review"] = lookup.review_reason(row)
@@ -62,7 +70,21 @@ def all_rows() -> list:
 
 def _from_list(row, t):
     row.update(list_artist=t["artist"], list_title=t["title"], list_link=t["url"], list_note=t["note"],
-               year=row["year"] or t["year"])
+               year=row["year"] or t["year"], list_key=t["key"], list_variant=t["variant"])
+
+
+def _closest(entries, row):
+    """Your list's entry for a saved track that doesn't match one exactly - typically saved before
+    versions had entries of their own, or typed without brackets: the entry with the same words
+    ("you owe me nightmare oni 140 bootleg" is "You Owe Me (Nightmare & Oni 140 Bootleg)"), else the
+    only version of that title in your list ("temperature" and "Temperature (River Dub Edit)")."""
+    words = lookup.plain(" ".join(filter(None, [row["tidy_title"], row["version"]])))
+    same = [t for t in entries if t["variant"] == words]
+    if same:
+        return same[0]
+    base = row["tidy_title"]
+    versions = [t for t in entries if t["key"].partition("|")[2].partition("#")[0] == base]
+    return versions[0] if len(versions) == 1 else None
 
 
 def _stamp(at: str) -> int:
