@@ -484,8 +484,8 @@ def test_tracklist_lookup(client):
     assert all(row["steps"] for row in got["rows"])       # every row says what was tried
 
     lines = client.get(f"/api/lookup/{got['id']}.csv").content.decode("utf-8-sig").splitlines()
-    assert lines[0] == "#,artist,title,year,link,needs review,site,release,result,found as,note,steps"
-    assert lines[2].startswith("2,Masot,Especies Endémicas,2023,https://masot.bandcamp.com/album/flora,,Bandcamp,Flora,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
+    assert lines[0] == "#,artist,title,year,link,needs review,artist (your spelling),title (your spelling),link note,site,release,result,found as,note,steps"
+    assert lines[2].startswith("2,Masot,Especies Endémicas,2023,https://masot.bandcamp.com/album/flora,,,,,Bandcamp,Flora,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
 
     count = len(searched)
     again = run(listing)                                  # remembered: no new searches
@@ -1191,3 +1191,71 @@ def test_saved_search_answers_review_flags_and_searching_one_row_again(client):
     assert lookup.review_reason({"status": "bandcamp_check"}) and not lookup.review_reason({"status": "manual"})
     csv_text = client.get(f"/api/lookup/{job['id']}.csv").content.decode("utf-8-sig")
     assert "needs review" in csv_text.splitlines()[0]
+
+
+def test_each_version_of_a_title_has_its_own_saved_answer():
+    from app import lookup
+    k = lookup._cache_key
+    assert k("Sean Paul", "Temperature") != k("Sean Paul", "Temperature (River Dub Edit)")
+    assert k("River", "Boogaloo") != k("River", "Boogaloo VIP") == k("River", "Boogaloo (VIP)")
+    assert k("Anecho", "Re-use, Reduce (Continental VIP)") != k("Anecho", "Re-use, Reduce VIP")
+    # plain titles keep the key they always had, so nothing saved for them is lost
+    assert k("Deapoh", "Voyage (Digital Download)") == k("deapoh", "VOYAGE") == "v2|deapoh|voyage"
+    # a link set by hand before this change (stored under the plain title) is still honoured
+    lookup.db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)",
+                      ("manual|old one|tune", '{"status": "manual", "url": "https://x.bandcamp.com/track/tune-remix"}', lookup.db.now()))
+    assert lookup._manual_for("Old One", "Tune (Someone Remix)")["url"].endswith("tune-remix")
+    lookup.db.execute("DELETE FROM lookup_cache WHERE key='manual|old one|tune'")
+
+
+def test_your_list_spellings_links_and_notes(client):
+    from app import lookup
+    assert lookup.split_link_cell("https://x.bandcamp.com/track/y (limited time only)") == (["https://x.bandcamp.com/track/y"], "limited time only")
+    assert lookup.split_link_cell("(Patreon)") == ([], "Patreon")
+    assert lookup.split_link_cell("soundcloud.com/someone/tune - free DL") == (["https://soundcloud.com/someone/tune"], "free DL")
+    sheet = "\n".join(["Artist\tTitle\tLink\tNotes",
+                        "MASOT\tEspecies Endémicas\thttps://old.example.com/dead-link (outdated)\t",
+                        "Nobody Known\tListed Tune\thttps://nobodyknown.bandcamp.com/track/listed-tune (limited time only)\tvinyl only",
+                        "Nobody Known\tSC Only Tune\tsoundcloud.com/nobodyknown/sc-only-tune (Patreon)\t",
+                        "NOBODY KNOWN\tListed Tune\t\t",                      # a second spelling of the same track
+                        "aNeCHo\t\t\t"])                                       # an artist's stylisation alone
+    got = client.post("/api/known", content=sheet.encode()).json()
+    assert (got["tracks"], got["artists"], got["with_link"], got["clashes"]) == (3, 3, 3, 2), got
+    assert got["clash_examples"][0]["kept"] == "Nobody Known - Listed Tune" or got["clash_examples"][0]["what"] == "artist"
+
+    def run(text, query="?fresh=true"):
+        j = client.post("/api/lookup" + query, content=("Artist\tTitle\n" + text).encode()).json()
+        for _ in range(200):
+            time.sleep(0.05)
+            now = client.get(f"/api/lookup/{j['id']}").json()
+            if now["finished"]:
+                return now
+        raise AssertionError("lookup never finished")
+
+    asked = len(searched)
+    job = run("masot\tespecies endemicas\nnobody known\tlisted tune\nNobody Known\tSC Only Tune\nAnecho\tUFO")
+    found, listed, sc_only, other = job["rows"]
+    # what the lookup finds itself beats the list's link; the spelling still comes from the list
+    assert found["status"] == "bandcamp" and "masot.bandcamp.com" in found["url"]
+    assert (found["list_artist"], found["list_title"], found["list_note"]) == ("MASOT", "Especies Endémicas", "outdated")
+    # a Bandcamp release link from the list answers the row without a search
+    assert (listed["status"], listed["url"]) == ("imported", "https://nobodyknown.bandcamp.com/track/listed-tune")
+    assert "limited time only" in listed["note"] and "vinyl only" in listed["list_note"]
+    # a SoundCloud link from the list: Bandcamp is searched first, and the list's link used when that finds nothing
+    assert (sc_only["status"], sc_only["url"]) == ("imported", "https://soundcloud.com/nobodyknown/sc-only-tune")
+    assert sc_only["list_note"] == "Patreon" and len(searched) > asked
+    assert other["list_artist"] == "aNeCHo" and other["list_title"] == ""
+    csv_lines = client.get(f"/api/lookup/{job['id']}.csv").content.decode("utf-8-sig").splitlines()
+    assert "MASOT,Especies Endémicas,outdated" in csv_lines[1]
+
+    saved_all = client.get("/api/saved?limit=1000").json()
+    by_key = {r["key"]: r for r in saved_all["rows"]}
+    assert by_key["masot|especies endemicas"]["title"].lower().startswith("especies") and by_key["masot|especies endemicas"]["list_title"] == "Especies Endémicas"
+    assert by_key["nobody known|listed tune"]["status"] == "imported"
+    assert saved_all["counts"]["list"] == 3 and saved_all["known_tracks"] == 3
+    only = client.get("/api/saved?q=nobody listed").json()
+    assert only["total"] == 1 and only["rows"][0]["list_note"] == "limited time only; vinyl only"
+    assert "artist (your spelling)" in client.get("/api/saved.csv").content.decode("utf-8-sig").splitlines()[0]
+    assert client.delete("/api/saved", params={"key": "masot|especies endemicas"}).json()["removed"] >= 1
+    assert "masot|especies endemicas" in {r["key"] for r in client.get("/api/saved?limit=1000&filter=unsearched").json()["rows"]}
+    assert client.delete("/api/known").json() == {"known_tracks": 0, "known_artists": 0}

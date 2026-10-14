@@ -188,6 +188,18 @@
   #lookupText:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .res td { padding: 7px 10px; border-right: 0; vertical-align: top; font-size: 14px; }
   .res td.n { color: var(--muted); text-align: right; width: 1%; }
+  aside .pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  aside .pane[hidden] { display: none; }
+  aside header .seg { display: inline-flex; gap: 0; margin-right: 12px; }
+  aside header .seg .btn { border-radius: 0; margin-left: -1px; }
+  aside header .seg .btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+  aside header .seg .btn:last-child { border-radius: 0 8px 8px 0; }
+  aside header .seg .btn[aria-selected=true] { background: var(--panel-2); color: var(--text); border-color: var(--accent); position: relative; z-index: 1; }
+  #savedQ { width: 240px; }
+  .res td .spelt { display: block; color: var(--text); font-size: 12px; opacity: .8; }
+  .res td .spelt::before { content: "your spelling: "; color: var(--muted); }
+  .res td .ver { color: var(--muted); font-size: 12px; }
+  .res td.when { color: var(--muted); font-size: 12px; white-space: nowrap; }
   /* rows whose link is a guess that a person should check; stays until you confirm or correct it */
   .res tr.review td { background: rgba(255, 107, 107, .10); }
   .res tr.review td:first-child { box-shadow: inset 3px 0 0 rgba(255, 107, 107, .85); }
@@ -355,7 +367,13 @@
 </aside>
 
 <aside id="lookup" hidden aria-label="Link finder">
-  <header><h2>Link Finder</h2><button class="btn" id="lookupClose">Close</button></header>
+  <header><h2>Link Finder</h2>
+    <span class="seg" role="tablist" aria-label="Link Finder views">
+      <button class="btn small" id="tabLookup" role="tab" aria-selected="true">Look up</button>
+      <button class="btn small" id="tabSaved" role="tab" aria-selected="false" title="Every track looked up so far, with its saved link">Saved results</button>
+    </span>
+    <button class="btn" id="lookupClose">Close</button></header>
+  <div class="pane" id="lookupPane">
   <div class="tools">
     <button class="btn" id="lookupFileBtn">Choose file…</button>
     <input type="file" id="lookupFile" accept=".xlsx,.csv,.tsv,.txt,text/csv" hidden>
@@ -385,6 +403,24 @@
     Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's SoundCloud profile or Bandcamp page instead (the remixer's, for an edit, remix, bootleg or flip). Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
   <textarea id="lookupText" spellcheck="false" aria-label="Pasted tracklist" placeholder="Track #&#9;Artist&#9;Title&#9;…&#10;1&#9;Masot&#9;Especies Endémicas&#9;…"></textarea>
   <div class="table-wrap"><table class="res"><thead id="lookupHead"></thead><tbody id="lookupBody"></tbody></table></div>
+  </div>
+  <div class="pane" id="savedPane" hidden>
+    <div class="tools">
+      <input type="text" id="savedQ" placeholder="Search saved results" aria-label="Search saved results" spellcheck="false" autocomplete="off">
+      <select id="savedFilter" aria-label="Which saved results to show"></select>
+      <div class="spacer"></div>
+      <span class="status" id="savedStatus"></span>
+      <button class="btn" id="knownBtn" title="A spreadsheet or CSV of how artists and titles should be written, with links if you have them">Import your list…</button>
+      <input type="file" id="knownFile" accept=".xlsx,.csv,.tsv,.txt,text/csv" hidden>
+      <a class="btn" id="savedExport" download="link-finder-saved.csv" title="Download every row that matches the search and filter">Export</a>
+    </div>
+    <div class="hint">Every track Link Finder has looked up, newest first, under the tidied form of its name (lower case, no punctuation or describing tags), which is what tracks are matched by.
+      <b>Import your list</b> adds how each artist and title should be written and, if the list has them, links: columns named Artist and Title, plus any link columns; text beside a link, such as "(limited time only)", is kept as a note.
+      A link from your list is used when the lookup has found nothing better; a release the lookup found itself, or a link you set here, comes first. <span id="knownInfo"></span>
+      <button class="btn small ghost" id="knownClear" hidden>Remove my list</button> <span class="error" id="savedError"></span></div>
+    <div class="table-wrap"><table class="res"><thead id="savedHead"></thead><tbody id="savedBody"></tbody></table>
+      <button class="btn more" id="savedMore" hidden>Load more</button></div>
+  </div>
 </aside>
 
 <script>
@@ -1138,7 +1174,7 @@ async function pollStatus() {
 }
 
 // ---- tracklist lookup ----
-const LOOKUP_TAGS = { manual: ["mine", "Link you set"], bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
+const LOOKUP_TAGS = { imported: ["mine", "From your list"], manual: ["mine", "Link you set"], bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
   bandcamp_artist: ["page", "Bandcamp artist page"],
   soundcloud_track: ["ok", "SoundCloud track"], soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
   none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Waiting to be searched"] };
@@ -1211,7 +1247,9 @@ function renderLookup(job) {
     const waiting = !job.finished && r.status === "pending";
     // rows are redrawn on every poll: tying the animation to the clock keeps the pulse unbroken
     return el("tr", { class: waiting ? (job.current === r.n ? "waiting now" : "waiting") : r.review ? "review" : "", style: waiting ? `--phase:-${Date.now() % 2400}ms` : null },
-      el("td", { class: "n", text: String(r.n) }), el("td", { text: r.artist }), el("td", { text: r.title }),
+      el("td", { class: "n", text: String(r.n) }),
+      el("td", {}, r.artist, r.list_artist && r.list_artist !== r.artist ? el("span", { class: "spelt", text: r.list_artist }) : null),
+      el("td", {}, r.title, r.list_title && r.list_title !== r.title ? el("span", { class: "spelt", text: r.list_title }) : null),
       el("td", { class: "link" }, ...(editingRow === r.n ? [linkEditor(r)] : [
         url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
         r.status === "pending" ? null : el("div", { class: "rowbtns" },
@@ -1242,11 +1280,11 @@ function renderLookupStatus(job) {
   $("lookupExport").href = `/api/lookup/${job.id}.csv`;
 }
 
-async function startLookup(body) {
+async function startLookup(body, query) {
   clearTimeout(lookupTimer);
   $("lookupError").textContent = ""; $("lookupStatus").textContent = "Reading the list…"; $("lookupExport").hidden = true;
   $("lookup").classList.add("busy");
-  const r = await fetch("/api/lookup" + ($("lookupFresh").checked ? "?fresh=true" : $("lookupRetry").checked ? "?retry=missing" : ""), { method: "POST", body });
+  const r = await fetch("/api/lookup" + (query !== undefined ? query : $("lookupFresh").checked ? "?fresh=true" : $("lookupRetry").checked ? "?retry=missing" : ""), { method: "POST", body });
   const job = await r.json().catch(() => ({}));
   if (!r.ok) { $("lookup").classList.remove("busy"); $("lookupStatus").textContent = ""; $("lookupError").textContent = typeof job.detail === "string" ? job.detail : "Couldn't read that list."; return; }
   renderLookup(job);
@@ -1280,6 +1318,91 @@ async function loadFan(fill) {
     $("fanDeep").hidden = c.syncing || c.deep_running || !c.complete || (c.releases_read >= c.releases && c.labels_read >= c.labels);
     if ((c.syncing || c.deep_running) && !$("lookup").hidden) fanTimer = setTimeout(loadFan, c.syncing ? 1500 : 5000);
   } catch {}
+}
+
+// ---- Link Finder: everything saved so far ----
+const SAVED_PAGE = 200, SAVED_FILTERS = [["", "All"], ["review", "Needs review"], ["missing", "Not found"], ["found", "Found"],
+  ["manual", "Links you set"], ["list", "In your list"], ["nospelling", "No spelling on file"], ["unsearched", "In your list, not looked up yet"]];
+let savedState = { q: "", filter: "", rows: [], total: 0 };
+
+function lookupTab(which) {
+  const saved = which === "saved";
+  $("lookupPane").hidden = saved; $("savedPane").hidden = !saved;
+  $("tabLookup").setAttribute("aria-selected", String(!saved)); $("tabSaved").setAttribute("aria-selected", String(saved));
+  if (saved) loadSaved(true).catch(x => { $("savedError").textContent = x.message; });
+}
+
+async function loadSaved(reset) {
+  if (reset) savedState.rows = [];
+  const q = new URLSearchParams({ limit: SAVED_PAGE, offset: savedState.rows.length });
+  if (savedState.q.trim()) q.set("q", savedState.q.trim());
+  if (savedState.filter) q.set("filter", savedState.filter);
+  const data = await api("/api/saved?" + q);
+  savedState.rows.push(...data.rows); savedState.total = data.total;
+  const keep = $("savedFilter").value;
+  $("savedFilter").replaceChildren(...SAVED_FILTERS.map(([v, t]) => el("option", { value: v, text: `${t} (${data.counts[v] ?? 0})` })));
+  $("savedFilter").value = savedState.filter || keep || "";
+  $("savedStatus").textContent = `${data.total.toLocaleString()} track${data.total === 1 ? "" : "s"}`;
+  $("knownInfo").textContent = data.known_tracks || data.known_artists
+    ? `Your list: ${data.known_tracks.toLocaleString()} tracks, ${data.known_artists.toLocaleString()} artist spellings.` : "No list imported yet.";
+  $("knownClear").hidden = !(data.known_tracks || data.known_artists);
+  const x = new URLSearchParams(); if (savedState.q.trim()) x.set("q", savedState.q.trim()); if (savedState.filter) x.set("filter", savedState.filter);
+  $("savedExport").href = "/api/saved.csv" + (String(x) ? "?" + x : "");
+  $("savedMore").hidden = savedState.rows.length >= savedState.total;
+  renderSaved();
+}
+
+const savedNames = r => ({ artist: r.artist || r.list_artist || r.tidy_artist, title: r.title || r.list_title || r.tidy_title });
+
+function renderSaved() {
+  $("savedHead").replaceChildren(el("tr", {}, ...["Artist (tidied)", "Title (tidied)", "Your spelling", "Link", "Year", "Result", "Saved"].map(t => el("th", { text: t }))));
+  $("savedBody").replaceChildren(...savedState.rows.map(r => {
+    const [cls, label] = LOOKUP_TAGS[r.status] || ["wait", r.result];
+    const url = safeUrl(r.url), names = savedNames(r);
+    const act = (text, title, fn, ghost) => el("button", { class: "btn small" + (ghost ? " ghost" : ""), text, title, onclick: () => fn().catch(x => { $("savedError").textContent = x.message; }) });
+    const setLink = async link => {
+      await api("/api/lookup/link", { method: "PUT", body: { artist: names.artist, title: names.title, url: link, year: link === r.url ? r.year || "" : "" } });
+      await loadSaved(true);
+    };
+    return el("tr", { class: r.review ? "review" : "" },
+      el("td", {}, r.tidy_artist, r.artist && r.artist.toLowerCase() !== r.tidy_artist ? el("small", { text: "typed: " + r.artist }) : null),
+      el("td", {}, r.tidy_title, r.version ? el("span", { class: "ver", text: ` [${r.version}]` }) : null,
+        r.title && r.title.toLowerCase() !== r.tidy_title ? el("small", { text: "typed: " + r.title }) : null),
+      el("td", {}, r.list_artist || r.list_title ? [r.list_artist, r.list_title].filter(Boolean).join(" \u2013 ") : el("small", { text: "none on file" })),
+      el("td", { class: "link" },
+        url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
+        r.list_note ? el("small", { text: "note: " + r.list_note }) : null,
+        r.list_link && r.list_link !== r.url ? el("small", { text: "your list had: " + r.list_link.replace(/^https?:\/\//, "") }) : null,
+        el("div", { class: "rowbtns" },
+          r.review && url ? act("Looks right", "Keep this link as one you set; the review mark goes", () => setLink(r.url)) : null,
+          act(url ? "Edit" : "Add link", "Set the link for this track; it is used from now on", async () => {
+            const link = prompt(`Link for ${names.artist} \u2013 ${names.title}\n(leave empty to remove a link you set)`, r.url || "");
+            if (link !== null) await setLink(link.trim());
+          }),
+          act("Search again", "Look this track up again now, ignoring what is saved for it", async () => {
+            lookupTab("lookup"); $("lookupText").value = `${names.artist}\t${names.title}`;
+            await startLookup($("lookupText").value, "?fresh=true");
+          }, true),
+          r.searched ? act("Forget", "Remove the saved answer for this track; your list is kept", async () => {
+            if (!confirm(`Forget what is saved for ${names.artist} \u2013 ${names.title}?`)) return;
+            await api("/api/saved?key=" + encodeURIComponent(r.key), { method: "DELETE" }); await loadSaved(true);
+          }, true) : null)),
+      el("td", { text: r.year || "" }),
+      el("td", {}, r.review ? el("span", { class: "tag review", text: "Needs review" }) : null,
+        r.review ? el("span", { class: "why", text: r.review + "." }) : null,
+        el("span", { class: "tag " + cls, text: label }), r.note ? el("small", { text: r.note }) : null),
+      el("td", { class: "when", text: (r.at || "").slice(0, 10) }));
+  }));
+}
+
+async function importKnown(file) {
+  $("savedError").textContent = ""; $("savedStatus").textContent = "Importing…";
+  const r = await fetch("/api/known", { method: "POST", body: file });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { $("savedError").textContent = typeof data.detail === "string" ? data.detail : "Couldn't read that list."; await loadSaved(true); return; }
+  await loadSaved(true);
+  const clash = data.clashes ? ` ${data.clashes} later spelling${data.clashes === 1 ? "" : "s"} of a name already in the list ${data.clashes === 1 ? "was" : "were"} left out (the first is kept), e.g. "${data.clash_examples[0].ignored}" vs "${data.clash_examples[0].kept}".` : "";
+  $("knownInfo").textContent = `Imported ${data.rows.toLocaleString()} rows: ${data.tracks.toLocaleString()} tracks (${data.with_link.toLocaleString()} with a link, ${data.with_note.toLocaleString()} with a note) and ${data.artists.toLocaleString()} artist spellings.` + clash;
 }
 
 function lookupPanel(open) {
@@ -1321,6 +1444,17 @@ $("lookupText").addEventListener("keydown", e => { if (e.key === "Tab") { e.prev
 window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
 $("addRowBtn").onclick = () => { if (!isBlank(table[table.length - 1])) table.push(blankRow()); renderTable(); $("tbody").lastElementChild.querySelector("input").focus(); };
 $("fillBtn").onclick = () => fillMissing();
+$("tabLookup").onclick = () => lookupTab("lookup");
+$("tabSaved").onclick = () => lookupTab("saved");
+$("savedFilter").onchange = e => { savedState.filter = e.target.value; loadSaved(true).catch(x => { $("savedError").textContent = x.message; }); };
+{ let t; $("savedQ").oninput = e => { clearTimeout(t); t = setTimeout(() => { savedState.q = e.target.value; loadSaved(true).catch(() => {}); }, 250); }; }
+$("savedMore").onclick = () => loadSaved(false).catch(x => { $("savedError").textContent = x.message; });
+$("knownBtn").onclick = () => $("knownFile").click();
+$("knownFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) await importKnown(f).catch(x => { $("savedError").textContent = x.message; }); };
+$("knownClear").onclick = async () => {
+  if (!confirm("Remove the list you imported? Saved results and links you set are kept.")) return;
+  await api("/api/known", { method: "DELETE" }); await loadSaved(true);
+};
 $("clearAllBtn").onclick = () => {
   const n = table.filter(r => !isBlank(r)).length;
   if (!n) return;

@@ -1470,13 +1470,43 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
 
 # ---------- running a lookup ----------
 
+def title_key(title: str) -> str:
+    """The tidied title, plus which version it is. norm() drops version tags so that matching can
+    judge them separately; a saved answer must not: "Temperature" and "Temperature (River Dub Edit)"
+    are different tracks, and so are "Boogaloo" and "Boogaloo VIP"."""
+    base, marks = norm(title), []
+    credits = remix_credits(title)
+    if credits:
+        marks.append(norm(credits[0]))
+    vip = vip_words(title)
+    if vip is not None:
+        base = re.sub(r"\s+", " ", re.sub(r"\bvip\b", " ", base)).strip() or base
+        marks.append(" ".join(("vip",) + tuple(vip)))
+    return base + ("#" + "+".join(m for m in marks if m) if marks else "")
+
+
+def track_key(artist, title) -> str:
+    return f"{norm(artist)}|{title_key(title)}"
+
+
 def _cache_key(artist, title):
-    return f"{CACHE_VERSION}|{norm(artist)}|{norm(title)}"
+    return f"{CACHE_VERSION}|{track_key(artist, title)}"
 
 
 def _manual_key(artist, title):
     # No version in this key: a link you set yourself outlives changes to the lookup.
-    return f"manual|{norm(artist)}|{norm(title)}"
+    return f"manual|{track_key(artist, title)}"
+
+
+def _manual_for(artist, title):
+    """The link you set for this track. Links set before versions had keys of their own were
+    stored under the plain title, and are still honoured for the version they were set on."""
+    found = _cached(_manual_key(artist, title))
+    if found is None and "#" in title_key(title):
+        old = _cached(f"manual|{norm(artist)}|{norm(title)}")
+        if old is not None and "title" not in old:
+            found = old
+    return found
 
 
 def site_of(url):
@@ -1497,7 +1527,7 @@ async def set_manual(artist, title, url, year="", release=""):
                 result["release"] = release or rel.get("release") or rel.get("title") or ""
         except Exception:
             pass
-    _remember(_manual_key(artist, title), result)
+    _remember(_manual_key(artist, title), result, artist, title)
     if _profile_url(url):                    # your link also settles whose profile that name means
         learn_profile(wanted_names(artist, title)[:1], url, weight=100)
     return result
@@ -1505,14 +1535,17 @@ async def set_manual(artist, title, url, year="", release=""):
 
 def clear_manual(artist, title):
     db.execute("DELETE FROM lookup_cache WHERE key=?", (_manual_key(artist, title),))
+    old = _cached(f"manual|{norm(artist)}|{norm(title)}")
+    if old is not None and "title" not in old:
+        db.execute("DELETE FROM lookup_cache WHERE key=?", (f"manual|{norm(artist)}|{norm(title)}",))
 
 
 def apply_to_jobs(artist, title, result):
     """Update rows for this track in lookups still on screen, so the table and export agree."""
-    key = (norm(artist), norm(title))
+    key = track_key(artist, title)
     for job in jobs.values():
         for row in job["rows"]:
-            if (norm(row["artist"]), norm(row["title"])) == key and row["status"] != "pending":
+            if track_key(row["artist"], row["title"]) == key and row["status"] != "pending":
                 row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": []})
                 row.update(result)
 
@@ -1522,8 +1555,10 @@ def _cached(key):
     return json.loads(rows[0]["result"]) if rows else None
 
 
-def _remember(key, result):
+def _remember(key, result, artist=None, title=None):
     result = dict(result, engine=ENGINE)
+    if artist is not None or title is not None:        # as typed, for the Saved results view
+        result.update(artist=artist or "", title=title or "")
     db.execute("INSERT INTO lookup_cache(key, result, at) VALUES(?,?,?) "
                "ON CONFLICT(key) DO UPDATE SET result=excluded.result, at=excluded.at",
                (key, json.dumps(result), db.now()))
@@ -1742,7 +1777,7 @@ async def _run(job, fresh, retry_missing=False):
     def quick_pass(rows, lib):
         left = []
         for row in rows:
-            manual = _cached(_manual_key(row["artist"], row["title"]))   # your own link always wins
+            manual = _manual_for(row["artist"], row["title"])            # your own link always wins
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
             if saved and not manual and retry_missing and saved.get("status") in FALLBACK_STATUSES:
                 saved = None                               # asked to look again for whatever wasn't found
@@ -1757,6 +1792,12 @@ async def _run(job, fresh, retry_missing=False):
             if saved and not manual:
                 saved = dict(saved, steps=(saved.get("steps") or []) + ["(saved result from an earlier lookup)"])
             result = saved or find_local(lib, row["artist"], row["title"])
+            if not manual:
+                listed = known_for(row["artist"], row["title"])["url"]
+                # A link from your list answers the row when nothing better is saved - except that a
+                # link which isn't a Bandcamp release is first given the chance to be beaten by one.
+                if listed and (result or re.search(r"bandcamp\.com/(album|track)/", listed)):
+                    result = with_list_link(result, row["artist"], row["title"])
             if result:
                 _fill(row, result)
                 job["done"] += 1
@@ -1785,8 +1826,10 @@ async def _run(job, fresh, retry_missing=False):
         net.fresh = bool(fresh or retry_missing)     # an explicit "search again" asks Bandcamp anew
         # 2. years for answers found in your purchases whose page hasn't been read yet, and the
         #    album for any answer that is a single-track page (a track bought on its own, say)
-        need_year = [r for r in job["rows"] if r["site"] == "Bandcamp" and r["status"] in ("bandcamp", "check")
-                     and ((not r["year"] and r["note"] == "In your purchases") or "/track/" in r["url"])]
+        need_year = [r for r in job["rows"] if r["site"] == "Bandcamp" and (
+                         (r["status"] == "imported" and not r["year"] and re.search(r"/(album|track)/", r["url"]))
+                         or (r["status"] in ("bandcamp", "check")
+                             and ((not r["year"] and r["note"] == "In your purchases") or "/track/" in r["url"])))]
         for n, row in enumerate(need_year, 1):
             if not state["bandcamp_ok"]:
                 break
@@ -1795,7 +1838,10 @@ async def _run(job, fresh, retry_missing=False):
                 rel = await get_release(net, row["url"])
                 if rel and rel.get("year") and not row["year"]:
                     row["year"] = rel["year"]
-                if rel and rel.get("release_url") and "/track/" in row["url"]:
+                if row["status"] == "imported":            # your own link is left exactly as you gave it
+                    if rel and not row["release"]:
+                        row["release"] = rel.get("release") or rel.get("title") or ""
+                elif rel and rel.get("release_url") and "/track/" in row["url"]:
                     row["url"] = rel["release_url"]
                     row["release"] = rel.get("release") or row["release"]
                     row["steps"] = (row.get("steps") or []) + ["linked to the album this track is on"]
@@ -1815,8 +1861,8 @@ async def _run(job, fresh, retry_missing=False):
                 result, keep = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]], "note":
                                 f"Couldn't complete the search ({type(e).__name__}); run it again to retry"}, False
             if keep and result.get("note") != "In your feed":
-                _remember(_cache_key(row["artist"], row["title"]), result)
-            _fill(row, result)
+                _remember(_cache_key(row["artist"], row["title"]), result, row["artist"], row["title"])
+            _fill(row, with_list_link(result, row["artist"], row["title"]))
             job["done"] += 1
             if state["warning"]:
                 job["warning"] = state["warning"]
@@ -1848,10 +1894,170 @@ def start(tracks, fresh=False, retry_missing=False):
     return job
 
 
-STATUS_TEXT = {"manual": "Link you set", "bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
+STATUS_TEXT = {"imported": "From your list", "manual": "Link you set", "bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
                "bandcamp_artist": "Bandcamp artist page", "soundcloud_track": "SoundCloud track",
                "soundcloud": "SoundCloud artist page", "soundcloud_search": "SoundCloud search",
                "none": "Not found", "error": "Error", "pending": "Not looked up yet"}
+
+
+# ---------- your own list: how names should be written, and links you already have ----------
+
+_URL = re.compile(r"(?:https?://[^\s<>\"']+|(?:[\w-]+\.)?(?:bandcamp|soundcloud)\.com/[^\s<>\"']*|[\w-]+\.bandcamp\.com\b)", re.I)
+LINK_HEADERS = ("link", "links", "url", "urls", "bandcamp", "soundcloud", "buy", "download", "release link", "bandcamp link",
+                "soundcloud link", "bc", "sc", "where")
+NOTE_HEADERS = ("note", "notes", "comment", "comments", "info", "link note", "remarks")
+
+
+def split_link_cell(text: str) -> tuple:
+    """A cell that should hold a link, taken apart: ([links], whatever else was written there).
+    "https://x.bandcamp.com/track/y (limited time only)" -> (["https://x.bandcamp.com/track/y"], "limited time only")"""
+    links = []
+    for raw in _URL.findall(text or ""):
+        link = raw.rstrip(").,;]>")
+        if "://" not in link:
+            link = "https://" + link
+        if link not in links:
+            links.append(link)
+    rest = _URL.sub(" ", text or "")
+    notes = [n.strip(" -\u2013\u2014|,;:") for n in re.split(r"[\(\)\[\]]", rest)]
+    return links, "; ".join(dict.fromkeys(n for n in notes if n))
+
+
+def _best_link(links: list) -> str:
+    """The link to use from several: a Bandcamp release, then any Bandcamp page, then SoundCloud."""
+    rank = lambda u: (0 if re.search(r"bandcamp\.com/(album|track)/", u) else 1 if "bandcamp.com" in u
+                      else 2 if "soundcloud.com" in u else 3)
+    return min(links, key=lambda u: (rank(u), links.index(u))) if links else ""
+
+
+def read_known(rows: list) -> list:
+    """[{artist, title, url, others, note}] from your list. Needs an artist and/or a title per row;
+    links and the notes written beside them are found wherever they are."""
+    rows = [r for r in rows if any(c for c in r)]
+    artist_col = title_col = None
+    link_cols, note_cols, start = [], [], 0
+    for i, row in enumerate(rows[:15]):
+        heads = [c.casefold().strip(" :#") for c in row]
+        if "artist" in heads or "artists" in heads:
+            artist_col = heads.index("artist") if "artist" in heads else heads.index("artists")
+            for want in TITLE_HEADERS:
+                found = [j for j, h in enumerate(heads) if h == want and j != artist_col]
+                if found:
+                    title_col = found[0]
+                    break
+            link_cols = [j for j, h in enumerate(heads) if h in LINK_HEADERS]
+            note_cols = [j for j, h in enumerate(heads) if h in NOTE_HEADERS]
+            start = i + 1
+            break
+    out = []
+    for row in rows[start:]:
+        cell = lambda j: row[j].strip() if j is not None and j < len(row) else ""
+        if artist_col is not None:
+            artist, title, used = cell(artist_col), cell(title_col), {artist_col, title_col}
+        else:
+            first = 1 if len(row) >= 3 and re.fullmatch(r"\d+[.)]?", row[0].strip() or "x") else 0
+            artist, title, used = cell(first), cell(first + 1), {first, first + 1} | ({0} if first else set())
+            if _URL.search(title):                          # artist, link: no title column at all
+                title, used = "", {first} | ({0} if first else set())
+        links, notes = [], []
+        for j, text in enumerate(row):
+            if j in used or not text.strip():
+                continue
+            if j in note_cols:
+                notes.append(text.strip())
+            elif j in link_cols or _URL.search(text):
+                found, rest = split_link_cell(text)
+                links += [u for u in found if u not in links]
+                if rest:
+                    notes.append(rest)
+        if artist or title:
+            best = _best_link(links)
+            out.append({"artist": artist, "title": title, "url": best,
+                        "others": " ".join(u for u in links if u != best), "note": "; ".join(dict.fromkeys(notes))})
+    if not out:
+        raise TracklistError("Nothing to import. The list needs an artist column and, for tracks, a title column.")
+    return out
+
+
+def import_known(entries: list) -> dict:
+    """Store your list. The first spelling given for a track or artist is kept; a later, different
+    one is reported. Importing again updates links and notes for tracks already there."""
+    now, tracks, artists, clashes = db.now(), {}, {}, []
+    for e in entries:
+        a_key = norm(e["artist"])
+        if a_key:
+            if a_key in artists and artists[a_key] != e["artist"]:
+                clashes.append({"kept": artists[a_key], "ignored": e["artist"], "what": "artist"})
+            artists.setdefault(a_key, e["artist"])
+        if not e["title"]:
+            continue
+        key = track_key(e["artist"], e["title"])
+        if key in tracks:
+            kept = tracks[key]
+            if (kept["artist"], kept["title"]) != (e["artist"], e["title"]):
+                clashes.append({"kept": f'{kept["artist"]} - {kept["title"]}', "ignored": f'{e["artist"]} - {e["title"]}', "what": "track"})
+            if not kept["url"] and e["url"]:                # a later row may still supply the link
+                kept.update(url=e["url"], others=e["others"], note=e["note"] or kept["note"])
+            continue
+        tracks[key] = dict(e)
+    db.executemany("INSERT INTO known_tracks(key, artist, title, url, others, note, at) VALUES(?,?,?,?,?,?,?) "
+                   "ON CONFLICT(key) DO UPDATE SET artist=excluded.artist, title=excluded.title, url=excluded.url,"
+                   " others=excluded.others, note=excluded.note, at=excluded.at",
+                   [(k, t["artist"], t["title"], t["url"], t["others"], t["note"], now) for k, t in tracks.items()])
+    db.executemany("INSERT INTO known_artists(key, name, at) VALUES(?,?,?) "
+                   "ON CONFLICT(key) DO UPDATE SET name=excluded.name, at=excluded.at",
+                   [(k, name, now) for k, name in artists.items()])
+    _known_cache.clear()
+    return {"rows": len(entries), "tracks": len(tracks), "artists": len(artists),
+            "with_link": sum(1 for t in tracks.values() if t["url"]),
+            "with_note": sum(1 for t in tracks.values() if t["note"]),
+            "clashes": len(clashes), "clash_examples": clashes[:25], **known_counts()}
+
+
+def known_counts() -> dict:
+    return {"known_tracks": db.query("SELECT COUNT(*) AS n FROM known_tracks")[0]["n"],
+            "known_artists": db.query("SELECT COUNT(*) AS n FROM known_artists")[0]["n"]}
+
+
+_known_cache = {}
+
+
+def _known() -> tuple:
+    """(tracks by key, artist spellings by key), loaded once and dropped when the list changes."""
+    if not _known_cache:
+        _known_cache["tracks"] = {r["key"]: r for r in db.query("SELECT * FROM known_tracks")}
+        _known_cache["artists"] = {r["key"]: r["name"] for r in db.query("SELECT * FROM known_artists")}
+    return _known_cache["tracks"], _known_cache["artists"]
+
+
+def known_for(artist, title) -> dict:
+    """What your list says about a track: {artist, title, url, others, note}, blank where it says nothing."""
+    tracks, artists = _known()
+    t = tracks.get(track_key(artist, title)) or {}
+    return {"artist": t.get("artist") or artists.get(norm(artist), ""), "title": t.get("title", ""),
+            "url": t.get("url", ""), "others": t.get("others", ""), "note": t.get("note", "")}
+
+
+STRONG = ("manual", "bandcamp", "soundcloud_track")      # answers that outrank a link from your list
+
+
+def from_list(known: dict) -> dict:
+    return {"status": "imported", "site": site_of(known["url"]), "url": known["url"], "year": "", "release": "",
+            "found": "", "note": known["note"],
+            "steps": ["link taken from the list you imported"]}
+
+
+def with_list_link(result: dict, artist, title) -> dict:
+    """Your list's link, where the lookup has nothing better. Something the lookup found itself -
+    a release, the track on SoundCloud, a link you set here - always comes first: lists go stale
+    (a track that only had a SoundCloud page when you noted it may have been released since)."""
+    known = known_for(artist, title)
+    if not known["url"] or (result or {}).get("status") in STRONG:
+        return result
+    out = from_list(known)
+    if result:
+        out["steps"] = (result.get("steps") or []) + out["steps"]
+    return out
 
 
 def review_reason(row) -> str:
@@ -1866,7 +2072,12 @@ def review_reason(row) -> str:
 
 def view(job) -> dict:
     """A lookup as the page and the export see it: each row says whether it needs review."""
-    return dict(job, rows=[dict(r, review=review_reason(r)) for r in job["rows"]])
+    rows = []
+    for r in job["rows"]:
+        known = known_for(r["artist"], r["title"])
+        rows.append(dict(r, review=review_reason(r), list_artist=known["artist"], list_title=known["title"],
+                         list_link=known["url"], list_note=known["note"]))
+    return dict(job, rows=rows)
 
 
 def retry_row(job, n: int):
@@ -1889,13 +2100,13 @@ def retry_row(job, n: int):
                     net.fresh = True
                     result, keep = await find(net, Library(), row["artist"], row["title"], state)
                 if keep and result.get("note") != "In your feed":
-                    _remember(_cache_key(row["artist"], row["title"]), result)
+                    _remember(_cache_key(row["artist"], row["title"]), result, row["artist"], row["title"])
                 if state["warning"]:
                     job["warning"] = state["warning"]
         except Exception as e:
             result = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]],
                       "note": f"Couldn't complete the search ({type(e).__name__}); try again"}
-        _fill(row, result)
+        _fill(row, with_list_link(result, row["artist"], row["title"]))
         job.update(done=job["done"] + 1, current=None, phase="", finished=True)
     task = asyncio.create_task(go())
     _tasks.add(task)
@@ -1905,12 +2116,12 @@ def retry_row(job, n: int):
 def to_csv(job) -> bytes:
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["#", "artist", "title", "year", "link", "needs review", "site", "release", "result",
-                     "found as", "note", "steps"])
+    writer.writerow(["#", "artist", "title", "year", "link", "needs review", "artist (your spelling)",
+                     "title (your spelling)", "link note", "site", "release", "result", "found as", "note", "steps"])
     for r in job["rows"]:
-        doubt = review_reason(r)
+        doubt, known = review_reason(r), known_for(r["artist"], r["title"])
         writer.writerow([r["n"], r["artist"], r["title"], r["year"], r["url"], ("REVIEW: " + doubt) if doubt else "",
-                         r["site"], r["release"],
+                         known["artist"], known["title"], known["note"], r["site"], r["release"],
                          STATUS_TEXT.get(r["status"], r["status"]), r["found"], r["note"],
                          " | ".join(r.get("steps") or [])])
     return out.getvalue().encode("utf-8-sig")

@@ -4,7 +4,7 @@ Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 39. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 40. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -190,7 +190,33 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 ### Exporting
 
-**Export results** downloads the list in its original order with year, link, a "needs review" column, site, release, result, and the steps tried.
+**Export results** downloads the list in its original order with year, link, a "needs review" column, your spelling of the artist and title and the link note (from your list, when you have imported one), site, release, result, and the steps tried.
+
+### Saved results
+
+The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, were not found, were found, have a link you set, are in your list, or have no spelling on file. Export downloads whatever the search and filter show.
+
+Each track is listed under the tidied form of its name: lower case, no accents or punctuation, and no describing tags. That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form.
+
+Each row has Edit, Search again and Forget, plus Looks right on rows marked for review. Forget removes the saved answer, so the track is searched for next time.
+
+### Your list of spellings and links
+
+**Import your list** takes a spreadsheet or CSV of how artists and titles should be written. It needs an Artist column and, for tracks, a Title column. A row with only an artist gives that artist's spelling for all their tracks.
+
+- Your spelling is shown beside the tidied form here, under the names in lookup results, and as its own columns in both exports. The tidied form is kept.
+- The list may include links, in columns named Link, URL, Bandcamp or SoundCloud, or anywhere a web address appears. Text written beside a link, such as "(limited time only)" or "(Patreon)", is kept separately as a note and shown and exported in its own column.
+- When a name appears twice with different spellings, the first is kept and the import reports the others.
+- Importing again updates the list. Remove my list deletes it; saved results and links you set are kept.
+
+A link from your list is used only when the lookup has nothing better:
+
+1. A link you set in the app with Edit or Looks right always comes first.
+2. Then a Bandcamp release or SoundCloud track the lookup found itself. Lists go out of date, for example when a track that only had a SoundCloud page has since been released.
+3. Then the link from your list. A Bandcamp release link answers the row without searching. Any other link is used only after a Bandcamp search finds nothing.
+4. Last, the lookup's own fallback: an artist page or a partial match.
+
+When your list's link is not the one shown, it still appears beneath as "your list had".
 
 ## How it works
 
@@ -413,10 +439,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 39 from 11 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 40 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 40 | Link Finder: Saved results tab listing every track looked up, with search, filters, row actions and export. Import your own list of artist and title spellings, with optional links and link notes; spellings appear as separate columns and list links are used when the lookup has nothing better. Each version of a title (a remix, a VIP) now has its own saved answer instead of sharing the plain title's. |
 | 39 | Link Finder: uncertain links are marked Needs review with a red tint that stays until confirmed (Looks right) or corrected, and the export has a "needs review" column. Bandcamp search answers are saved for 7 days, so repeat searches after an update are nearly free. Search again button on each row, and a tick box to search again for not-found rows only. Hint text states that a row needs artist and track title. |
 | 38 | Link Finder remembers which SoundCloud profile belongs to a name, from a track of theirs found there or a link you set, and uses it wherever a profile would otherwise be picked by name alone. Saved name-only answers are corrected without a new search. |
 | 37 | Link Finder: rows still waiting are tinted while a lookup runs, and the row being searched pulses. Brackets that only describe format or availability, such as "(Digital Download)", are ignored when matching titles; earlier misses are searched again once. |

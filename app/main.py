@@ -12,11 +12,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import db, lookup, pace, refresh
+from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "39"   # shown beside the title, so you can tell which version is running
+VERSION = "40"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -442,6 +442,51 @@ async def start_lookup(request: Request, fresh: bool = False, retry: str = ""):
     except lookup.TracklistError as e:
         raise HTTPException(400, str(e))
     return lookup.view(lookup.start(tracks, fresh, retry == "missing"))
+
+
+# --- everything Link Finder has saved, and your own list of spellings and links ---
+
+@app.get("/api/saved")
+def saved_results(q: str = "", filter: str = "", limit: int = 200, offset: int = 0):
+    return saved.listing(q, filter if filter in saved.FILTERS else "", max(1, min(limit, 1000)), max(0, offset))
+
+
+@app.get("/api/saved.csv")
+def saved_csv(q: str = "", filter: str = ""):
+    return Response(saved.to_csv(q, filter if filter in saved.FILTERS else ""), media_type="text/csv", headers={
+        "Content-Disposition": 'attachment; filename="link-finder-saved.csv"'})
+
+
+@app.delete("/api/saved")
+def forget_saved(key: str):
+    """Forget the saved answer (and any link you set) for one track; it is searched for next time."""
+    return {"removed": saved.forget(key)}
+
+
+@app.get("/api/known")
+def known_list():
+    return lookup.known_counts()
+
+
+@app.post("/api/known")
+async def import_known(request: Request):
+    """Body: your list - an .xlsx or CSV file's bytes, or pasted rows. Artist and title columns,
+    and optionally links; text written beside a link is kept as a note."""
+    data = await request.body()
+    if len(data) > 25_000_000:
+        raise HTTPException(413, "That file is too large (25 MB limit).")
+    try:
+        return lookup.import_known(lookup.read_known(lookup.read_table(data)))
+    except lookup.TracklistError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/known")
+def clear_known():
+    db.execute("DELETE FROM known_tracks")
+    db.execute("DELETE FROM known_artists")
+    lookup._known_cache.clear()
+    return lookup.known_counts()
 
 
 class LookupSettings(BaseModel):

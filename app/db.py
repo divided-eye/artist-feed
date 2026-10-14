@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS collection_items(key TEXT PRIMARY KEY, fan TEXT NOT N
   band TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS collection_tracks(item_key TEXT NOT NULL, position INTEGER, title TEXT NOT NULL, artist TEXT);
 CREATE INDEX IF NOT EXISTS collection_tracks_item ON collection_tracks(item_key);
+-- Your own list of tracks: how each artist and title should be written, and optionally a link.
+CREATE TABLE IF NOT EXISTS known_tracks(key TEXT PRIMARY KEY, artist TEXT NOT NULL, title TEXT NOT NULL,
+  url TEXT NOT NULL DEFAULT '', others TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS known_artists(key TEXT PRIMARY KEY, name TEXT NOT NULL, at TEXT NOT NULL);
 """
 
 
@@ -452,3 +456,10 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
         sql += " LIMIT ? OFFSET ?"
         args = args + [limit, offset]
     return query(sql, args)
+
+
+def executemany(sql, rows):
+    with _lock:
+        c = conn()
+        c.executemany(sql, rows)
+        c.commit()
