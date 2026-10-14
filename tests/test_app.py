@@ -17,6 +17,8 @@ os.environ["DISABLE_SCHEDULER"] = "1"
 os.environ["BANDCAMP_PAUSE_SECONDS"] = "0"
 os.environ["BANDCAMP_MAX_NEW"] = "2"
 os.environ["BANDCAMP_GAP_SECONDS"] = "0"
+os.environ["DISABLE_DEEP_READ"] = "1"
+os.environ["DEEP_READ_EXTRA_SECONDS"] = "0"
 os.environ["BANDCAMP_BACKOFF_SECONDS"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -399,6 +401,27 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     status = read_purchases()
     assert (status["items"], status["tracks"], status["error"], status["complete"]) == (4, 4, "", True)
     assert calls["collection_fail"] == []
+
+    # Bandcamp's collection names only one track per purchase. Reading the full track lists opens each
+    # purchased release once; after that, any track on a release you own is answered without searching.
+    assert (status["releases"], status["releases_read"]) == (4, 0)
+    client.post("/api/collection/tracklists")
+    for _ in range(200):
+        time.sleep(0.02)
+        status = client.get("/api/collection").json()
+        if not status["deep_running"]:
+            break
+    assert (status["releases"], status["releases_read"]) == (4, 4)
+    made, asked_before = calls["requests"], len(searched)
+    j = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nBlocklab\tGargantua\ncontactghost\tSpelling Mitsake".encode()).json()
+    time.sleep(0.4)
+    owned = client.get(f"/api/lookup/{j['id']}").json()
+    assert owned["finished"] and [(x["status"], x["note"], x["year"]) for x in owned["rows"]] == [
+        ("bandcamp", "In your purchases", "2025"), ("bandcamp", "In your purchases", "2026")]
+    assert calls["requests"] == made and len(searched) == asked_before        # nothing fetched, nothing searched
+    client.post("/api/collection/tracklists")                                   # nothing left to read
+    time.sleep(0.2)
+    assert calls["requests"] == made
 
     rows = [("Masot", "02"), ("Masot", "Especies Endémicas"), ("Blocklab", "Gargantua"), ("contactghost", "Spelling Mitsake"),
             ("Siadic", "Air"), ("Somah", "Gnosis"), ("Pugilist", "Asteroids"), ("Anecho", "UFO"),

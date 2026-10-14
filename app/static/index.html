@@ -248,6 +248,7 @@
     <label class="opt" for="fanName">Your Bandcamp username</label>
     <input type="text" id="fanName" placeholder="username" spellcheck="false" autocomplete="off">
     <button class="btn small" id="fanSync">Read purchases</button>
+    <button class="btn small" id="fanDeep" hidden title="Open each purchased release and save its whole track list, so tracks you own are found instantly">Read full track lists</button>
     <span class="status" id="fanStatus"></span>
   </div>
   <div class="hint">Upload an Excel (.xlsx) or CSV file, or paste rows copied from your spreadsheet below. Include the header row: the Artist column and the first Title column are used. Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's Bandcamp page or SoundCloud page instead. Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
@@ -791,12 +792,14 @@ async function loadFan(fill) {
       : c.error ? c.error
       : !c.fan ? "Not set: purchases won't be checked"
       : !c.complete && c.items ? `${c.items.toLocaleString()} purchases read so far; the rest are read on the next lookup`
-      : c.synced_at ? `${c.items.toLocaleString()} purchases, ${c.tracks.toLocaleString()} track titles · read ${ago(c.synced_at)}`
+      : c.synced_at ? `${c.items.toLocaleString()} purchases · read ${ago(c.synced_at)} · full track lists: ${c.releases_read.toLocaleString()} of ${c.releases.toLocaleString()} releases`
+          + (c.deep_running ? ` (reading in the background${c.deep_note ? "; " + c.deep_note : ""}${c.paused > 0 ? "; Bandcamp asked for a pause, " + waitText(c.paused) : ""})` : "")
       : "Not read yet; it happens on the first lookup";
     $("fanStatus").classList.toggle("error", !c.syncing && !!c.error);
     $("fanSync").disabled = c.syncing;
     $("fanSync").textContent = c.items && !c.complete ? "Continue reading" : "Read purchases";
-    if (c.syncing && !$("lookup").hidden) fanTimer = setTimeout(loadFan, 1500);
+    $("fanDeep").hidden = c.syncing || c.deep_running || !c.complete || c.releases_read >= c.releases;
+    if ((c.syncing || c.deep_running) && !$("lookup").hidden) fanTimer = setTimeout(loadFan, c.syncing ? 1500 : 5000);
   } catch {}
 }
 
@@ -817,6 +820,7 @@ document.addEventListener("keydown", e => {
 });
 $("lookupBtn").onclick = () => lookupPanel(true);
 $("lookupClose").onclick = () => lookupPanel(false);
+$("fanDeep").onclick = async () => { await api("/api/collection/tracklists", { method: "POST" }); setTimeout(loadFan, 400); };
 $("fanSync").onclick = async () => {
   try { await api("/api/collection", { method: "POST", body: { fan: $("fanName").value } }); } catch (x) { $("fanStatus").textContent = x.message; return; }
   setTimeout(loadFan, 400);

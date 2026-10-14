@@ -15,7 +15,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "15"   # shown beside the title, so you can tell which version is running
+VERSION = "16"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -25,9 +25,11 @@ async def lifespan(app):
     task = None
     if os.environ.get("DISABLE_SCHEDULER") != "1":
         task = asyncio.create_task(refresh.scheduler())
+    deep = asyncio.create_task(lookup.deep_read_forever()) if lookup.DEEP_AUTO else None
     yield
-    if task:
-        task.cancel()
+    for t in (task, deep):
+        if t:
+            t.cancel()
 
 
 app = FastAPI(title="Artist Feed", lifespan=lifespan)
@@ -305,6 +307,13 @@ class FanIn(BaseModel):
 
 @app.get("/api/collection")
 def collection():
+    return lookup.collection_status()
+
+
+@app.post("/api/collection/tracklists")
+async def read_tracklists():
+    """Start (or carry on) reading the full track list of every purchase."""
+    lookup.deep_read_in_background()
     return lookup.collection_status()
 
 

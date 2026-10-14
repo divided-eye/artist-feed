@@ -48,6 +48,10 @@ CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
 _tasks = set()
 collection_state = {"syncing": False, "error": "", "progress": ""}
+# Reading the full track list of every purchase (Bandcamp's collection only names one track each).
+deep_state = {"running": False, "note": ""}
+DEEP_EXTRA = float(os.environ.get("DEEP_READ_EXTRA_SECONDS", "1"))    # added to the normal gap: it is in no hurry
+DEEP_AUTO = os.environ.get("DISABLE_DEEP_READ") != "1"
 
 
 # ---------- reading the uploaded tracklist ----------
@@ -310,7 +314,7 @@ async def get_release(net, url):
             cache_put("release", url, {})
         return None
     rel = parse_release(r.text, url)
-    data = {"url": rel["url"], "title": rel["title"] or "", "artist": rel["author"] or "",
+    data = {"url": rel["url"], "asked": url, "title": rel["title"] or "", "artist": rel["author"] or "",
             "year": (rel["published_at"] or "")[:4], "release": rel["release"] or "",
             "release_url": rel["release_url"] or "", "label": rel["label"] or "",
             "tracks": [{"title": t.title, "artist": t.artist or ""} for t in rel["tracks"] or []]}
@@ -435,10 +439,15 @@ def collection_fan():
 
 def collection_status():
     counts = db.query("SELECT (SELECT COUNT(*) FROM collection_items) AS items,"
-                      " (SELECT COUNT(*) FROM collection_tracks) AS tracks")[0]
+                      " (SELECT COUNT(*) FROM collection_tracks) AS tracks,"
+                      " (SELECT COUNT(DISTINCT url) FROM collection_items) AS releases,"
+                      " (SELECT COUNT(DISTINCT c.url) FROM collection_items c JOIN web_cache w"
+                      "   ON w.kind='release' AND w.key=c.url) AS releases_read")[0]
     return {"fan": collection_fan(), "items": counts["items"], "tracks": counts["tracks"],
             "synced_at": db.kv_get("collection_synced_at"),
             "complete": db.kv_get("collection_complete") == "1", "paused": pace.paused_seconds(),
+            "releases": counts["releases"], "releases_read": counts["releases_read"],
+            "deep_running": deep_state["running"], "deep_note": deep_state["note"],
             **collection_state}
 
 
@@ -558,6 +567,65 @@ async def sync_collection(full=False, on_progress=None):
     finally:
         pace._state["foreground"] -= 1
         collection_state.update(syncing=False, progress="")
+    if DEEP_AUTO:
+        deep_read_in_background()
+
+
+async def deep_read():
+    """Open every purchased release that hasn't been read yet and save its whole track list.
+
+    Bandcamp's collection only names one track per purchase, so without this most tracks you own
+    can only be found by searching. It runs once, in the background, a page every few seconds;
+    it waits while a lookup is running, survives restarts (each page is saved as it is read),
+    and afterwards only new purchases need reading.
+    """
+    if deep_state["running"] or collection_state["syncing"]:
+        return
+    deep_state.update(running=True, note="")
+    try:
+        todo = [r["url"] for r in db.query(
+            "SELECT url, MIN(rowid) AS first FROM collection_items WHERE url NOT IN "
+            "(SELECT key FROM web_cache WHERE kind='release') GROUP BY url ORDER BY first")]
+        if not todo:
+            return
+        async with refresh.make_client() as client:
+            net = Net(client)
+            for url in todo:
+                while any(not job["finished"] for job in jobs.values()):
+                    deep_state["note"] = "waiting for the lookup to finish"
+                    await asyncio.sleep(2)                # lookups go first
+                deep_state["note"] = ""
+                try:
+                    await get_release(net, url)
+                except Blocked:                           # still refused after every retry: rest a while
+                    deep_state["note"] = "Bandcamp asked for a long pause; carrying on in 15 minutes"
+                    await asyncio.sleep(900)
+                except Exception:
+                    pass                                  # left unread; picked up on the next run
+                if DEEP_EXTRA:
+                    await asyncio.sleep(DEEP_EXTRA)
+    finally:
+        deep_state.update(running=False, note="")
+
+
+def deep_read_in_background():
+    if deep_state["running"]:
+        return
+    task = asyncio.create_task(deep_read())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+async def deep_read_forever():
+    """Started with the app: finishes the read after a restart, and picks up new purchases."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            if collection_fan() and not collection_state["syncing"]:
+                await deep_read()
+        except Exception:
+            pass
+        await asyncio.sleep(1800)
 
 
 def sync_in_background(full=False):
@@ -610,6 +678,10 @@ class Library:
         rest = title.partition(" - ")[2]
         if rest:                                         # "Artist - Title" is also findable by its title
             index.setdefault(norm(rest), []).append(entry)
+
+    def owns(self, rel):
+        """Is this saved page (or the album it belongs to) one of your purchases?"""
+        return any(rel.get(k) in self.owned_urls for k in ("asked", "url", "release_url") if rel.get(k))
 
     def owned_by(self, artist):
         """Purchases credited to this artist (or titled "Artist - ...")."""
@@ -860,14 +932,14 @@ async def find(net, lib, artist, title, state):
     # 1b. any release page read during an earlier lookup (all of its tracks were saved, not just the one wanted)
     #     A release you own is preferred over another release that happens to carry the same track.
     known = page_index().get(norm(title), [])
-    mine = [c for c in known if (c["rel"].get("release_url") or c["rel"].get("url")) in lib.owned_urls]
+    mine = [c for c in known if lib.owns(c["rel"])]
     verdict, hit = best_candidate(artist, title, mine)
     if verdict != "bandcamp":
         verdict, hit = best_candidate(artist, title, known)
     earlier = None
     if hit:
         rel = hit["rel"]
-        owned = (rel.get("release_url") or rel.get("url")) in lib.owned_urls
+        owned = lib.owns(rel)
         steps.append(f'pages read earlier: "{hit["name"]}" on "{rel.get("title")}"'
                      + ("" if verdict == "bandcamp" else " (artist only partly matches)"))
         earlier = release_result(rel, verdict, f'{rel.get("artist") or artist} \u2014 {hit["name"]}',
@@ -929,8 +1001,9 @@ def find_local(lib, artist, title):
     """Answer from what is already saved - feed, purchases, pages read earlier - with no request
     to any site. Returns a result, or None when the track needs searching for."""
     def owned_result(item, name, how):
-        rel = cache_get("release", item["url"], 180) or {}
-        return {"status": "bandcamp", "site": "Bandcamp", "url": item["url"], "release": item["title"],
+        rel = cache_get("release", item["url"], 3650) or {}
+        return {"status": "bandcamp", "site": "Bandcamp", "url": rel.get("release_url") or item["url"],
+                "release": rel.get("release") or item["title"],
                 "year": rel.get("year", ""), "note": "In your purchases", "steps": [how],
                 "found": f'{item["band"]} \u2014 {name}'}
 
@@ -951,8 +1024,7 @@ def find_local(lib, artist, title):
         if max(ratio(norm(title), norm(item["title"])), ratio(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
             return owned_result(item, item["title"], f'purchases: you own "{item["title"]}" by {item["band"]}')
     known = page_index().get(norm(title), [])
-    address = lambda c: c["rel"].get("release_url") or c["rel"].get("url")
-    verdict, hit = best_candidate(artist, title, [c for c in known if address(c) in lib.owned_urls])
+    verdict, hit = best_candidate(artist, title, [c for c in known if lib.owns(c["rel"])])
     mine = verdict == "bandcamp"
     if not mine:
         verdict, hit = best_candidate(artist, title, known)
