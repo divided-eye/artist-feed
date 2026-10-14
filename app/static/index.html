@@ -52,7 +52,25 @@
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
     overflow: hidden; display: flex; flex-direction: column; transition: transform .12s, border-color .12s; }
   .card:hover { transform: translateY(-2px); border-color: #444a55; }
+  .card { position: relative; }
   .card.playing { border-color: var(--accent); }
+  /* listened to: dimmed, so what is new stands out; full strength again on hover or while playing */
+  .card.played > .art, .card.played > .info { opacity: .45; transition: opacity .15s; }
+  .card.played:hover > *, .card.played.playing > * { opacity: 1; }
+  .list tbody tr.played td { color: #6f7783; }
+  .list tbody tr.played td.t, .list tbody tr.played td.site a { opacity: .6; }
+  .list tbody tr.played.playing td.t { opacity: 1; color: var(--text); }
+  .card.is-hidden, .list tbody tr.is-hidden td { opacity: .4; }
+  .card.is-hidden { border-style: dashed; }
+  .hidebtn { position: absolute; top: 8px; right: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 50%; padding: 0;
+    display: grid; place-items: center; font-size: 12px; background: rgba(15,16,18,.82); color: var(--text);
+    border: 1px solid rgba(255,255,255,.18); opacity: 0; transition: opacity .12s, background .12s; }
+  .card:hover .hidebtn, .hidebtn:focus-visible { opacity: 1; }
+  .hidebtn:hover { background: var(--danger); color: #14160a; border-color: var(--danger); }
+  @media (hover: none) { .hidebtn { opacity: 1; } }
+  .list td.hide { padding: 4px 6px; text-align: center; }
+  .rowhide { border: 0; background: transparent; color: var(--muted); padding: 2px 6px; border-radius: 6px; font-size: 12px; }
+  .rowhide:hover { color: var(--danger); background: var(--panel-2); }
   .list tbody tr.playing td, .list tbody tr.playing:hover td { background: rgba(217,242,92,.09); }
   tr.playing .rowplay { background: var(--accent); color: #14160a; border-color: var(--accent); }
   .art { aspect-ratio: 1; background: var(--panel-2); position: relative; display: grid; place-items: center;
@@ -115,6 +133,13 @@
   #dockFrame iframe { display: block; width: 100%; border: 0; border-radius: 6px; background: var(--panel-2); }
 
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9; }
+  /* the Links Lookup panel: a slow light-blue pulse */
+  @keyframes lookup-glow {
+    0%, 100% { box-shadow: 0 0 18px 2px rgba(125, 200, 255, .22), -1px 0 0 rgba(125, 200, 255, .35); }
+    50% { box-shadow: 0 0 46px 10px rgba(125, 200, 255, .55), -1px 0 0 rgba(125, 200, 255, .9); }
+  }
+  #lookup { border-left-color: rgba(125, 200, 255, .45); animation: lookup-glow 5s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { #lookup { animation: none; box-shadow: 0 0 28px 4px rgba(125, 200, 255, .35); } }
   aside { position: fixed; top: 0; right: 0; bottom: 0; width: min(1000px, 100%); z-index: 10;
     background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
   aside header { position: static; background: none; display: flex; align-items: center; padding: 14px 16px; }
@@ -159,6 +184,7 @@
   .res details ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
   .tools.second { padding-top: 8px; } .tools.second input { width: 170px; }
   .tools.second select { padding: 4px 8px; font-size: 13px; }
+  .pair { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   label.opt { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
   [hidden] { display: none !important; }
 </style>
@@ -193,6 +219,7 @@
       <option value="">Any length</option><option value="short">Under 3 min</option><option value="medium">3–6 min</option>
       <option value="long">6–10 min</option><option value="extended">Over 10 min</option>
     </select>
+    <label class="opt" title="Show the items you have hidden, so you can put them back"><input type="checkbox" id="fHidden"> Show hidden (<span id="hiddenCount">0</span>)</label>
     <button class="btn small" id="clearFilters" hidden>Clear filters</button>
     <div class="spacer"></div>
     <span class="lbl">Page width</span>
@@ -254,11 +281,13 @@
     <input type="text" id="fanName" placeholder="username" spellcheck="false" autocomplete="off">
     <button class="btn small" id="fanSync">Read purchases</button>
     <div class="spacer"></div>
-    <label class="opt" for="fallbackPref">If a track isn't found, link to the artist's</label>
-    <select id="fallbackPref" aria-label="Artist link to use when a track isn't found">
-      <option value="soundcloud">SoundCloud profile, else Bandcamp</option>
-      <option value="bandcamp">Bandcamp page, else SoundCloud</option>
-    </select>
+    <span class="pair">
+      <label class="opt" for="fallbackPref">If a track isn't found, link to the artist's</label>
+      <select id="fallbackPref" aria-label="Artist link to use when a track isn't found">
+        <option value="soundcloud">SoundCloud profile, else Bandcamp</option>
+        <option value="bandcamp">Bandcamp page, else SoundCloud</option>
+      </select>
+    </span>
     <button class="btn small" id="fanDeep" hidden title="Open each purchased release and save its whole track list, so tracks you own are found instantly">Read full track lists</button>
     <span class="status" id="fanStatus"></span>
   </div>
@@ -270,7 +299,7 @@
 <script>
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
-let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "" }, offset = 0, wasRefreshing = false;
+let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "" }, offset = 0, wasRefreshing = false;
 let view = "grid", sort = { key: "date", dir: "desc" }, playing = null;
 try { if (localStorage.getItem("view") === "list") view = "list"; } catch {}
 
@@ -338,7 +367,18 @@ function play(it, node) {
   document.body.style.paddingBottom = $("dock").offsetHeight + "px";
   playing = it.key;
   document.querySelectorAll(".playing").forEach(n => n.classList.remove("playing"));
-  if (node) node.classList.add("playing");
+  if (node) node.classList.add("playing", "played");
+  if (it.post_id) api(`/api/posts/${it.post_id}/played`, { method: "POST", body: { track: it.track_key || "" } }).catch(() => {});
+}
+
+// Hide a release from the feed (or put it back). nodes: what to take off the screen.
+async function setHidden(postId, hidden, nodes) {
+  const r = await api(`/api/posts/${postId}/hidden`, { method: "POST", body: { hidden } });
+  $("hiddenCount").textContent = r.hidden;
+  if (filter.hidden) return loadFeed();                 // showing hidden items: redraw with the new state
+  nodes.forEach(n => n.remove());
+  offset = Math.max(0, offset - (view === "list" ? nodes.length : 1));
+  if (!$("grid").children.length && !$("listBody").children.length) loadFeed();
 }
 
 function closePlayer() {
@@ -351,8 +391,10 @@ function closePlayer() {
 function card(p) {
   const s = src(p.source), link = safeUrl(p.url) || "#";
   const who = p.author && p.author.toLowerCase() !== p.artist.toLowerCase() ? `${p.artist} · ${p.author}` : p.artist;
-  const it = { key: "p" + p.id, source: p.source, url: p.url, embed: p.embed, title: `${p.title} — ${p.author || p.artist}` };
-  const node = el("div", { class: "card" + (playing === it.key ? " playing" : "") });
+  const it = { key: "p" + p.id, post_id: p.id, source: p.source, url: p.url, embed: p.embed, title: `${p.title} — ${p.author || p.artist}` };
+  const node = el("div", { class: "card" + (playing === it.key ? " playing" : "") + (p.played ? " played" : "") + (p.hidden ? " is-hidden" : "") });
+  node.append(el("button", { class: "hidebtn", text: p.hidden ? "↺" : "✕", title: p.hidden ? "Put back in the feed" : "Hide from the feed",
+    "aria-label": (p.hidden ? "Put back in the feed: " : "Hide from the feed: ") + p.title, onclick: () => setHidden(p.id, !p.hidden, [node]) }));
   const art = player(it)
     ? el("button", { class: "art", "aria-label": `Play ${p.title}`, onclick: () => play(it, node) })
     : el("a", { class: "art", href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${p.title} on ${s.label}` });
@@ -374,13 +416,14 @@ const FILTER_SELECTS = { year: "fYear", label: "fLabel", kind: "fKind", length: 
 
 function syncFilterControls() {
   for (const k of EXTRA_FILTERS) { $(FILTER_SELECTS[k]).value = filter[k]; $(FILTER_SELECTS[k]).classList.toggle("on", !!filter[k]); }
-  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim());
+  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden);
 }
 
 async function loadFacets() {
   const f = await api("/api/facets");
   const fill = (id, first, options) => $(id).replaceChildren(el("option", { value: "", text: first }),
     ...options.map(([value, text]) => el("option", { value, text })));
+  $("hiddenCount").textContent = f.hidden;
   fill("fYear", "Any year", f.years.map(y => [y, y]));
   fill("fLabel", "Any label", [["-", "No label"], ...f.labels.map(l => [l, l])]);
   // a filter whose value no longer exists (artist removed) is dropped
@@ -395,6 +438,7 @@ function filterQuery(extra) {
   if (filter.artist_id) q.set("artist_id", filter.artist_id);
   if (filter.q.trim()) q.set("q", filter.q.trim());
   for (const k of EXTRA_FILTERS) if (filter[k]) q.set(k, filter[k]);
+  if (filter.hidden) q.set("hidden", "1");
   return q;
 }
 
@@ -418,8 +462,8 @@ const LIST_COLUMNS = [["artist", "Artist"], ["label", "Label"], ["release", "Rel
   ["duration", "Duration", "n"], ["date", "Year", "n"], ["released", "Released", "n"], ["posted", "Posted", "n"]];
 
 // Column widths (px) in the list. Drag the edge of a heading to resize; widths are remembered in this browser.
-const COL_DEFAULTS = { go: 48, artist: 170, label: 150, release: 220, track: 250, duration: 92, date: 66, released: 108, posted: 108, site: 120 };
-const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "released", "posted", "site"];
+const COL_DEFAULTS = { go: 48, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 116, posted: 116, site: 130, hide: 40 };
+const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "released", "posted", "site", "hide"];
 const COL_MIN = 48;
 let colW = { ...COL_DEFAULTS };
 try {
@@ -482,16 +526,16 @@ function listHead() {
       loadFeed();
     } }, label + (sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "")), grip(key, label));
   $("listCols").replaceChildren(...COL_ORDER.map(() => el("col")));
-  $("listHead").replaceChildren(el("tr", {}, el("th", {}), ...LIST_COLUMNS.map(th), el("th", {}, el("button", { disabled: "", text: "Site" }), grip("site", "Site"))));
+  $("listHead").replaceChildren(el("tr", {}, el("th", {}), ...LIST_COLUMNS.map(th), el("th", {}, el("button", { disabled: "", text: "Site" }), grip("site", "Site")), el("th", {})));
   applyColumns();
 }
 
 function listRow(r) {
   const s = src(r.source), link = safeUrl(r.url) || "#";
   const name = r.track || r.release || r.post_title;
-  const it = { key: `t${r.post_id}-${r.track_id || 0}`, source: r.source, url: r.source === "soundcloud" ? r.post_url : r.url,
+  const it = { key: `t${r.post_id}-${r.track_id || 0}`, post_id: r.post_id, track_key: r.track_key, source: r.source, url: r.source === "soundcloud" ? r.post_url : r.url,
     embed: r.embed, track_ext_id: r.track_ext_id, title: `${name} — ${r.artist}` };
-  const tr = el("tr", { class: playing === it.key ? "playing" : "" });
+  const tr = el("tr", { "data-post": r.post_id, class: [playing === it.key ? "playing" : "", r.played ? "played" : "", r.hidden ? "is-hidden" : ""].join(" ").trim() });
   const cell = (text, cls) => el("td", { class: cls, title: text || null, text: text || "" });
   tr.append(
     el("td", { class: "go" }, player(it)
@@ -503,7 +547,11 @@ function listRow(r) {
     el("td", { class: "n dim", text: (r.published_at || "").slice(0, 10), title: r.published_at ? "Release date given by the artist" : "No release date given" }),
     el("td", { class: "n dim", text: (r.posted || "").slice(0, 10), title: r.posted ? "Posted " + new Date(r.posted).toLocaleString() : null }),
     el("td", { class: "site" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", title: `Open on ${s.label}` },
-      el("span", { class: "dot", style: `background:${s.color}` }), s.label)));
+      el("span", { class: "dot", style: `background:${s.color}` }), s.label)),
+    el("td", { class: "hide" }, el("button", { class: "rowhide", text: r.hidden ? "↺" : "✕",
+      title: r.hidden ? "Put this release back in the feed" : "Hide this release from the feed",
+      "aria-label": (r.hidden ? "Put back in the feed: " : "Hide from the feed: ") + (r.release || name),
+      onclick: () => setHidden(r.post_id, !r.hidden, [...$("listBody").querySelectorAll(`tr[data-post="${r.post_id}"]`)]) })));
   return tr;
 }
 
@@ -860,11 +908,13 @@ $("moreBtn").onclick = () => loadFeed(false);
 $("viewGrid").onclick = () => setView("grid");
 $("viewList").onclick = () => setView("list");
 $("dockClose").onclick = closePlayer;
+$("fHidden").onchange = e => { filter.hidden = e.target.checked ? "1" : ""; loadFeed(); };
 $("pageWidth").onchange = e => setPageWidth(e.target.value);
 { let w = "1280px"; try { w = localStorage.getItem("pageWidth") || w; } catch {} setPageWidth(w); }
 for (const k of EXTRA_FILTERS) $(FILTER_SELECTS[k]).onchange = e => { filter[k] = e.target.value; loadFeed(); };
 $("clearFilters").onclick = () => {
-  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "" });
+  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "" });
+  $("fHidden").checked = false;
   $("search").value = ""; $("artistFilter").value = ""; renderChips(); loadFeed();
 };
 $("resetCols").onclick = () => { colW = { ...COL_DEFAULTS }; saveColumns(); applyColumns(); };

@@ -15,7 +15,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "24"   # shown beside the title, so you can tell which version is running
+VERSION = "25"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -239,9 +239,34 @@ def delete_account(account_id: int):
 
 
 def more_filters(year: Optional[str] = None, label: Optional[str] = None,
-                 kind: Optional[str] = None, length: Optional[str] = None):
-    """The optional filters every view and the export accept."""
-    return {"year": year, "label": label, "kind": kind, "length": length}
+                 kind: Optional[str] = None, length: Optional[str] = None, hidden: Optional[str] = None):
+    """The optional filters every view and the export accept. hidden=1 also shows hidden items."""
+    return {"year": year, "label": label, "kind": kind, "length": length, "hidden": hidden == "1"}
+
+
+class HiddenIn(BaseModel):
+    hidden: bool = True
+
+
+class PlayedIn(BaseModel):
+    track: str = ""
+    played: bool = True
+
+
+@app.post("/api/posts/{post_id}/hidden")
+def hide_post(post_id: int, body: HiddenIn):
+    """Hide a release from the feed, or put it back."""
+    if not db.set_hidden(post_id, body.hidden):
+        raise HTTPException(404, "That item is no longer in the feed.")
+    return {"hidden": db.facets()["hidden"]}
+
+
+@app.post("/api/posts/{post_id}/played")
+def mark_played(post_id: int, body: PlayedIn):
+    """Remember that a release (track "") or one of its tracks has been listened to."""
+    if not db.set_played(post_id, body.track, body.played):
+        raise HTTPException(404, "That item is no longer in the feed.")
+    return {"ok": True}
 
 
 @app.get("/api/facets")

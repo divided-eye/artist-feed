@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS posts(
   release TEXT,
   embed TEXT,
   detailed INTEGER NOT NULL DEFAULT 0,
+  hidden INTEGER NOT NULL DEFAULT 0,
   posted_at TEXT,
   UNIQUE(account_id, external_id)
 );
@@ -61,6 +62,9 @@ CREATE INDEX IF NOT EXISTS tracks_post ON tracks(post_id, position);
 CREATE INDEX IF NOT EXISTS posts_url ON posts(url);
 CREATE INDEX IF NOT EXISTS posts_when ON posts(COALESCE(published_at, first_seen) DESC);
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
+-- What you have listened to: track '' means the release as a whole (played from its card).
+CREATE TABLE IF NOT EXISTS played(post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  track TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, PRIMARY KEY(post_id, track));
 CREATE TABLE IF NOT EXISTS lookup_cache(key TEXT PRIMARY KEY, result TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS web_cache(kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, at TEXT NOT NULL,
   PRIMARY KEY(kind, key));
@@ -98,6 +102,7 @@ def conn() -> sqlite3.Connection:
 ADDED_POST_COLUMNS = {
     "label": "TEXT", "release": "TEXT", "embed": "TEXT",
     "detailed": "INTEGER NOT NULL DEFAULT 0", "posted_at": "TEXT",
+    "hidden": "INTEGER NOT NULL DEFAULT 0",
 }
 # Raise this when the sources start collecting something new: posts stored with
 # a lower number are re-read (a few per refresh) to pick it up.
@@ -304,6 +309,8 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
     """
     more = more or {}
     where, args = [], []
+    if not more.get("hidden"):                 # hidden items only appear when asked for
+        where.append("p.hidden=0")
     # The same release can reach the feed through two tracked pages (an artist's
     # and their label's, say). Show it once: the copy with the most detail.
     same = ("SELECT p2.id FROM posts p2 JOIN accounts a2 ON a2.id=p2.account_id "
@@ -352,7 +359,34 @@ def facets():
     labels = [r["label"] for r in query(
         "SELECT DISTINCT label FROM posts WHERE COALESCE(label,'')<>'' "
         "ORDER BY label COLLATE NOCASE")]
-    return {"years": years, "labels": labels}
+    hidden = query("SELECT COUNT(DISTINCT COALESCE(embed, url)) AS n FROM posts WHERE hidden=1")[0]["n"]
+    return {"years": years, "labels": labels, "hidden": hidden}
+
+
+def set_hidden(post_id, hidden):
+    """Hide a release from the feed (or put it back). Copies of the same release that arrived
+    through another tracked page are hidden with it."""
+    rows = query("SELECT p.url, p.embed, a.source FROM posts p JOIN accounts a ON a.id=p.account_id "
+                 "WHERE p.id=?", (post_id,))
+    if not rows:
+        return False
+    r = rows[0]
+    execute("UPDATE posts SET hidden=? WHERE id IN (SELECT p.id FROM posts p JOIN accounts a "
+            "ON a.id=p.account_id WHERE a.source=? AND (p.url=? OR (p.embed IS NOT NULL AND p.embed=?)))",
+            (1 if hidden else 0, r["source"], r["url"], r["embed"]))
+    return True
+
+
+def set_played(post_id, track, played=True):
+    if not query("SELECT 1 FROM posts WHERE id=?", (post_id,)):
+        return False
+    if played:
+        execute("INSERT OR IGNORE INTO played(post_id, track, at) VALUES(?,?,?)", (post_id, track or "", now()))
+    elif track:
+        execute("DELETE FROM played WHERE post_id=? AND track=?", (post_id, track))
+    else:
+        execute("DELETE FROM played WHERE post_id=?", (post_id,))
+    return True
 
 
 def feed(source=None, artist_id=None, limit=60, offset=0, q=None, more=None):
@@ -363,7 +397,8 @@ def feed(source=None, artist_id=None, limit=60, offset=0, q=None, more=None):
         "(SELECT COALESCE(GROUP_CONCAT(title, ' '), '') FROM tracks WHERE post_id=p.id)"], more)
     sql = (
         "SELECT p.id, p.title, p.url, p.image, p.kind, p.author, p.published_at, p.first_seen,"
-        " p.label, p.release, p.embed, a.source, a.avatar, a.display_name,"
+        " p.label, p.release, p.embed, p.hidden, a.source, a.avatar, a.display_name,"
+        " EXISTS(SELECT 1 FROM played WHERE post_id=p.id) AS played,"
         " ar.id AS artist_id, ar.name AS artist,"
         " (SELECT COUNT(*) FROM tracks WHERE post_id=p.id) AS track_count,"
         " (SELECT SUM(duration) FROM tracks WHERE post_id=p.id) AS duration "
@@ -392,7 +427,10 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
         f"SELECT p.id AS post_id, t.id AS track_id, {T_ARTIST} AS artist, {T_LABEL} AS label,"
         f" {T_RELEASE} AS release, {T_TRACK} AS track, t.duration, t.position,"
         f" t.ext_id AS track_ext_id, {WHEN} AS released, p.published_at, {POSTED} AS posted,"
-        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind,"
+        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind, p.hidden,"
+        " COALESCE(t.ext_id, t.title, '') AS track_key,"
+        " EXISTS(SELECT 1 FROM played pl WHERE pl.post_id=p.id"
+        "        AND pl.track IN ('', COALESCE(t.ext_id, t.title, ''))) AS played,"
         " p.title AS post_title, a.source, ar.id AS artist_id, ar.name AS tracked_artist "
         + JOINS + "LEFT JOIN tracks t ON t.post_id=p.id " + where + "ORDER BY " + order)
     if limit is not None:

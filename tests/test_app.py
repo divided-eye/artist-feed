@@ -341,7 +341,7 @@ def test_track_list(client):
     assert get("?q=100%25") == []
 
     # filters: year, label ("-" = none), type, length; shared by list, grid and export
-    assert client.get("/api/facets").json() == {"years": ["2026", "2025", "2024"], "labels": ["Deep Label", "SC Label"]}
+    assert client.get("/api/facets").json() == {"years": ["2026", "2025", "2024"], "labels": ["Deep Label", "SC Label"], "hidden": 0}
     assert [r["track"] for r in get("?year=2025")] == ["Intro", "Long One"]
     assert [r["track"] for r in get("?label=Deep+Label&length=extended")] == ["Long One"]
     assert [r["track"] for r in get("?label=-")] == ["Second", "No Art", ""]
@@ -660,6 +660,43 @@ def test_feed_stands_aside_for_lookups_and_pauses(client):
     client.post("/api/refresh")
     wait(client)
     assert client.get("/api/status").json()["bandcamp_on_hold"] is False
+
+
+def test_hiding_and_listened_to(client):
+    feed = client.get("/api/feed").json()
+    first = next(p for p in feed if p["title"] == "First")
+    assert first["hidden"] == 0 and first["played"] == 0 and client.get("/api/facets").json()["hidden"] == 0
+    rows = lambda q="": [(r["release"], r["track"], r["played"], r["hidden"]) for r in client.get("/api/tracks" + q).json()
+                         if r["post_id"] == first["id"]]
+
+    # Listened to: one track from the list, or the whole release from its card.
+    intro = next(r for r in client.get("/api/tracks").json() if r["track"] == "Intro")
+    assert intro["track_key"] == "1001"
+    client.post(f"/api/posts/{first['id']}/played", json={"track": intro["track_key"]})
+    assert [r for r in rows() if r[0] == "First"] == [("First", "Intro", 1, 0), ("First", "Long One", 0, 0)]
+    assert next(p for p in client.get("/api/feed").json() if p["id"] == first["id"])["played"] == 1
+    client.post(f"/api/posts/{first['id']}/played", json={"track": ""})
+    assert all(r[2] == 1 for r in rows() if r[0] == "First")
+    client.post("/api/refresh")                            # survives a refresh re-reading the release
+    wait(client)
+    assert all(r[2] == 1 for r in rows() if r[0] == "First")
+    client.post(f"/api/posts/{first['id']}/played", json={"played": False})
+    assert all(r[2] == 0 for r in rows() if r[0] == "First")
+
+    # Hidden: gone from the grid, the list and the export, until asked for; then put back.
+    assert client.post(f"/api/posts/{first['id']}/hidden", json={"hidden": True}).json() == {"hidden": 1}
+    assert "First" not in [p["title"] for p in client.get("/api/feed").json()]
+    assert not [r for r in rows() if r[0] == "First"]
+    assert "Long One" not in client.get("/api/tracks.csv").content.decode("utf-8-sig")
+    assert [r for r in rows("?hidden=1") if r[0] == "First"] == [("First", "Intro", 0, 1), ("First", "Long One", 0, 1)]
+    assert next(p for p in client.get("/api/feed?hidden=1").json() if p["id"] == first["id"])["hidden"] == 1
+    client.post("/api/refresh")                            # a refresh doesn't bring it back
+    wait(client)
+    assert "First" not in [p["title"] for p in client.get("/api/feed").json()]
+    assert client.post(f"/api/posts/{first['id']}/hidden", json={"hidden": False}).json() == {"hidden": 0}
+    assert [p["title"] for p in client.get("/api/feed").json()] == [p["title"] for p in feed]
+    assert client.post("/api/posts/999999/hidden", json={"hidden": True}).status_code == 404
+    assert client.post("/api/posts/999999/played", json={}).status_code == 404
 
 
 def test_upgrade_from_first_version(client):

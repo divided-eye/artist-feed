@@ -154,6 +154,18 @@ otherwise their SoundCloud page.
 - Looked-up tracks are remembered, so repeating a list is instant. Tick
   "Search again for saved results" to redo them. Up to 500 tracks at a time.
 
+## Hiding items and what you've heard
+
+- **Hide:** the ✕ on a card (it appears when you point at the card) or at the
+  end of a list row takes that release out of the feed, in both views and in
+  the export. It stays hidden through refreshes. Tick **Show hidden** in the
+  filter row to see hidden releases, dimmed, and use ↺ to put one back.
+  Hiding a row in List view hides the whole release it belongs to.
+- **Listened to:** anything you press play on is dimmed afterwards, so what you
+  haven't heard stands out. Playing a card marks the whole release; playing a
+  list row marks that track. This is saved with your data, so it carries over
+  between browsers and restarts.
+
 ## Listening
 
 Press play on a card or a list row and the site's own player opens in a bar at
@@ -170,7 +182,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v24. Labels, track lists and durations for Bandcamp
+is v25. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
