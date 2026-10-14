@@ -7,7 +7,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
@@ -15,7 +15,7 @@ from . import db, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "3"   # shown beside the title, so you can tell which version is running
+VERSION = "4"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -236,10 +236,22 @@ def delete_account(account_id: int):
     return {"ok": True}
 
 
+def more_filters(year: Optional[str] = None, label: Optional[str] = None,
+                 kind: Optional[str] = None, length: Optional[str] = None):
+    """The optional filters every view and the export accept."""
+    return {"year": year, "label": label, "kind": kind, "length": length}
+
+
+@app.get("/api/facets")
+def facets():
+    return db.facets()
+
+
 @app.get("/api/feed")
 def feed(source: Optional[str] = None, artist_id: Optional[int] = None,
-         limit: int = 60, offset: int = 0, q: Optional[str] = None):
-    return db.feed(source, artist_id, max(1, min(limit, 200)), max(0, offset), q)
+         limit: int = 60, offset: int = 0, q: Optional[str] = None,
+         more: dict = Depends(more_filters)):
+    return db.feed(source, artist_id, max(1, min(limit, 200)), max(0, offset), q, more)
 
 
 def _clock(seconds):
@@ -254,19 +266,20 @@ def _clock(seconds):
 @app.get("/api/tracks")
 def tracks(source: Optional[str] = None, artist_id: Optional[int] = None,
            q: Optional[str] = None, sort: str = "date", dir: str = "desc",
-           limit: int = 200, offset: int = 0):
-    return db.tracks(source, artist_id, q, sort, dir, max(1, min(limit, 1000)), max(0, offset))
+           limit: int = 200, offset: int = 0, more: dict = Depends(more_filters)):
+    return db.tracks(source, artist_id, q, sort, dir, max(1, min(limit, 1000)), max(0, offset), more)
 
 
 @app.get("/api/tracks.csv")
 def tracks_csv(source: Optional[str] = None, artist_id: Optional[int] = None,
-               q: Optional[str] = None, sort: str = "date", dir: str = "desc"):
+               q: Optional[str] = None, sort: str = "date", dir: str = "desc",
+               more: dict = Depends(more_filters)):
     """The list view as a spreadsheet: every matching row, not just the ones on screen."""
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(["artist", "label", "release", "track", "duration", "year",
                      "released", "site", "url"])
-    for r in db.tracks(source, artist_id, q, sort, dir):
+    for r in db.tracks(source, artist_id, q, sort, dir, more=more):
         day = (r["published_at"] or "")[:10]
         site = SOURCES[r["source"]].label if r["source"] in SOURCES else r["source"]
         writer.writerow([r["artist"], r["label"], r["release"], r["track"],

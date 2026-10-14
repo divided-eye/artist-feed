@@ -71,20 +71,30 @@
   .seg button { border: 0; background: transparent; padding: 6px 12px; color: var(--muted); }
   .seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--text); }
   #search { width: 190px; }
+  .bar.filters { padding-top: 0; gap: 8px 10px; }
+  .bar.filters select { max-width: 220px; padding: 5px 8px; font-size: 14px; }
+  .bar.filters select.on { border-color: var(--accent); }
+  .bar.filters .lbl { color: var(--muted); font-size: 13px; }
 
   .list-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
-  .list th { position: static; padding: 0; }
-  .list th button { all: unset; cursor: pointer; display: block; padding: 9px 10px; width: 100%; box-sizing: border-box; }
+  table.list { table-layout: fixed; width: auto; min-width: 0; }
+  .list th { position: relative; top: auto; padding: 0; overflow: hidden; }
+  .grip { position: absolute; top: 0; right: 0; bottom: 0; width: 9px; cursor: col-resize; touch-action: none; z-index: 2; }
+  .grip::after { content: ""; position: absolute; top: 7px; bottom: 7px; right: 3px; width: 2px; border-radius: 1px; background: var(--line); }
+  .grip:hover::after, .grip.dragging::after { background: var(--accent); }
+  body.resizing { cursor: col-resize; user-select: none; }
+  .list th button { all: unset; cursor: pointer; display: block; padding: 9px 14px 9px 10px; width: 100%; box-sizing: border-box; }
+  .list th button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list th button:disabled { cursor: default; }
   .list th button:hover, .list th[aria-sort] button { color: var(--text); }
   .list th button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .list td { padding: 7px 10px; border-right: 0; vertical-align: middle; }
   .list tr:last-child td { border-bottom: 0; }
   .list tbody tr:hover td { background: var(--panel-2); }
-  .list td.t { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list td.dim { color: var(--muted); }
   .list td.n, .list th.n button { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .list td.go { width: 1%; padding: 4px 6px 4px 10px; }
-  .list td.site { width: 1%; white-space: nowrap; }
+  .list td.go { padding: 4px 6px 4px 10px; }
   .list td.site a { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
   .list td.site a:hover { color: var(--text); }
   .rowplay { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
@@ -141,11 +151,25 @@
     <button class="btn" id="refreshBtn">Refresh</button>
     <button class="btn primary" id="manageBtn">Artists</button>
   </div>
+  <div class="bar filters">
+    <span class="lbl">Filter</span>
+    <select id="fYear" aria-label="Filter by year"><option value="">Any year</option></select>
+    <select id="fLabel" aria-label="Filter by label"><option value="">Any label</option></select>
+    <select id="fKind" aria-label="Filter by type">
+      <option value="">Any type</option><option value="album">Albums &amp; EPs</option><option value="track">Single tracks</option>
+    </select>
+    <select id="fLength" aria-label="Filter by track length">
+      <option value="">Any length</option><option value="short">Under 3 min</option><option value="medium">3–6 min</option>
+      <option value="long">6–10 min</option><option value="extended">Over 10 min</option>
+    </select>
+    <button class="btn small" id="clearFilters" hidden>Clear filters</button>
+    <button class="btn small" id="resetCols" hidden title="Put the list columns back to their original widths">Reset column widths</button>
+  </div>
 </header>
 
 <main>
   <div class="grid" id="grid"></div>
-  <div class="list-wrap" id="listWrap" hidden><table class="list"><thead id="listHead"></thead><tbody id="listBody"></tbody></table></div>
+  <div class="list-wrap" id="listWrap" hidden><table class="list" id="listTable"><colgroup id="listCols"></colgroup><thead id="listHead"></thead><tbody id="listBody"></tbody></table></div>
   <div class="empty" id="empty" hidden></div>
   <button class="btn more" id="moreBtn" hidden>Load more</button>
 </main>
@@ -181,7 +205,7 @@
 <script>
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
-let sources = [], artists = [], filter = { source: "", artist_id: "", q: "" }, offset = 0, wasRefreshing = false;
+let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "" }, offset = 0, wasRefreshing = false;
 let view = "grid", sort = { key: "date", dir: "desc" }, playing = null;
 try { if (localStorage.getItem("view") === "list") view = "list"; } catch {}
 
@@ -280,18 +304,39 @@ function card(p) {
   return node;
 }
 
+const EXTRA_FILTERS = ["year", "label", "kind", "length"];
+const FILTER_SELECTS = { year: "fYear", label: "fLabel", kind: "fKind", length: "fLength" };
+
+function syncFilterControls() {
+  for (const k of EXTRA_FILTERS) { $(FILTER_SELECTS[k]).value = filter[k]; $(FILTER_SELECTS[k]).classList.toggle("on", !!filter[k]); }
+  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim());
+}
+
+async function loadFacets() {
+  const f = await api("/api/facets");
+  const fill = (id, first, options) => $(id).replaceChildren(el("option", { value: "", text: first }),
+    ...options.map(([value, text]) => el("option", { value, text })));
+  fill("fYear", "Any year", f.years.map(y => [y, y]));
+  fill("fLabel", "Any label", [["-", "No label"], ...f.labels.map(l => [l, l])]);
+  // a filter whose value no longer exists (artist removed) is dropped
+  if (filter.year && !f.years.includes(filter.year)) filter.year = "";
+  if (filter.label && filter.label !== "-" && !f.labels.includes(filter.label)) filter.label = "";
+  syncFilterControls();
+}
+
 function filterQuery(extra) {
   const q = new URLSearchParams(extra);
   if (filter.source) q.set("source", filter.source);
   if (filter.artist_id) q.set("artist_id", filter.artist_id);
   if (filter.q.trim()) q.set("q", filter.q.trim());
+  for (const k of EXTRA_FILTERS) if (filter[k]) q.set(k, filter[k]);
   return q;
 }
 
 function showEmpty(none) {
   $("empty").hidden = !none;
   if (!none) return;
-  const filtered = filter.source || filter.artist_id || filter.q.trim();
+  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]);
   $("empty").replaceChildren(el("b", { text: !artists.length ? "No artists yet" : filtered ? "Nothing matches" : "Nothing here yet" }),
     !artists.length ? "Use the Artists button to add your first one." : filtered ? "Try a different search or filter." : "New posts appear after the next refresh.");
 }
@@ -307,13 +352,58 @@ async function loadGrid(reset) {
 const LIST_COLUMNS = [["artist", "Artist"], ["label", "Label"], ["release", "Release"], ["track", "Track"],
   ["duration", "Duration", "n"], ["date", "Year", "n"]];
 
+// Column widths (px) in the list. Drag the edge of a heading to resize; widths are remembered in this browser.
+const COL_DEFAULTS = { go: 48, artist: 190, label: 170, release: 250, track: 290, duration: 92, date: 72, site: 130 };
+const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "site"];
+const COL_MIN = 48;
+let colW = { ...COL_DEFAULTS };
+try {
+  const saved = JSON.parse(localStorage.getItem("listColumns") || "{}");
+  for (const k of COL_ORDER) if (Number.isFinite(saved[k])) colW[k] = Math.max(COL_MIN, Math.min(1200, saved[k]));
+} catch {}
+
+function applyColumns() {
+  const cols = $("listCols").children;
+  COL_ORDER.forEach((k, i) => { if (cols[i]) cols[i].style.width = colW[k] + "px"; });
+  $("listTable").style.width = COL_ORDER.reduce((sum, k) => sum + colW[k], 0) + "px";
+  $("resetCols").hidden = view !== "list" || COL_ORDER.every(k => colW[k] === COL_DEFAULTS[k]);
+}
+
+function saveColumns() { try { localStorage.setItem("listColumns", JSON.stringify(colW)); } catch {} }
+
+function grip(key, label) {
+  const g = el("span", { class: "grip", role: "separator", "aria-orientation": "vertical", tabindex: "0",
+    "aria-label": `Resize ${label} column`, title: "Drag to resize · double-click to reset" });
+  g.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    const startX = e.clientX, startW = colW[key];
+    g.setPointerCapture(e.pointerId); g.classList.add("dragging"); document.body.classList.add("resizing");
+    const move = m => { colW[key] = Math.max(COL_MIN, Math.round(startW + m.clientX - startX)); applyColumns(); };
+    const stop = () => {
+      g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", stop); g.removeEventListener("pointercancel", stop);
+      g.classList.remove("dragging"); document.body.classList.remove("resizing"); saveColumns();
+    };
+    g.addEventListener("pointermove", move); g.addEventListener("pointerup", stop); g.addEventListener("pointercancel", stop);
+  });
+  g.addEventListener("dblclick", () => { colW[key] = COL_DEFAULTS[key]; applyColumns(); saveColumns(); });
+  g.addEventListener("keydown", e => {          // arrow keys resize too
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    colW[key] = Math.max(COL_MIN, colW[key] + (e.key === "ArrowRight" ? 16 : -16)); applyColumns(); saveColumns();
+  });
+  g.addEventListener("click", e => e.stopPropagation());
+  return g;
+}
+
 function listHead() {
   const th = ([key, label, cls]) => el("th", { class: cls || "", "aria-sort": sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : null },
     el("button", { title: "Sort by " + label.toLowerCase(), onclick: () => {
       sort = sort.key === key ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "date" || key === "duration" ? "desc" : "asc" };
       loadFeed();
-    } }, label + (sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "")));
-  $("listHead").replaceChildren(el("tr", {}, el("th", {}), ...LIST_COLUMNS.map(th), el("th", {})));
+    } }, label + (sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "")), grip(key, label));
+  $("listCols").replaceChildren(...COL_ORDER.map(() => el("col")));
+  $("listHead").replaceChildren(el("tr", {}, el("th", {}), ...LIST_COLUMNS.map(th), el("th", {}, el("button", { disabled: "", text: "Site" }), grip("site", "Site"))));
+  applyColumns();
 }
 
 function listRow(r) {
@@ -351,6 +441,8 @@ async function loadFeed(reset = true) {
   $("grid").hidden = list || offset === 0;
   $("listWrap").hidden = !list || offset === 0;
   $("exportBtn").hidden = !list;
+  $("resetCols").hidden = !list || COL_ORDER.every(k => colW[k] === COL_DEFAULTS[k]);
+  syncFilterControls();
   showEmpty(offset === 0);
 }
 
@@ -513,13 +605,14 @@ async function saveTable() {
   table = data.rows.map(row => ({ ...row, errors: [] }));
   savedIds = data.rows.map(row => row.id);
   setDirty(false); renderTable();
-  artists = await api("/api/artists"); renderArtists(); await loadFeed();
+  artists = await api("/api/artists"); renderArtists(); await loadFacets(); await loadFeed();
   if (data.added) { wasRefreshing = true; setTimeout(pollStatus, 800); }
 }
 
 async function reload() {
   artists = await api("/api/artists");
   renderArtists();
+  await loadFacets();
   await loadFeed();
   if (!$("drawer").hidden && !dirty) await loadTable();   // pick up new post counts and warnings
 }
@@ -555,6 +648,12 @@ $("moreBtn").onclick = () => loadFeed(false);
 $("viewGrid").onclick = () => setView("grid");
 $("viewList").onclick = () => setView("list");
 $("dockClose").onclick = closePlayer;
+for (const k of EXTRA_FILTERS) $(FILTER_SELECTS[k]).onchange = e => { filter[k] = e.target.value; loadFeed(); };
+$("clearFilters").onclick = () => {
+  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "" });
+  $("search").value = ""; $("artistFilter").value = ""; renderChips(); loadFeed();
+};
+$("resetCols").onclick = () => { colW = { ...COL_DEFAULTS }; saveColumns(); applyColumns(); };
 let searchTimer;
 $("search").oninput = e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filter.q = e.target.value; loadFeed(); }, 250); };
 $("artistFilter").onchange = e => { filter.artist_id = e.target.value; loadFeed(); };

@@ -180,6 +180,19 @@ def test_track_list(client):
     assert [r["track"] for r in get("?source=soundcloud&limit=1&offset=1")] == ["No Art"]
     assert get("?q=100%25") == []
 
+    # filters: year, label ("-" = none), type, length; shared by list, grid and export
+    assert client.get("/api/facets").json() == {"years": ["2026", "2025", "2024"], "labels": ["Deep Label", "SC Label"]}
+    assert [r["track"] for r in get("?year=2025")] == ["Intro", "Long One"]
+    assert [r["track"] for r in get("?label=Deep+Label&length=extended")] == ["Long One"]
+    assert [r["track"] for r in get("?label=-")] == ["Second", "No Art", ""]
+    assert [r["track"] for r in get("?kind=track&length=medium")] == ["Demo", "Second"]
+    assert [r["track"] for r in get("?length=short")] == ["Intro"]
+    assert [r["release"] for r in get("?kind=album&year=2024")] == ["Third"]
+    titles = lambda query: [p["title"] for p in client.get("/api/feed" + query).json()]
+    assert titles("?length=extended") == ["First"] and titles("?label=-&kind=album") == ["Third"]
+    assert titles("?year=2026&source=bandcamp") == ["Second"]
+    assert len(client.get("/api/tracks.csv?year=2025").content.decode("utf-8-sig").splitlines()) == 3
+
     first = next(p for p in client.get("/api/feed?q=intro").json())
     assert (first["title"], first["embed"], first["track_count"], first["duration"]) == ("First", "album=111", 2, 3786.5)
 

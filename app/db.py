@@ -276,7 +276,17 @@ def _like(q):
     return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
-def _filters(source, artist_id, q, fields):
+LENGTHS = {            # seconds: at least, under
+    "short": (0, 180), "medium": (180, 360), "long": (360, 600), "extended": (600, None),
+}
+
+
+def _filters(source, artist_id, q, fields, more=None, per_track=False):
+    """WHERE clause shared by the grid, the list and the export.
+
+    more: optional {"year", "label", "kind", "length"}; label "-" means "no label".
+    """
+    more = more or {}
     where, args = [], []
     if source:
         where.append("a.source=?")
@@ -284,18 +294,48 @@ def _filters(source, artist_id, q, fields):
     if artist_id:
         where.append("a.artist_id=?")
         args.append(artist_id)
+    if more.get("year"):
+        where.append(f"substr({WHEN},1,4)=?")
+        args.append(str(more["year"]))
+    if more.get("label") == "-":
+        where.append("COALESCE(p.label,'')=''")
+    elif more.get("label"):
+        where.append("p.label=?")
+        args.append(more["label"])
+    if more.get("kind") in ("album", "track"):
+        where.append("p.kind=?")
+        args.append(more["kind"])
+    if more.get("length") in LENGTHS:
+        low, high = LENGTHS[more["length"]]
+        test = "{d}>=?" + (" AND {d}<?" if high is not None else "")
+        if per_track:
+            where.append("(" + test.format(d="t.duration") + ")")
+        else:   # a release matches when any of its tracks does
+            where.append("EXISTS(SELECT 1 FROM tracks WHERE post_id=p.id AND "
+                         + test.format(d="duration") + ")")
+        args += [low] + ([high] if high is not None else [])
     for word in (q or "").split():
         where.append("(" + " OR ".join(f"{f} LIKE ? ESCAPE '\\'" for f in fields) + ")")
         args += [_like(word)] * len(fields)
     return ("WHERE " + " AND ".join(where) + " " if where else ""), args
 
 
-def feed(source=None, artist_id=None, limit=60, offset=0, q=None):
+def facets():
+    """The years and labels present, for the filter menus."""
+    years = [r["y"] for r in query(
+        f"SELECT DISTINCT substr({WHEN},1,4) AS y FROM posts p ORDER BY y DESC") if r["y"]]
+    labels = [r["label"] for r in query(
+        "SELECT DISTINCT label FROM posts WHERE COALESCE(label,'')<>'' "
+        "ORDER BY label COLLATE NOCASE")]
+    return {"years": years, "labels": labels}
+
+
+def feed(source=None, artist_id=None, limit=60, offset=0, q=None, more=None):
     """One row per post (release or upload), newest first."""
     where, args = _filters(source, artist_id, q, [
         "p.title", "COALESCE(p.author,'')", "ar.name", "COALESCE(p.label,'')",
         "COALESCE(p.release,'')",
-        "(SELECT COALESCE(GROUP_CONCAT(title, ' '), '') FROM tracks WHERE post_id=p.id)"])
+        "(SELECT COALESCE(GROUP_CONCAT(title, ' '), '') FROM tracks WHERE post_id=p.id)"], more)
     sql = (
         "SELECT p.id, p.title, p.url, p.image, p.kind, p.author, p.published_at, p.first_seen,"
         " p.label, p.release, p.embed, a.source, a.avatar, a.display_name,"
@@ -308,10 +348,10 @@ def feed(source=None, artist_id=None, limit=60, offset=0, q=None):
 
 
 def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
-           limit=None, offset=0):
+           limit=None, offset=0, more=None):
     """One row per track, for the list view and its export."""
     where, args = _filters(source, artist_id, q, [
-        T_ARTIST, T_LABEL, T_RELEASE, T_TRACK, "p.title", "ar.name"])
+        T_ARTIST, T_LABEL, T_RELEASE, T_TRACK, "p.title", "ar.name"], more, per_track=True)
     way = "ASC" if direction == "asc" else "DESC"
     newest = f"{WHEN} DESC, p.id DESC, t.position ASC"
     if sort in TRACK_SORTS:      # blanks last, then newest first within equal values
