@@ -484,8 +484,8 @@ def test_tracklist_lookup(client):
     assert all(row["steps"] for row in got["rows"])       # every row says what was tried
 
     lines = client.get(f"/api/lookup/{got['id']}.csv").content.decode("utf-8-sig").splitlines()
-    assert lines[0] == "#,artist,title,link,site,release,year,result,found as,note,steps"
-    assert lines[2].startswith("2,Masot,Especies Endémicas,https://masot.bandcamp.com/album/flora,Bandcamp,Flora,2023,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
+    assert lines[0] == "#,artist,title,year,link,site,release,result,found as,note,steps"
+    assert lines[2].startswith("2,Masot,Especies Endémicas,2023,https://masot.bandcamp.com/album/flora,Bandcamp,Flora,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
 
     count = len(searched)
     again = run(listing)                                  # remembered: no new searches

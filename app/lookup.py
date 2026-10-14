@@ -1734,10 +1734,10 @@ STATUS_TEXT = {"manual": "Link you set", "bandcamp": "Bandcamp release", "bandca
 def to_csv(job) -> bytes:
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["#", "artist", "title", "link", "site", "release", "year", "result", "found as",
+    writer.writerow(["#", "artist", "title", "year", "link", "site", "release", "result", "found as",
                      "note", "steps"])
     for r in job["rows"]:
-        writer.writerow([r["n"], r["artist"], r["title"], r["url"], r["site"], r["release"], r["year"],
+        writer.writerow([r["n"], r["artist"], r["title"], r["year"], r["url"], r["site"], r["release"],
                          STATUS_TEXT.get(r["status"], r["status"]), r["found"], r["note"],
                          " | ".join(r.get("steps") or [])])
     return out.getvalue().encode("utf-8-sig")

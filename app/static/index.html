@@ -564,8 +564,8 @@ async function loadGrid(reset) {
 
 // The list's columns: [key, heading, heading class, sortable]. The play and hide columns are fixed at the ends.
 const LIST_COLUMNS = [["artist", "Artist", "", true], ["track", "Track", "", true], ["duration", "Duration", "n", true],
-  ["date", "Year", "n", true], ["released", "Released", "n", true], ["posted", "Posted", "n", true],
-  ["release", "Release", "", true], ["label", "Label", "", true], ["site", "Site", "", false]];
+  ["date", "Year", "n", true], ["release", "Release", "", true], ["posted", "Posted", "n", true],
+  ["released", "Released", "n", true], ["label", "Label", "", true], ["site", "Site", "", false]];
 const COL_INFO = Object.fromEntries(LIST_COLUMNS.map(c => [c[0], c]));
 const DEFAULT_ORDER = LIST_COLUMNS.map(c => c[0]);
 // Which columns show and in what order; remembered in this browser. Change with the Columns button or by dragging a heading.

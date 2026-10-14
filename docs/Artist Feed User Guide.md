@@ -4,7 +4,7 @@ Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 35. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 36. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -63,7 +63,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 ### Views
 
 - **Grid** shows one card per release or upload, with cover, artist, label, track count, length and age.
-- **List** shows one row per track: artist, track, duration, year, release date, posted date, release, label and site. It opens sorted by Posted, newest first.
+- **List** shows one row per track: artist, track, duration, year, release, posted date, release date, label and site. It opens sorted by Posted, newest first.
 - The app remembers which view you last used.
 
 ### List view
@@ -190,7 +190,7 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 ### Exporting
 
-**Export results** downloads the list in its original order with link, site, release, year, result, and the steps tried.
+**Export results** downloads the list in its original order with year, link, site, release, result, and the steps tried.
 
 ## How it works
 
@@ -413,10 +413,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 and 35 from 11 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 36 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 36 | Default list order swaps Release and Released: Artist, Track, Duration, Year, Release, Posted, Released, Label, Site. Link Finder export puts year before the link. |
 | 35 | Tracked Artists table: resizable columns, and the Artist column always fits the full name. Back catalogues load faster: catch-up visits every 10 minutes, and unreadable release pages no longer block the rest. |
 | 34 | List columns can be dragged to reorder and shown or hidden from a Columns menu; new default order Artist, Track, Duration, Year, Released, Posted, Release, Label, Site. Date filter (last N days or a date range, by posted or release date). Show-first-N limit on results and export. WIP markers ignored when matching titles. Guide included in the zip under docs. |
 | 33 | Numbers in titles must agree: "Hybrid Kit 6" no longer matches "Hybrid Kit 2" or "Hybrid Kit". Saved results for titles containing a number are looked up again once. |
