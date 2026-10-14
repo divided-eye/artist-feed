@@ -121,6 +121,15 @@ otherwise their SoundCloud page.
   a request that names a remixer, and a remix is only a "check" match for a
   request that doesn't. Tags that only describe a version, such as "(Original
   Mix)", "(VIP)" or "(Instrumental)", are ignored.
+- Words between the name and the kind of version are set aside: "(River Dub
+  Edit)" is tried as River first, then as River Dub; "(Nightmare & Oni 140
+  Bootleg)" as Nightmare & Oni.
+- Choosing a SoundCloud profile by name alone is unreliable (there are many
+  profiles called "River"), so the track is looked for on SoundCloud first and
+  the profile that uploaded it is used, provided its name fits. Only when the
+  track isn't on SoundCloud is a profile picked by name, and the result then
+  says "matched by name only". A profile named for the whole act ("Nightmare
+  & Oni") is preferred over one named for a single member.
 - **What was tried** under each result lists every step and what it found.
   It is also in the export, in the "steps" column.
 - **Edit** under any link lets you replace it with the correct one (and set
@@ -147,7 +156,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v21. Labels, track lists and durations for Bandcamp
+is v22. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

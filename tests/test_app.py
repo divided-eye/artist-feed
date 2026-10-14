@@ -190,13 +190,26 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=release("Especies Endémicas", "02 May 2023 00:00:00 GMT", "MusicRecording", {
             "byArtist": {"name": "Masot"}, "inAlbum": {"name": "Flora", "@id": "https://masot.bandcamp.com/album/flora"}}))
     if host == "api-v2.soundcloud.com" and path == "/search/users" and request.url.params.get("client_id") == CID:
-        users = {"River Dub": [{"username": "River Dub", "permalink": "riverdub", "permalink_url": "https://soundcloud.com/riverdub"}],
+        users = {"River Dub": [{"username": "River Dub", "permalink": "user-865621610", "permalink_url": "https://soundcloud.com/user-865621610", "followers_count": 5}],
+                 "River": [{"username": "River", "permalink": "river", "permalink_url": "https://soundcloud.com/river", "followers_count": 900000},
+                           {"username": "River", "permalink": "riverirvine", "permalink_url": "https://soundcloud.com/riverirvine", "followers_count": 800}],
+                 "Nightmare & Oni": [{"username": "NIGHTMARE", "permalink": "nightmare", "permalink_url": "https://soundcloud.com/nightmare", "followers_count": 500000},
+                                     {"username": "Nightmare & Oni", "permalink": "nightmareandoni", "permalink_url": "https://soundcloud.com/nightmareandoni", "followers_count": 300}],
+                 "Solo Guy": [{"username": "Solo Guy", "permalink": "sologuy-official", "permalink_url": "https://soundcloud.com/sologuy-official", "followers_count": 10}],
                  "Omega Nebula": [{"username": "Omega Nebula", "permalink": "omeganebula", "permalink_url": "https://soundcloud.com/omeganebula"}],
                  "Sean Paul": [{"username": "Sean Paul", "permalink": "seanpaul", "permalink_url": "https://soundcloud.com/seanpaul"}],
                  "Anecho": [{"username": "ANECHO", "permalink": "anechoicchamber", "permalink_url": "https://soundcloud.com/anechoicchamber"}],
                  "Nobody Known": [{"username": "nobody known fan", "permalink_url": "https://soundcloud.com/fan", "followers_count": 9000},
                                   {"username": "Nobody Known", "permalink_url": "https://soundcloud.com/nobodyknown", "followers_count": 12}]}
         return httpx.Response(200, json={"collection": users.get(request.url.params["q"], [])})
+    if host == "api-v2.soundcloud.com" and path == "/search/tracks" and request.url.params.get("client_id") == CID:
+        river = {"username": "River", "permalink": "riverirvine", "permalink_url": "https://soundcloud.com/riverirvine"}
+        tracks = {"Sean Paul Temperature (River Dub Edit)": [
+            {"title": "Temperature", "user": {"username": "Sean Paul", "permalink": "seanpaul", "permalink_url": "https://soundcloud.com/seanpaul"}},
+            {"title": "Sean Paul - Temperature (River Dub Edit) [PREMIERE]", "user": {"username": "Some Channel", "permalink": "somechannel", "permalink_url": "https://soundcloud.com/somechannel"}},
+            {"title": "Sean Paul - Temperature (River Dub Edit)", "user": river}],
+            "Common Name Some Tune": [{"title": "Some Tune", "user": {"username": "Common Name", "permalink": "the-real-common-name", "permalink_url": "https://soundcloud.com/the-real-common-name"}}]}
+        return httpx.Response(200, json={"collection": tracks.get(request.url.params["q"], [])})
     if host == "solo.bandcamp.com" and path == "/music":
         return httpx.Response(200, text=release("Only One", "02 Feb 2026 00:00:00 GMT").replace(
             '"@type"', '"@id": "https://solo.bandcamp.com/album/only-one", "@type"'))
@@ -750,8 +763,9 @@ def test_table(client):
 def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
     from app import lookup
     credits = lookup.remix_credits
-    assert credits("Temperature (River Dub Edit)") == ("River Dub", "River")
-    assert credits("Exotermic Reaction (Jah Beer Dub Refix)") == ("Jah Beer Dub", "Jah Beer")
+    assert credits("Temperature (River Dub Edit)") == ("River", "River Dub")          # the bare name first
+    assert credits("Exotermic Reaction (Jah Beer Dub Refix)") == ("Jah Beer", "Jah Beer Dub")
+    assert credits("Tune (Someone UKG Halftime Flip)") == ("Someone", "Someone UKG Halftime")
     assert credits("You Owe Me (Nightmare & Oni 140 Bootleg)") == ("Nightmare & Oni",)
     assert credits("Outside The Box [IOWLA flip]") == ("IOWLA",)
     for plain_version in ("State I (Original Mix)", "Blur (VIP)", "Endgame (Blame)", "X (Extended Dub Mix)", "Y (Instrumental)", "Z"):
@@ -783,8 +797,11 @@ def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
     try:
         r = run(rows)
         # not on Bandcamp: the remixer's profile, not Sean Paul's page (which exists, and has the original)
+        # ...and of the many profiles called "River", the one that uploaded this edit - not the most followed
+        # "River", not somebody called "River Dub", and not a channel that reposted it
         sean = r[rows[0]]
-        assert (sean["status"], sean["url"], sean["note"]) == ("soundcloud", "https://soundcloud.com/riverdub", "Remixer's profile")
+        assert (sean["status"], sean["url"]) == ("soundcloud", "https://soundcloud.com/riverirvine"), sean
+        assert sean["note"] == "Remixer's profile; uploaded this track"
         # found on the remixer's own Bandcamp page, where it is listed under the original artist's name
         nas = r[rows[1]]
         assert (nas["status"], nas["url"]) == ("bandcamp", "https://nightmare.bandcamp.com/album/bootlegs")
@@ -799,7 +816,17 @@ def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
         client.put("/api/lookup/settings", json={"fallback": "bandcamp"})
         assert client.get("/api/lookup/settings").json() == {"fallback": "bandcamp"}
         again = run(rows[:1])[rows[0]]
-        assert (again["status"], again["url"]) == ("soundcloud", "https://soundcloud.com/riverdub")
+        assert (again["status"], again["url"]) == ("soundcloud", "https://soundcloud.com/riverirvine")
+
+        client.put("/api/lookup/settings", json={"fallback": "soundcloud"})
+        more = run([("Nas", "Unfindable (Nightmare & Oni 140 Bootleg)"), ("Common Name", "Some Tune"), ("Solo Guy", "Whatever")])
+        # a duo with one profile: the profile named for both, not a bigger one named for one of them
+        duo = more[("Nas", "Unfindable (Nightmare & Oni 140 Bootleg)")]
+        assert (duo["status"], duo["url"]) == ("soundcloud", "https://soundcloud.com/nightmareandoni"), duo
+        assert "matched by name only" in duo["note"]
+        # an ordinary track: the artist's profile is the one that uploaded it
+        assert more[("Common Name", "Some Tune")]["url"] == "https://soundcloud.com/the-real-common-name"
+        assert more[("Solo Guy", "Whatever")]["note"] == "Matched by name only"
     finally:
         client.put("/api/lookup/settings", json={"fallback": "bandcamp"})
 

@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 5             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 6             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -150,7 +150,10 @@ _ANY_TAG = re.compile(r"[\(\[][^\)\]]*(?:mix|edit|version|remaster|bonus|free|du
 _GENERIC = set("""original extended radio club instrumental vocal dub vip album single full short long clean
     dirty explicit main alternate alt demo live final new old digital vinyl bonus free download unreleased
     dubplate special mini intro outro acapella remastered remaster mono stereo official unofficial exclusive
-    the a an his her their own self dubstep garage jungle dnb bass uk us deep dark heavy 140 2step""".split())
+    the a an his her their own self dubstep garage jungle dnb bass uk us deep dark heavy 140 2step ukg
+    halftime breaks breakbeat techno house drill grime footwork juke trap amapiano riddim hardcore rave
+    ambient acid electro bassline speed slow sped slowed reverb pitched festival tool dj edit refix flip
+    bootleg remix rework mix version unofficial steppers stepper roller rollers sound system soundsystem""".split())
 
 
 def _fold(text: str) -> str:
@@ -188,7 +191,7 @@ def remix_credits(title: str) -> tuple:
             trimmed.pop(0)
         if not trimmed:
             continue                                    # nothing but describing words
-        for form in (words, trimmed):
+        for form in (trimmed, words):                   # the bare name first: "River", then "River Dub"
             text = " ".join(form).strip(" -&,")
             if text and text not in out:
                 out.append(text)
@@ -962,37 +965,99 @@ async def scan_step(net, artist, title, pages, steps):
 
 # ---------- SoundCloud ----------
 
-async def from_soundcloud(net, artist, steps):
-    wanted = artist_parts(artist)
-    if not wanted:
+def _is_profile_of(user, names) -> tuple:
+    """(tier, similarity): how well a SoundCloud user fits the wanted names. names[0] is the whole
+    credit ("nightmare oni"); later ones are the individual people in it. Matching the whole credit
+    (tier 2) beats matching one person in it (tier 1): "Nightmare & Oni" is one act with one profile."""
+    shown = norm(user.get("username") or "")
+    address = plain(user.get("permalink") or "").replace(" ", "")
+    best = (0, 0.0)
+    for n, name in enumerate(names):
+        squashed = name.replace(" ", "")
+        sim = max(name_sim(name, shown), ratio(squashed, address),
+                  ratio(squashed, address.replace("and", "")) if "and" in address else 0.0)
+        if sim >= 0.85:
+            best = max(best, (2 if n == 0 else 1, round(sim, 2)))
+    return best
+
+
+async def from_soundcloud(net, artist, steps, title="", credits=()):
+    """The SoundCloud profile to link when the track itself wasn't found.
+
+    credits: for an edit/remix/bootleg, who made it, as written ("River", then "River Dub") - the
+    profile wanted is then theirs, not the original artist's.
+
+    Names alone are a weak guide (there are many profiles called "River"), so the track is looked
+    for on SoundCloud first: whoever uploaded it, if their name fits, is the right profile.
+    """
+    forms = list(credits) or [artist]
+    name_sets = [artist_parts(f) for f in forms if artist_parts(f)]
+    if not name_sets:
         return None
+    every = [n for names in name_sets for n in names]
+    whose = "Remixer's profile" if credits else ""
     for acc in db.query("SELECT a.url, a.display_name, ar.name FROM accounts a JOIN artists ar "
                         "ON ar.id=a.artist_id WHERE a.source='soundcloud'"):
-        if {norm(acc["name"]), norm(acc["display_name"] or "")} & set(wanted):
+        if {norm(acc["name"]), norm(acc["display_name"] or "")} & set(every):
             return {"status": "soundcloud", "site": "SoundCloud", "url": acc["url"],
                     "found": acc["display_name"] or acc["name"], "note": "A page you track"}
     try:
+        # 1. the track itself on SoundCloud: its uploader
+        if title:
+            queries = [f"{artist} {title}".strip()]
+            if credits:
+                queries.append(f"{credits[0]} {base_title(title)}")
+            best = None
+            for text in dict.fromkeys(queries):
+                data = await SOURCES["soundcloud"]._api(net.client, "/search/tracks", {"q": text, "limit": 20})
+                for tr in data.get("collection") or []:
+                    user, name = tr.get("user") or {}, tr.get("title") or ""
+                    if not user.get("permalink_url"):
+                        continue
+                    same = max(ratio(norm(title), norm(name)), ratio(norm(title), norm(name.partition(" - ")[2])))
+                    if same < 0.85:
+                        continue
+                    if credits:      # must be this version: its maker named in the title or as the uploader
+                        told = f" {plain(name)} {plain(user.get('username') or '')} "
+                        if not any(f" {m} " in told for m in remixer_names(title)):
+                            continue
+                    fit = max(_is_profile_of(user, names) for names in name_sets)
+                    if fit[0] and (best is None or (fit, same) > best[0]):
+                        best = ((fit, same), user, name)
+                if best:
+                    break
+            if best:
+                user = best[1]
+                steps.append(f'SoundCloud: "{best[2]}" was uploaded by {user.get("username")}')
+                return {"status": "soundcloud", "site": "SoundCloud", "url": user["permalink_url"],
+                        "found": user.get("username") or "",
+                        "note": (whose + "; uploaded this track").lstrip("; ").capitalize() if whose else "Uploaded this track"}
+            steps.append("SoundCloud: the track isn't there under a matching profile")
+        # 2. a profile with the right name; the whole credit before the people in it
         best = None
-        for text in dict.fromkeys([artist] + ([wanted[1]] if len(wanted) > 1 else [])):
-            data = await SOURCES["soundcloud"]._api(net.client, "/search/users", {"q": text, "limit": 10})
-            for u in data.get("collection") or []:
-                s = max(max(name_sim(w, norm(u.get("username") or "")),
-                            ratio(w.replace(" ", ""), norm(u.get("permalink") or "").replace(" ", ""))) for w in wanted)
-                if s >= 0.85 and u.get("permalink_url"):
-                    key = (round(s, 2), u.get("followers_count") or 0)
-                    if best is None or key > best[0]:
-                        best = (key, u)
+        for form, names in zip(forms, name_sets):
+            for text in dict.fromkeys([form] + [n for n in names[1:3]]):
+                data = await SOURCES["soundcloud"]._api(net.client, "/search/users", {"q": text, "limit": 20})
+                for u in data.get("collection") or []:
+                    fit = _is_profile_of(u, names)
+                    if fit[0] and u.get("permalink_url"):
+                        key = (fit, u.get("followers_count") or 0)
+                        if best is None or key > best[0]:
+                            best = (key, u)
+                if best and best[0][0][0] == 2:
+                    break                                # the whole credit matched: no need to try parts
             if best:
                 break
         if best:
-            steps.append(f'SoundCloud: profile "{best[1].get("username")}"')
+            steps.append(f'SoundCloud: profile "{best[1].get("username")}", matched by name only')
             return {"status": "soundcloud", "site": "SoundCloud", "url": best[1]["permalink_url"],
-                    "found": best[1].get("username") or ""}
+                    "found": best[1].get("username") or "",
+                    "note": (whose + ", matched by name only") if whose else "Matched by name only"}
         steps.append("SoundCloud: no profile with that name")
     except Exception as e:
         steps.append(f"SoundCloud: search failed ({type(e).__name__})")
     return {"status": "soundcloud_search", "site": "SoundCloud", "found": "",
-            "url": "https://soundcloud.com/search/people?q=" + quote(artist),
+            "url": "https://soundcloud.com/search/people?q=" + quote(forms[0]),
             "note": "No matching profile; this opens a SoundCloud search"}
 
 
@@ -1149,18 +1214,16 @@ async def find(net, lib, artist, title, state):
     if credits:
         if maker_pages:
             options["bandcamp"] = page_option(maker_pages[0], "Remixer's")
-        for credit in credits:
-            sc = await from_soundcloud(net, credit, steps)
-            if sc and sc["status"] == "soundcloud":
-                options["soundcloud"] = dict(sc, note="Remixer's profile")
-                break
+        sc = await from_soundcloud(net, artist, steps, title, credits)
+        if sc and sc["status"] == "soundcloud":
+            options["soundcloud"] = sc
         if not (options["bandcamp"] or options["soundcloud"]):
             steps.append(f'no page found for "{credits[0]}"; falling back to the artist')
     if not (options["bandcamp"] or options["soundcloud"]):
         artist_only = [p for p in pages if p not in maker_pages]
         if artist_only:
             options["bandcamp"] = page_option(artist_only[0], "Artist's")
-        sc = await from_soundcloud(net, artist, steps)
+        sc = await from_soundcloud(net, artist, steps, title)
         if sc:
             options["soundcloud" if sc["status"] == "soundcloud" else "search"] = sc
     return done(dict(pick_fallback(options), options=options))
