@@ -185,7 +185,7 @@ The note under each result says where it came from, for example "In your purchas
 A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar names whoever made that version. For "Temperature (River Dub Edit)" by Sean Paul, the app searches as River, looks on River's pages, and falls back to River's profile, not Sean Paul's. The original artist is used only when nothing is found for the remixer.
 
 - Words between the name and the kind of version are set aside: "River Dub Edit" is tried as River, then River Dub.
-- A request that names a remixer never returns the plain original.
+- A request that names a remixer never returns the plain original. When a remix, edit, flip or bootleg has no link of its own, the remixer's SoundCloud profile is given, whichever artist link you prefer otherwise. A remix typed without brackets, such as "Outside The Box IOWLA Flip", is first looked for as typed; if that finds no track, it is read as "Outside The Box (IOWLA Flip)" and looked for again. Brackets are still the reliable way to write one.
 - Tags that only describe a version, such as "(Original Mix)", are ignored. A VIP is the exception: it is treated as a different recording, so a VIP request never returns the original, and it falls back to the artist's own page.
 
 ### Exporting
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 45 | Link Finder: a remix, edit, flip or bootleg typed without brackets is read as one when the title as typed finds no track, so it falls back to the remixer's SoundCloud profile and matches your list's bracketed spelling. For any remix with no link of its own, the remixer's SoundCloud profile is used even when Bandcamp is the preferred artist link. |
 | 44 | Saved results: the "Not found" filter no longer includes tracks found on SoundCloud and is renamed "Track not found (artist page only)". Remix answers saved before version 40 whose SoundCloud title repeats the artist are also moved to the remix's own entry. |
 | 43 | Saved results: fixed Edit and Looks right doing nothing on VIP and remix tracks saved before version 40; those answers are moved to their version's own entry at start-up, so they also pick up the title spelling from your list. Your spelling is now two columns, artist and title. |
 | 42 | Names: letters of other alphabets (Cyrillic, Chinese and so on) are kept when a name is tidied instead of being dropped, so titles written in them can be matched, saved and imported from your list. |

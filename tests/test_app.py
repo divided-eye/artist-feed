@@ -1349,3 +1349,29 @@ def test_answers_saved_under_old_keys_are_moved_and_can_be_edited(client):
     client.delete("/api/saved", params={"key": "nobody|only a profile"})
     for k in ("river|oldaloo#vip", "emalkay|when i look at old#kwizma", "plainman|plain old tune"):
         client.delete("/api/saved", params={"key": k})
+
+
+def test_remix_typed_without_brackets_falls_back_to_the_remixers_soundcloud(client):
+    from app import db, lookup
+    assert lookup.bare_remix_readings("Outside The Box IOWLA Flip") == ["Outside The Box (IOWLA Flip)"]
+    assert lookup.bare_remix_readings("Tune Kahn & Neek Remix") == ["Tune (Kahn & Neek Remix)"]
+    for plain_title in ("Radio Edit", "Tune Radio Edit", "Coin Flip", "The Final Edit", "Thing (X Remix)", "Boogaloo VIP"):
+        assert lookup.bare_remix_readings(plain_title) == [], plain_title
+    client.post("/api/known", content="Artist,Track,Link\nNobody Known,,\nGhost Person,Unfindable Zzz (Nobody Known Flip),\n".encode())
+    assert lookup.bare_remix_readings("Unfindable Zzz Nobody Known Flip")[0] == "Unfindable Zzz (Nobody Known Flip)"
+    assert lookup.known_for("ghost person", "unfindable zzz nobody known flip")["title"] == "Unfindable Zzz (Nobody Known Flip)"
+    db.kv_set("lookup_fallback", "bandcamp")
+    try:
+        j = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nGhost Person\tUnfindable Zzz Nobody Known Flip".encode()).json()
+        for _ in range(200):
+            time.sleep(0.05)
+            now = client.get(f"/api/lookup/{j['id']}").json()
+            if now["finished"]:
+                break
+        row = now["rows"][0]
+        assert (row["status"], row["url"]) == ("soundcloud", "https://soundcloud.com/nobodyknown"), row
+        assert row["note"].startswith("Remixer's profile") and any("read as" in s for s in row["steps"])
+        assert row["list_title"] == "Unfindable Zzz (Nobody Known Flip)"
+    finally:
+        db.kv_set("lookup_fallback", "soundcloud")
+        client.delete("/api/known")

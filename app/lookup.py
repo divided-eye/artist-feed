@@ -1623,7 +1623,46 @@ def _remember(key, result, artist=None, title=None):
                (key, json.dumps(result), db.now()))
 
 
+_BARE_REMIX = re.compile(r"^(.*\S)\s+(remix|rmx|re-?edit|edit|bootleg|flip|refix|rework|mash-?up)\s*$", re.I)
+
+
+def bare_remix_readings(title: str) -> list:
+    """"Outside The Box IOWLA Flip" may be IOWLA's flip of "Outside The Box", typed without brackets.
+    Where the title ends and the name begins can't be known, so each reading is offered, best first:
+    a name already known (your list, the artists you track, profiles found before), then the last
+    word alone. Empty when the title already credits someone in brackets, or is just "X Edit"."""
+    m = _BARE_REMIX.match(title or "")
+    if not m or remix_credits(title) or _BRACKET.search(title):
+        return []
+    words, kind = m.group(1).split(), m.group(2)
+    known = set(_known()[1]) | set(_profiles()) | {norm(r["name"]) for r in db.query("SELECT name FROM artists")}
+    out = []
+    for n in (4, 3, 2, 1):
+        name = " ".join(words[-n:])
+        if len(words) > n and norm(name) and norm(name) in known:
+            out.append(f'{" ".join(words[:-n])} ({name} {kind})')
+    n = 3 if len(words) > 3 and words[-2].casefold() in ("&", "x", "and", "+") else 1     # "Kahn & Neek"
+    last = words[-1]
+    if len(words) > n and plain(last) and plain(last) not in _GENERIC and plain(last) not in _FORMAT:
+        out.append(f'{" ".join(words[:-n])} ({" ".join(words[-n:])} {kind})')
+    return list(dict.fromkeys(out))[:2]
+
+
 async def find(net, lib, artist, title, state):
+    """One track, as typed; and when that finds neither the track nor anything better than the
+    artist's page, once more as somebody's remix if the title can be read that way."""
+    result, keep = await _find_as_typed(net, lib, artist, title, state)
+    if result.get("status") in ("bandcamp_artist", "soundcloud", "soundcloud_search", "none"):
+        for reading in bare_remix_readings(title):
+            other, kept = await _find_as_typed(net, lib, artist, reading, state)
+            found_it = other.get("status") in ("bandcamp", "soundcloud_track")
+            if found_it or (other.get("status") == "soundcloud" and (other.get("options") or {}).get("remix")):
+                other["steps"] = result.get("steps", []) + [f'nothing for the title as typed; read as "{reading}"'] + other.get("steps", [])
+                return other, keep and kept
+    return result, keep
+
+
+async def _find_as_typed(net, lib, artist, title, state):
     """All the steps for one track. Returns (result, keep) - keep is False when a site refused
     requests part-way, so the answer may be incomplete and should not be remembered."""
     steps, keep, check, pages, maker_pages = [], True, None, [], []
@@ -1724,6 +1763,7 @@ async def find(net, lib, artist, title, state):
         sc = await from_soundcloud(net, artist, steps, title, credits)
         if sc and sc["status"] in ("soundcloud", "soundcloud_track"):
             options["track" if sc["status"] == "soundcloud_track" else "soundcloud"] = sc
+            options["remix"] = True                     # that profile is the remixer's own
         if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
             steps.append(f'no page found for "{credits[0]}"; falling back to the artist')
     if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
@@ -1749,6 +1789,8 @@ def pick_fallback(options: dict) -> dict:
     """The track on SoundCloud if it was found there; else the preferred artist link, else the
     other one, else a SoundCloud search."""
     order = ("soundcloud", "bandcamp") if fallback_pref() == "soundcloud" else ("bandcamp", "soundcloud")
+    if options.get("remix") and options.get("soundcloud"):
+        order = ("soundcloud", "bandcamp")              # a remix with no link of its own: the remixer's SoundCloud
     for key in ("track",) + order + ("search",):      # the track itself beats any artist link
         if options.get(key):
             return dict(options[key])
@@ -2157,6 +2199,10 @@ def _known() -> tuple:
 def known_entry(artist, title):
     """Your list's entry for this track: the one written the same way, else the plainest version."""
     entries = _known()[0].get(track_key(artist, title))
+    for reading in ([] if entries else bare_remix_readings(title)):     # "Tune X Flip" for the list's "Tune (X Flip)"
+        entries, title = _known()[0].get(track_key(artist, reading)), reading
+        if entries:
+            break
     if not entries:
         return None
     return next((t for t in entries if t["variant"] == plain(title)), entries[0])
