@@ -207,8 +207,13 @@ def handler(request: httpx.Request) -> httpx.Response:
         tracks = {"Sean Paul Temperature (River Dub Edit)": [
             {"title": "Temperature", "user": {"username": "Sean Paul", "permalink": "seanpaul", "permalink_url": "https://soundcloud.com/seanpaul"}},
             {"title": "Sean Paul - Temperature (River Dub Edit) [PREMIERE]", "user": {"username": "Some Channel", "permalink": "somechannel", "permalink_url": "https://soundcloud.com/somechannel"}},
-            {"title": "Sean Paul - Temperature (River Dub Edit)", "user": river}],
-            "Common Name Some Tune": [{"title": "Some Tune", "user": {"username": "Common Name", "permalink": "the-real-common-name", "permalink_url": "https://soundcloud.com/the-real-common-name"}}]}
+            {"title": "Sean Paul - Temperature (River Dub Edit)", "user": river, "downloadable": True, "display_date": "2026-03-01T00:00:00Z",
+             "permalink_url": "https://soundcloud.com/riverirvine/temperature-river-dub-edit"}],
+            "Common Name Some Tune": [{"title": "Some Tune", "permalink_url": "https://soundcloud.com/the-real-common-name/some-tune", "created_at": "2024-05-05T00:00:00Z",
+                                       "user": {"username": "Common Name", "permalink": "the-real-common-name", "permalink_url": "https://soundcloud.com/the-real-common-name"}}]}
+        for found in tracks.values():
+            for tr in found:
+                tr.setdefault("permalink_url", "https://soundcloud.com/x/" + tr["title"].replace(" ", "-"))
         return httpx.Response(200, json={"collection": tracks.get(request.url.params["q"], [])})
     if host == "solo.bandcamp.com" and path == "/music":
         return httpx.Response(200, text=release("Only One", "02 Feb 2026 00:00:00 GMT").replace(
@@ -800,8 +805,9 @@ def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
         # ...and of the many profiles called "River", the one that uploaded this edit - not the most followed
         # "River", not somebody called "River Dub", and not a channel that reposted it
         sean = r[rows[0]]
-        assert (sean["status"], sean["url"]) == ("soundcloud", "https://soundcloud.com/riverirvine"), sean
-        assert sean["note"] == "Remixer's profile; uploaded this track"
+        assert (sean["status"], sean["url"], sean["year"]) == (
+            "soundcloud_track", "https://soundcloud.com/riverirvine/temperature-river-dub-edit", "2026"), sean   # the track itself
+        assert sean["note"] == "Free download on the remixer's SoundCloud" and sean["found"].startswith("River \u2014 Sean Paul - Temperature")
         # found on the remixer's own Bandcamp page, where it is listed under the original artist's name
         nas = r[rows[1]]
         assert (nas["status"], nas["url"]) == ("bandcamp", "https://nightmare.bandcamp.com/album/bootlegs")
@@ -816,7 +822,7 @@ def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
         client.put("/api/lookup/settings", json={"fallback": "bandcamp"})
         assert client.get("/api/lookup/settings").json() == {"fallback": "bandcamp"}
         again = run(rows[:1])[rows[0]]
-        assert (again["status"], again["url"]) == ("soundcloud", "https://soundcloud.com/riverirvine")
+        assert (again["status"], again["url"]) == ("soundcloud_track", "https://soundcloud.com/riverirvine/temperature-river-dub-edit")
 
         client.put("/api/lookup/settings", json={"fallback": "soundcloud"})
         more = run([("Nas", "Unfindable (Nightmare & Oni 140 Bootleg)"), ("Common Name", "Some Tune"), ("Solo Guy", "Whatever")])
@@ -825,7 +831,9 @@ def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
         assert (duo["status"], duo["url"]) == ("soundcloud", "https://soundcloud.com/nightmareandoni"), duo
         assert "matched by name only" in duo["note"]
         # an ordinary track: the artist's profile is the one that uploaded it
-        assert more[("Common Name", "Some Tune")]["url"] == "https://soundcloud.com/the-real-common-name"
+        tune = more[("Common Name", "Some Tune")]
+        assert (tune["status"], tune["url"], tune["year"], tune["note"]) == (
+            "soundcloud_track", "https://soundcloud.com/the-real-common-name/some-tune", "2024", "On the artist's SoundCloud")
         assert more[("Solo Guy", "Whatever")]["note"] == "Matched by name only"
     finally:
         client.put("/api/lookup/settings", json={"fallback": "bandcamp"})

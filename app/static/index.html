@@ -717,7 +717,7 @@ async function pollStatus() {
 // ---- tracklist lookup ----
 const LOOKUP_TAGS = { manual: ["mine", "Link you set"], bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
   bandcamp_artist: ["page", "Bandcamp artist page"],
-  soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
+  soundcloud_track: ["ok", "SoundCloud track"], soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
   none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Waiting to be searched"] };
 let lookupTimer = null, lookupJob = null, editingRow = null;
 
@@ -768,8 +768,9 @@ function renderLookup(job) {
 
 function renderLookupStatus(job) {
   const found = job.rows.filter(r => r.status === "bandcamp" || r.status === "bandcamp_check").length;
+  const onSc = job.rows.filter(r => r.status === "soundcloud_track").length;
   const hold = job.paused > 0 ? ` · Bandcamp asked for a pause; carrying on in ${waitText(job.paused)}` : "";
-  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
+  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` + (onSc ? `, ${onSc} on SoundCloud` : "") : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
   $("lookupError").textContent = job.warning || "";
   $("lookupExport").hidden = !job.finished;
   $("lookupExport").href = `/api/lookup/${job.id}.csv`;

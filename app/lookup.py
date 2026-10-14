@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 6             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 7             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -1012,7 +1012,7 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
                 data = await SOURCES["soundcloud"]._api(net.client, "/search/tracks", {"q": text, "limit": 20})
                 for tr in data.get("collection") or []:
                     user, name = tr.get("user") or {}, tr.get("title") or ""
-                    if not user.get("permalink_url"):
+                    if not user.get("permalink_url") or not tr.get("permalink_url"):
                         continue
                     same = max(ratio(norm(title), norm(name)), ratio(norm(title), norm(name.partition(" - ")[2])))
                     if same < 0.85:
@@ -1023,15 +1023,19 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
                             continue
                     fit = max(_is_profile_of(user, names) for names in name_sets)
                     if fit[0] and (best is None or (fit, same) > best[0]):
-                        best = ((fit, same), user, name)
+                        best = ((fit, same), user, name, tr)
                 if best:
                     break
-            if best:
-                user = best[1]
+            if best:                                     # the track itself: link straight to it
+                user, tr = best[1], best[3]
                 steps.append(f'SoundCloud: "{best[2]}" was uploaded by {user.get("username")}')
-                return {"status": "soundcloud", "site": "SoundCloud", "url": user["permalink_url"],
-                        "found": user.get("username") or "",
-                        "note": (whose + "; uploaded this track").lstrip("; ").capitalize() if whose else "Uploaded this track"}
+                free = bool(tr.get("downloadable")) or "free" in (tr.get("purchase_title") or "").lower()
+                when = tr.get("release_date") or tr.get("display_date") or tr.get("created_at") or ""
+                return {"status": "soundcloud_track", "site": "SoundCloud", "url": tr["permalink_url"],
+                        "found": f'{user.get("username") or ""} \u2014 {best[2]}', "release": "",
+                        "year": when[:4] if re.fullmatch(r"(19|20)\d{2}", when[:4]) else "",
+                        "note": ("Free download on " if free else "On ")
+                                + ("the remixer's SoundCloud" if credits else "the artist's SoundCloud")}
             steps.append("SoundCloud: the track isn't there under a matching profile")
         # 2. a profile with the right name; the whole credit before the people in it
         best = None
@@ -1203,7 +1207,7 @@ async def find(net, lib, artist, title, state):
         return done(check)
     # Both possible artist links are worked out and kept, so the preference can change later
     # without searching again.
-    options = {"bandcamp": None, "soundcloud": None, "search": None}
+    options = {"track": None, "bandcamp": None, "soundcloud": None, "search": None}
 
     def page_option(page, whose):
         return {"status": "bandcamp_artist", "site": "Bandcamp", "url": page[0], "found": page[1],
@@ -1215,21 +1219,21 @@ async def find(net, lib, artist, title, state):
         if maker_pages:
             options["bandcamp"] = page_option(maker_pages[0], "Remixer's")
         sc = await from_soundcloud(net, artist, steps, title, credits)
-        if sc and sc["status"] == "soundcloud":
-            options["soundcloud"] = sc
-        if not (options["bandcamp"] or options["soundcloud"]):
+        if sc and sc["status"] in ("soundcloud", "soundcloud_track"):
+            options["track" if sc["status"] == "soundcloud_track" else "soundcloud"] = sc
+        if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
             steps.append(f'no page found for "{credits[0]}"; falling back to the artist')
-    if not (options["bandcamp"] or options["soundcloud"]):
+    if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
         artist_only = [p for p in pages if p not in maker_pages]
         if artist_only:
             options["bandcamp"] = page_option(artist_only[0], "Artist's")
         sc = await from_soundcloud(net, artist, steps, title)
         if sc:
-            options["soundcloud" if sc["status"] == "soundcloud" else "search"] = sc
+            options[{"soundcloud_track": "track", "soundcloud": "soundcloud"}.get(sc["status"], "search")] = sc
     return done(dict(pick_fallback(options), options=options))
 
 
-FALLBACK_STATUSES = ("bandcamp_artist", "soundcloud", "soundcloud_search", "none")
+FALLBACK_STATUSES = ("soundcloud_track", "bandcamp_artist", "soundcloud", "soundcloud_search", "none")
 
 
 def fallback_pref() -> str:
@@ -1239,9 +1243,10 @@ def fallback_pref() -> str:
 
 
 def pick_fallback(options: dict) -> dict:
-    """The preferred artist link if there is one, else the other, else a SoundCloud search."""
+    """The track on SoundCloud if it was found there; else the preferred artist link, else the
+    other one, else a SoundCloud search."""
     order = ("soundcloud", "bandcamp") if fallback_pref() == "soundcloud" else ("bandcamp", "soundcloud")
-    for key in order + ("search",):
+    for key in ("track",) + order + ("search",):      # the track itself beats any artist link
         if options.get(key):
             return dict(options[key])
     return {"status": "none", "note": "No artist name to search for"}
@@ -1420,7 +1425,7 @@ def start(tracks, fresh=False):
 
 
 STATUS_TEXT = {"manual": "Link you set", "bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
-               "bandcamp_artist": "Bandcamp artist page",
+               "bandcamp_artist": "Bandcamp artist page", "soundcloud_track": "SoundCloud track",
                "soundcloud": "SoundCloud artist page", "soundcloud_search": "SoundCloud search",
                "none": "Not found", "error": "Error", "pending": "Not looked up yet"}
 
