@@ -172,6 +172,7 @@
   .bulk-row { display: flex; gap: 8px; align-items: flex-end; }
   .bulk textarea { flex: 1; height: 84px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 13px; }
+  td.rescan { text-align: center; width: 1%; }
   /* a cell filled in by "Find missing links": check it, then Save */
   td input[type=text].auto { background: rgba(125, 200, 255, .16); box-shadow: inset 3px 0 0 rgba(125, 200, 255, .9); font-style: italic; }
   .legend { display: inline-block; padding: 0 6px; background: rgba(125, 200, 255, .16); box-shadow: inset 3px 0 0 rgba(125, 200, 255, .9); font-style: italic; }
@@ -279,7 +280,7 @@
     <button class="btn" id="revertBtn" hidden>Discard</button>
     <button class="btn primary" id="saveBtn">Save changes</button>
   </div>
-  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. <b>Find missing links</b> fills empty cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
+  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. <b>Find missing links</b> fills empty cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
   <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
   <div class="bulk">
     <label for="bulkText">Paste a list to add: one artist or label per line. A name, a Bandcamp or SoundCloud link, or name, Bandcamp, SoundCloud separated by tabs or commas.</label>
@@ -644,7 +645,13 @@ function renderArtists() {
 // ---- artist table ----
 let table = [], savedIds = [], dirty = false;
 const columns = () => ["name", ...sources.map(s => s.key)];
-const blankRow = () => ({ id: null, name: "", cells: {}, problems: [], errors: [] });
+const blankRow = () => ({ id: null, name: "", cells: {}, problems: [], errors: [], skip: [], rejected: {} });
+// A cell emptied on purpose is remembered: "Find missing links" leaves it alone unless the row's
+// Rescan box is ticked, and whatever was in it is never offered for that cell again.
+function noteCleared(row, col, was) {
+  if (!row.skip.includes(col)) row.skip.push(col);
+  if (was && col !== "name") row.rejected[col] = [...new Set([...(row.rejected[col] || []), was])];
+}
 const getCell = (row, col) => col === "name" ? row.name : (row.cells[col] || "");
 const setCell = (row, col, v) => { if (col === "name") row.name = v; else row.cells[col] = v; };
 const isBlank = row => columns().every(c => !getCell(row, c).trim());
@@ -671,12 +678,17 @@ function rowEl(row) {
   columns().forEach((col, c) => {
     const input = el("input", { type: "text", value: getCell(row, col), spellcheck: "false", autocomplete: "off",
       "aria-label": col === "name" ? "Artist name" : src(col).label,
-      placeholder: col === "name" ? "Artist name" : "" });
+      placeholder: col === "name" ? "Artist name" : (row.skip.includes(col) && !getCell(row, col).trim() ? "left empty" : "") });
+    if (row.skip.includes(col) && !getCell(row, col).trim()) input.title = "You cleared this cell, so Find missing links leaves it alone. Tick Rescan to search for it again.";
+    let was = getCell(row, col).trim();              // what the cell held before this edit began
+    input.addEventListener("focus", () => { was = getCell(row, col).trim() || was; });
     if (row.auto && row.auto.has(col)) { input.classList.add("auto"); input.title = "Filled in automatically. Check it, then Save."; }
     input.addEventListener("input", () => {
       setCell(row, col, input.value); setDirty(true);
       if (row.auto) row.auto.delete(col);
       input.classList.remove("auto"); input.removeAttribute("title");
+      if (!input.value.trim() && was) { noteCleared(row, col, was); if (col !== "name") input.placeholder = "left empty"; }
+      else if (input.value.trim()) row.skip = row.skip.filter(c => c !== col);
       if (table[table.length - 1] === row) { table.push(blankRow()); $("tbody").append(rowEl(table[table.length - 1])); }
     });
     input.addEventListener("paste", e => {
@@ -692,6 +704,11 @@ function rowEl(row) {
     });
     tr.append(el("td", {}, input));
   });
+  const rescan = el("input", { type: "checkbox", "aria-label": "Rescan this row",
+    title: "Search again for this row's empty cells, including ones you cleared. Earlier guesses you removed are not offered again." });
+  rescan.checked = !!row.rescan;
+  rescan.addEventListener("change", () => { row.rescan = rescan.checked; });
+  tr.append(el("td", { class: "rescan" }, rescan));
   tr.append(stateCell(row));
   tr.append(el("td", { class: "act" }, el("button", { class: "btn small ghost", title: "Delete row", "aria-label": "Delete row", text: "✕",
     onclick: () => { table.splice(table.indexOf(row), 1); setDirty(true); renderTable(); } })));
@@ -702,6 +719,7 @@ function renderTable() {
   if (!table.length || !isBlank(table[table.length - 1])) table.push(blankRow());
   $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }), el("th", { text: "Artist" }),
     ...sources.map(s => el("th", {}, el("span", { class: "dot", style: `background:${s.color};margin-right:6px` }), s.label)),
+    el("th", { text: "Rescan", title: "Tick a row to have Find missing links search its cleared cells again" }),
     el("th", { text: "Status" }), el("th", {})));
   $("tbody").replaceChildren(...table.map(rowEl));
 }
@@ -710,8 +728,9 @@ function renderTable() {
 let filling = false;
 async function fillMissing() {
   if (filling) { filling = false; return; }           // the button reads "Stop" while running
-  const todo = table.filter(r => !isBlank(r) && columns().some(c => !getCell(r, c).trim()));
-  if (!todo.length) { $("fillStatus").textContent = "No row has an empty cell."; return; }
+  const open = r => columns().filter(c => !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
+  const todo = table.filter(r => !isBlank(r) && open(r).length);
+  if (!todo.length) { $("fillStatus").textContent = "Nothing to look for. Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
   filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
   let filled = 0, n = 0;
   for (const row of todo) {
@@ -719,18 +738,21 @@ async function fillMissing() {
     $("fillStatus").textContent = `Looking for missing links: ${++n} of ${todo.length} (${row.name || Object.values(row.cells).find(Boolean) || ""})…`;
     try {
       const r = await fetch("/api/table/suggest", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: row.name, cells: row.cells }) });
+        body: JSON.stringify({ name: row.name, cells: row.cells, skip: row.rescan ? [] : row.skip, avoid: row.rejected }) });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) { $("tableError").textContent = typeof data.detail === "string" ? data.detail : "Couldn't look that up."; break; }
       const found = { ...(data.cells || {}), ...(data.name ? { name: data.name } : {}) };
       const at = table.indexOf(row);
       if (at < 0) continue;                             // row deleted meanwhile
+      const wanted = open(row), had = row.rescan;
       let changed = false;
       for (const [col, value] of Object.entries(found)) {
-        if (!value || getCell(row, col).trim()) continue;   // never over something typed meanwhile
+        if (!value || !wanted.includes(col)) continue;      // never over something typed meanwhile, or a cleared cell
         setCell(row, col, value); (row.auto = row.auto || new Set()).add(col); changed = true; filled++;
+        row.skip = row.skip.filter(c => c !== col);
       }
-      if (changed) { setDirty(true); $("tbody").children[at].replaceWith(rowEl(row)); }
+      row.rescan = false;
+      if (changed || had) { if (changed) setDirty(true); $("tbody").children[at].replaceWith(rowEl(row)); }
     } catch (x) { $("tableError").textContent = x.message; break; }
   }
   const stopped = !filling;
@@ -824,7 +846,7 @@ async function saveTable() {
   if (removed && !confirm(`This stops tracking ${removed} artist${removed > 1 ? "s" : ""} and removes their posts from the feed. Continue?`)) { renderTable(); return; }
   $("tableError").textContent = "";
   const r = await fetch("/api/table", { method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rows: table.map(({ id, name, cells }) => ({ id, name, cells })) }) });
+    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected })) }) });
   const data = await r.json().catch(() => ({}));
   table.forEach(row => row.errors = []);
   if (!r.ok) {

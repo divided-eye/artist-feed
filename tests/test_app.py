@@ -1018,3 +1018,21 @@ def test_missing_pages_are_suggested(client):
     got = ask("", bandcamp="nightferry")
     assert got["name"] == "Night Ferry" and "bandcamp" not in got["cells"]
     assert ask("Nightmare", bandcamp="x", soundcloud="y")["cells"] == {}
+
+
+def test_cleared_cells_and_rejected_guesses_are_remembered(client):
+    ask = lambda **body: client.post("/api/table/suggest", json=body).json()
+    assert ask(name="River", cells={}, skip=["soundcloud"])["cells"].get("soundcloud") is None     # left alone
+    # a guess turned down is not offered again: the next best profile comes instead
+    assert ask(name="River", cells={}, avoid={"soundcloud": ["river"]})["cells"]["soundcloud"] == "riverirvine"
+    assert "bandcamp" not in ask(name="Nightmare", cells={}, avoid={"bandcamp": ["https://nightmare.bandcamp.com"]})["cells"]
+    # saved with the table, by artist name, and dropped once the cell is filled or the row is gone
+    rows = [{"id": r["id"], "name": r["name"], "cells": r["cells"]} for r in client.get("/api/table").json()]
+    extra = {"id": None, "name": "Solo Guy", "cells": {"soundcloud": "sologuy-official"}, "skip": ["bandcamp"],
+             "rejected": {"bandcamp": ["sologuy"]}}
+    saved = client.put("/api/table", json={"rows": rows + [extra]}).json()["rows"]
+    mine = next(r for r in saved if r["name"] == "Solo Guy")
+    assert mine["skip"] == ["bandcamp"] and mine["rejected"] == {"bandcamp": ["sologuy"]}
+    assert next(r for r in client.get("/api/table").json() if r["name"] == "Solo Guy")["skip"] == ["bandcamp"]
+    client.put("/api/table", json={"rows": rows})
+    assert all(r["name"] != "Solo Guy" and not r["skip"] for r in client.get("/api/table").json())

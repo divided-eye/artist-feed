@@ -1130,13 +1130,27 @@ async def scan_step(net, artist, title, pages, steps):
 
 # ---------- Tracked Artists: filling in the page an artist's row is missing ----------
 
-async def suggest_pages(name: str, cells: dict) -> dict:
+def _handle(source, text):
+    try:
+        return source.normalize(text)[0]
+    except Exception:
+        return ""
+
+
+async def suggest_pages(name: str, cells: dict, skip=(), avoid=None) -> dict:
     """Best guesses for whatever a Tracked Artists row leaves blank: the Bandcamp page, the
-    SoundCloud profile, and the name when only a link was given. Guesses, to be reviewed."""
+    SoundCloud profile, and the name when only a link was given. Guesses, to be reviewed.
+
+    skip: sites not to look for (cells the user cleared on purpose).
+    avoid: {site: [pages already offered and rejected]} - never offered again."""
     name = (name or "").strip()
+    avoid = avoid or {}
     have = {k: (cells.get(k) or "").split(",")[0].strip() for k in ("bandcamp", "soundcloud")}
     out, notes = {"name": "", "cells": {}}, []
     bc, sc = SOURCES["bandcamp"], SOURCES["soundcloud"]
+    wanted = {k for k in have if not have[k] and k not in skip}
+    bad = {"bandcamp": {_handle(bc, v) for v in avoid.get("bandcamp") or []} - {""},
+           "soundcloud": {_handle(sc, v) for v in avoid.get("soundcloud") or []} - {""}}
 
     def squash(text):
         return re.sub(r"[^a-z0-9]", "", _fold(text))
@@ -1165,12 +1179,14 @@ async def suggest_pages(name: str, cells: dict) -> dict:
             hints = {squash(bc.short(bc.normalize(have["bandcamp"])[0])) if have["bandcamp"] else "",
                      squash(sc.normalize(have["soundcloud"])[0]) if have["soundcloud"] else ""} - {""}
 
-            if not have["bandcamp"]:
+            if "bandcamp" in wanted:
                 found = []                             # (address matches the other site's, name fit, -order, url)
                 try:
                     for n, c in enumerate(await bandcamp_search(net, name, "b")):
                         fit = name_sim(want, norm(c["name"]))
                         sub = squash(urlparse(c["url"]).netloc.split(".")[0])
+                        if _handle(bc, root_of(c["url"])) in bad["bandcamp"]:
+                            continue
                         if c["type"] in ("artist", "label", "") and (fit >= 0.85 or sub in hints):
                             found.append((sub in hints, round(fit, 2), -n, root_of(c["url"])))
                 except Blocked:
@@ -1179,7 +1195,7 @@ async def suggest_pages(name: str, cells: dict) -> dict:
                     notes.append("Bandcamp search didn't answer")
                 if not found:                          # an obvious address that search didn't offer
                     for guess in dict.fromkeys([squash(name)] + sorted(hints)):
-                        if len(guess) < 2:
+                        if len(guess) < 2 or f"{guess}.bandcamp.com" in bad["bandcamp"]:
                             continue
                         try:
                             grid = await get_grid(net, f"https://{guess}.bandcamp.com")
@@ -1195,13 +1211,15 @@ async def suggest_pages(name: str, cells: dict) -> dict:
                 else:
                     notes.append("no Bandcamp page found")
 
-            if not have["soundcloud"]:
+            if "soundcloud" in wanted:
                 found = []
                 try:
                     data = await sc._api(net.client, "/search/users", {"q": name, "limit": 20})
                     for u in data.get("collection") or []:
                         handle = squash(u.get("permalink") or (u.get("permalink_url") or "").rstrip("/").split("/")[-1])
                         fit = _is_profile_of(dict(u, permalink=handle), [want])
+                        if (u.get("permalink_url") or "").rstrip("/").split("/")[-1].lower() in bad["soundcloud"]:
+                            continue
                         if handle and (fit[0] or handle in hints):
                             found.append((handle in hints, fit[1], u.get("followers_count") or 0,
                                           (u.get("permalink_url") or "").rstrip("/").split("/")[-1].lower()))

@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import io
+import json
 import os
 import re
 import sqlite3
@@ -15,7 +16,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "31"   # shown beside the title, so you can tell which version is running
+VERSION = "32"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -114,6 +115,16 @@ class TableRow(BaseModel):
     id: Optional[int] = None
     name: str = ""
     cells: dict[str, str] = {}
+    skip: list[str] = []                 # cells cleared on purpose: "Find missing links" leaves them alone
+    rejected: dict[str, list[str]] = {}  # guesses turned down, never offered again
+
+
+def _left_empty() -> dict:
+    """{artist name, normalised: {"skip": [...], "rejected": {...}}} as last saved."""
+    try:
+        return json.loads(db.kv_get("table_left_empty") or "{}")
+    except ValueError:
+        return {}
 
 
 class TableIn(BaseModel):
@@ -121,7 +132,7 @@ class TableIn(BaseModel):
 
 
 def _table_rows():
-    rows = []
+    rows, remembered = [], _left_empty()
     for a in db.list_artists():
         cells = {key: [] for key in SOURCES}
         problems = []
@@ -135,8 +146,11 @@ def _table_rows():
                 problems.append(f"{source.label} {short}: {acc['last_error']}")
             elif not acc["last_checked"]:
                 problems.append(f"{source.label} {short}: checking…")
+        note = remembered.get(lookup.norm(a["name"])) or {}
         rows.append({"id": a["id"], "name": a["name"], "post_count": a["post_count"],
-                     "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems})
+                     "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
+                     "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
+                     "rejected": note.get("rejected") or {}})
     return rows
 
 
@@ -159,13 +173,15 @@ def export_csv():
 class SuggestIn(BaseModel):
     name: str = ""
     cells: dict[str, str] = {}
+    skip: list[str] = []
+    avoid: dict[str, list[str]] = {}
 
 
 @app.post("/api/table/suggest")
 async def suggest_row(body: SuggestIn):
     """Guesses for the pages one row is missing. Nothing is saved."""
     try:
-        return await lookup.suggest_pages(body.name, body.cells)
+        return await lookup.suggest_pages(body.name, body.cells, body.skip, body.avoid)
     except lookup.Blocked:
         raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")
     except SourceError as e:
@@ -176,7 +192,7 @@ async def suggest_row(body: SuggestIn):
 async def save_table(body: TableIn):
     """Replace the whole artist list with the rows sent. Nothing changes unless every row is valid."""
     existing = {a["id"]: a for a in db.list_artists()}
-    errors, claimed, plan = [], {}, []
+    errors, claimed, plan, remember = [], {}, [], {}
     for index, row in enumerate(body.rows):
         pages = []
         for key, text in row.cells.items():
@@ -201,6 +217,11 @@ async def save_table(body: TableIn):
         if not name and not pages:
             continue  # a blank row; for an existing artist this removes them
         plan.append((row.id if row.id in existing else None, name or pages[0][1], pages))
+        filled = {key for key, _, _ in pages}
+        note = {"skip": [k for k in row.skip if k in SOURCES and k not in filled],
+                "rejected": {k: list(dict.fromkeys(v))[:20] for k, v in row.rejected.items() if k in SOURCES and v}}
+        if note["skip"] or note["rejected"]:
+            remember[lookup.norm(plan[-1][1])] = note
     if errors:
         return JSONResponse({"detail": "Some rows need fixing; nothing was saved.",
                              "errors": errors}, status_code=400)
@@ -219,6 +240,7 @@ async def save_table(body: TableIn):
         drop_accounts += [acc_id for key, acc_id in have.items() if key not in wanted]
         new_accounts += [(artist_id, s, h, u) for s, h, u in pages if (s, h) not in have]
     added = db.apply_table(keep, drop_accounts, renames, new_accounts, new_artists)
+    db.kv_set("table_left_empty", json.dumps(remember))
     if added:
         refresh.refresh_in_background(added)
     return {"rows": _table_rows(), "added": len(added)}
