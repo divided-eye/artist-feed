@@ -99,6 +99,11 @@ otherwise their SoundCloud page.
   look), "Bandcamp artist page" (the artist is on Bandcamp but the track isn't
   on any release there now), "SoundCloud artist page", or "SoundCloud search"
   (no profile matched; the link opens a search).
+- Labels often credit a release to themselves and name the artist only in the
+  title or the page address ("DNO021 - Kercha - Open The Door LP" by DNO
+  Records). The artist appearing there as a whole word counts as a match, and
+  a search result with the right title but an unrecognised artist is opened
+  to check before it is passed over.
 - **What was tried** under each result lists every step and what it found.
   It is also in the export, in the "steps" column.
 - **Edit** under any link lets you replace it with the correct one (and set
@@ -125,7 +130,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v16. Labels, track lists and durations for Bandcamp
+is v17. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

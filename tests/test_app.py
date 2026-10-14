@@ -85,6 +85,11 @@ SEARCHES.update({
                                          + result("Dragon Language", "https://x.bandcamp.com/album/dl", "by Somebody Else", kind="ALBUM"),
     ("b", "somah"): result("Somah UK", "https://somahuk.bandcamp.com", "Bristol, UK", "", "ARTIST")
                     + result("Somahaus", "https://somahaus.bandcamp.com", "Berlin", "", "ARTIST"),
+    # a label release: credited to the label, the artist only in the album's name and address
+    "Kercha Trigger Activation": result("Trigger Activation", "https://dnorecords.bandcamp.com/track/trigger-activation",
+                                        "from Open The Door LP by DNO Records")
+                                 + result("Trigger Activation", "https://other.bandcamp.com/track/trigger-activation",
+                                          "from Something Else by Other Label"),
     ("b", "bbbb cccc"): result("Cccc", "https://ccc.bandcamp.com", "", "", "ARTIST"),
 })
 
@@ -127,6 +132,8 @@ PAGES = {
         "byArtist": {"name": "Siadic"}, "inAlbum": {"name": "Traction EP", "@id": "https://siadic.bandcamp.com/album/traction-ep"}}),
     ("dubdenrecords.bandcamp.com", "/track/ydx-what-a-world"): release("YDX - What A World", "01 Jan 2026 00:00:00 GMT", "MusicRecording", {
         "byArtist": {"name": "Dub Den Records"}, "inAlbum": {"name": "Dubs From The Den Vol. 7", "@id": "https://dubdenrecords.bandcamp.com/album/dubs-from-the-den-vol-7"}}),
+    ("dnorecords.bandcamp.com", "/track/trigger-activation"): release("Trigger Activation", "29 May 2026 00:00:00 GMT", "MusicRecording", {
+        "byArtist": {"name": "DNO Records"}, "inAlbum": {"name": "Open The Door LP", "@id": "https://dnorecords.bandcamp.com/album/dno021-kercha-open-the-door-lp"}}),
     ("somahuk.bandcamp.com", "/music"): grid("Somah UK", ("older", "Older Thing"), ("gnosis-railroads", "Gnosis / Railroads")),
     ("somahuk.bandcamp.com", "/album/older"): album("Older Thing", "Somah", "Aaa", "Bbb"),
     ("somahuk.bandcamp.com", "/album/gnosis-railroads"): album("Gnosis / Railroads", "Somah", "Gnosis", "Railroads"),
@@ -335,6 +342,26 @@ def test_reading_tracklists():
     assert lookup.artist_parts("Masot") == ["masot"] and lookup.artist_parts("Idpa & Saša Delimar")[1:] == ["idpa", "sasa delimar"]
 
 
+def test_artist_named_only_in_release_title_or_address():
+    """A vinyl LP bought from a label: 'DNO021 - Kercha - Open The Door LP' by DNO Records."""
+    from app import db, lookup
+    page = {"url": "https://dnorecords.bandcamp.com/album/dno021-kercha-open-the-door-lp", "title": "Open The Door LP",
+            "artist": "DNO Records", "year": "2026", "release": "Open The Door LP", "release_url": "",
+            "tracks": [{"title": "A Path Into Unknown", "artist": ""}, {"title": "Trigger Activation", "artist": ""}]}
+    assert lookup.match_in_release("Kercha", "Trigger Activation", page) == ("bandcamp", "Trigger Activation")
+    assert lookup.match_in_release("Kerch", "Trigger Activation", page)[0] == ""          # whole words only
+    assert lookup.match_in_release("Someone Else", "Trigger Activation", page)[0] == ""
+    assert lookup.match_in_release("Kercha", "Something Not On It", page)[0] == ""
+    db.execute("INSERT INTO collection_items(key, fan, title, band, url, kind) VALUES('a999','x',?,?,?,'a')",
+               ("DNO021 - Kercha - Open The Door LP", "DNO Records", page["url"]))
+    try:
+        lib = lookup.Library()
+        assert [i["key"] for i in lib.owned_by("Kercha")] == ["a999"] and lib.owned_by("Erch") == []
+        assert lib.owns(page)
+    finally:
+        db.execute("DELETE FROM collection_items WHERE key='a999'")
+
+
 def test_tracklist_lookup(client):
     def run(text, fresh=False):
         job = client.post("/api/lookup" + ("?fresh=true" if fresh else ""), content=text.encode()).json()
@@ -425,7 +452,8 @@ def test_lookup_uses_purchases_and_artist_pages(client):
 
     rows = [("Masot", "02"), ("Masot", "Especies Endémicas"), ("Blocklab", "Gargantua"), ("contactghost", "Spelling Mitsake"),
             ("Siadic", "Air"), ("Somah", "Gnosis"), ("Pugilist", "Asteroids"), ("Anecho", "UFO"),
-            ("Allen Mock", "Dragon Language"), ("YDX", "What A World"), ("Aaaa & Bbbb Cccc", "Deep Thing")]
+            ("Allen Mock", "Dragon Language"), ("YDX", "What A World"), ("Aaaa & Bbbb Cccc", "Deep Thing"),
+            ("Kercha", "Trigger Activation")]
     text = "Artist\tTitle\n" + "\n".join(f"{a}\t{t}" for a, t in rows)
     job = client.post("/api/lookup?fresh=true", content=text.encode()).json()
     for _ in range(300):
@@ -455,6 +483,8 @@ def test_lookup_uses_purchases_and_artist_pages(client):
         ("Allen Mock", "Dragon Language"): ("bandcamp", "https://observatory-records.bandcamp.com/album/dragon-language", "2026"),
         # only findable by title alone, listed as "Artist - Title" on a label compilation
         ("YDX", "What A World"): ("bandcamp", "https://dubdenrecords.bandcamp.com/album/dubs-from-the-den-vol-7", "2026"),
+        # credited to the label; the artist is only named in the album's address
+        ("Kercha", "Trigger Activation"): ("bandcamp", "https://dnorecords.bandcamp.com/album/dno021-kercha-open-the-door-lp", "2026"),
         # two artists: found on the second artist's own page
         ("Aaaa & Bbbb Cccc", "Deep Thing"): ("bandcamp", "https://ccc.bandcamp.com/album/conduit", "2026"),
     }
@@ -497,6 +527,16 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     quick = client.get(f"/api/lookup/{j['id']}").json()
     assert quick["finished"] and [x["status"] for x in quick["rows"]] == ["bandcamp"] * 3
     assert [x["year"] for x in quick["rows"]] == ["2026", "2025", "2026"] and calls["requests"] == made
+
+    # A miss saved by an older version is tried again; a found release saved by an older version is kept.
+    from app import db, lookup
+    for a, t, status in (("Old Miss", "Zzz Qqq", "bandcamp_artist"), ("Old Hit", "Zzz Www", "bandcamp")):
+        db.execute("INSERT OR REPLACE INTO lookup_cache VALUES(?,?,?)", (lookup._cache_key(a, t), json.dumps(
+            {"status": status, "site": "Bandcamp", "url": "https://old.bandcamp.com", "steps": []}), "2026-10-10T00:00:00Z"))
+    j = client.post("/api/lookup", content="Artist\tTitle\nOld Miss\tZzz Qqq\nOld Hit\tZzz Www".encode()).json()
+    time.sleep(0.5)
+    again = client.get(f"/api/lookup/{j['id']}").json()["rows"]
+    assert again[0]["status"] == "soundcloud_search" and (again[1]["status"], again[1]["url"]) == ("bandcamp", "https://old.bandcamp.com")
 
     before = len(searched)                              # pages read once are not fetched again
     client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSomah\tRailroads".encode())

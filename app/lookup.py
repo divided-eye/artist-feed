@@ -44,6 +44,8 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
+ENGINE = 3             # raise when the lookup gets better at finding things: saved answers that were
+                       # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
 _tasks = set()
@@ -175,8 +177,24 @@ def name_sim(a: str, b: str) -> float:
     return r
 
 
+def slug_words(url: str) -> str:
+    """The readable part of a Bandcamp address: ".../album/dno021-kercha-open-the-door-lp" ->
+    "dno021 kercha open the door lp"."""
+    return (urlparse(url or "").path.rstrip("/").rsplit("/", 1)[-1]).replace("-", " ")
+
+
+def release_context(rel: dict) -> list:
+    """Places besides the artist credit where a release names its artist: its title and its address.
+    Labels often credit a release to themselves and put the artist in the title only, e.g.
+    "DNO021 - Kercha - Open The Door LP" by DNO Records."""
+    return [rel.get("title"), rel.get("release"), slug_words(rel.get("url")), slug_words(rel.get("asked")),
+            slug_words(rel.get("release_url"))]
+
+
 def score(artist: str, title: str, cand: dict) -> tuple:
-    """(title score, artist score) for a candidate {"name", "artists": [names...]}."""
+    """(title score, artist score) for a candidate {"name", "artists": [names...], "context": [text...]}.
+    "context" is free text around the release (its title, its address); the wanted artist appearing
+    there as whole words counts as an artist match."""
     want_title, wanted = norm(title), artist_parts(artist)
     name = cand.get("name") or ""
     prefix, _, rest = name.partition(" - ")            # label pages often title tracks "Artist - Title"
@@ -185,6 +203,10 @@ def score(artist: str, title: str, cand: dict) -> tuple:
     if rest:
         have += artist_parts(prefix)
     a = max((name_sim(w, h) for w in wanted for h in have), default=0.0)
+    if a < 0.9 and wanted:
+        around = " " + " ".join(norm(c) for c in cand.get("context") or [] if c) + " "
+        if any(len(w) >= 2 and f" {w} " in around for w in wanted):
+            a = 0.9
     if not wanted:
         a = 0.6                                        # no artist given: the title alone is a weak match
     return t, a
@@ -282,7 +304,8 @@ def _index_release(index, rel):
     title = rel.get("title") or ""
     extra = [rel.get("artist"), title.partition(" - ")[0] if " - " in title else ""]
     for t in rel["tracks"]:
-        entry = {"name": t["title"], "artists": [t.get("artist")] + extra, "rel": rel}
+        entry = {"name": t["title"], "artists": [t.get("artist")] + extra, "rel": rel,
+                 "context": release_context(rel)}
         index.setdefault(norm(t["title"]), []).append(entry)
         rest = t["title"].partition(" - ")[2]
         if rest:                                         # "Artist - Title" is also findable by its title
@@ -349,9 +372,11 @@ async def get_grid(net, base):
 def match_in_release(artist, title, rel):
     """Is the wanted track on this release? Returns (verdict, matched track title)."""
     extra = [rel.get("artist"), rel.get("title", "").partition(" - ")[0] if " - " in rel.get("title", "") else ""]
-    cands = [{"name": t["title"], "artists": [t.get("artist")] + extra} for t in rel.get("tracks") or []]
+    around = release_context(rel)
+    cands = [{"name": t["title"], "artists": [t.get("artist")] + extra, "context": around}
+             for t in rel.get("tracks") or []]
     if not cands and rel.get("title"):              # no track list on the page: go by its title
-        cands = [{"name": rel["title"], "artists": extra}]
+        cands = [{"name": rel["title"], "artists": extra, "context": around}]
     verdict, cand = best_candidate(artist, title, cands)
     return verdict, (cand or {}).get("name", "")
 
@@ -402,16 +427,27 @@ async def search_step(net, artist, title, steps):
     queries.append(("a", f"{artist} {title}".strip()))                # a release named after the track
     if distinctive(title):
         queries.append(("a", title))
-    seen, check = set(), None
+    seen, check, verified = set(), None, set()
     for kind, text in dict.fromkeys(queries):
         found = [c for c in await bandcamp_search(net, text, kind) if c["url"] not in seen]
         seen.update(c["url"] for c in found)
         want = "track" if kind == "t" else "album"
-        cands = [dict(c, artists=[c.get("artist")]) for c in found if c["type"] in (want, "")]
+        cands = [dict(c, artists=[c.get("artist")], context=[c.get("album"), slug_words(c.get("url"))])
+                 for c in found if c["type"] in (want, "")]
         verdict, cand = best_candidate(artist, title, cands)
         steps.append(f'search {want}s "{text}": {len(cands)} result(s)'
                      + (f', {"match" if verdict == "bandcamp" else "possible"}: {cand["artist"]} — {cand["name"]}' if cand else ""))
         if not cand:
+            # Right title, artist not named in the result (a label credits the release to itself):
+            # open the closest few and check the artist against the page and the album's address.
+            close = [c for c in cands if score(artist, title, c)[0] >= 0.88 and c["url"] not in verified][:3]
+            for c in close:
+                verified.add(c["url"])
+                rel = await _safe_release(net, c["url"])
+                v, name = match_in_release(artist, title, rel) if rel else ("", "")
+                if v == "bandcamp":
+                    steps.append(f'opened "{c["name"]}" by {c["artist"]}: the release is "{rel.get("release") or rel.get("title")}", artist confirmed')
+                    return release_result(rel, v, f'{c["artist"]} \u2014 {name}', "Bandcamp search")
             continue
         out = {"status": verdict, "site": "Bandcamp", "url": cand["url"], "release": cand.get("album") or (cand["name"] if kind == "a" else ""),
                "found": " — ".join(x for x in (cand.get("artist"), cand.get("name")) if x),
@@ -666,11 +702,14 @@ class Library:
             credit = item["title"].partition(" - ")[0] if " - " in item["title"] else ""
             for name in dict.fromkeys(artist_parts(item["band"]) + artist_parts(credit)):
                 self.by_name.setdefault(name, []).append(item)
+            # title and address as plain words, for artists only named there
+            item["around"] = " " + norm(item["title"]) + " " + norm(slug_words(item["url"])) + " "
         for t in db.query("SELECT item_key, title, artist FROM collection_tracks"):
             item = by_key.get(t["item_key"])
             if item:
                 self._add(self.owned_tracks, t["title"], {
-                    "name": t["title"], "artists": [t["artist"], item["band"]], "item": item})
+                    "name": t["title"], "artists": [t["artist"], item["band"]], "item": item,
+                    "context": [item["title"], slug_words(item["url"])]})
 
     @staticmethod
     def _add(index, title, entry):
@@ -693,6 +732,10 @@ class Library:
             if any(name_sim(w, name) >= 0.85 for w in wanted):
                 for item in items:
                     out.setdefault(item["key"], item)
+        named = [w for w in wanted if len(w) >= 2]
+        for item in self.owned_items:                    # "DNO021 - Kercha - Open The Door LP" by DNO Records
+            if item["key"] not in out and any(f" {w} " in item["around"] for w in named):
+                out[item["key"]] = item
         self._by_artist[artist] = list(out.values())
         return self._by_artist[artist]
 
@@ -908,6 +951,7 @@ def _cached(key):
 
 
 def _remember(key, result):
+    result = dict(result, engine=ENGINE)
     db.execute("INSERT INTO lookup_cache(key, result, at) VALUES(?,?,?) "
                "ON CONFLICT(key) DO UPDATE SET result=excluded.result, at=excluded.at",
                (key, json.dumps(result), db.now()))
@@ -1055,6 +1099,8 @@ async def _run(job, fresh):
         for row in rows:
             manual = _cached(_manual_key(row["artist"], row["title"]))   # your own link always wins
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
+            if saved and not manual and saved.get("status") != "bandcamp" and saved.get("engine", 0) < ENGINE:
+                saved = None                               # a miss from an older version: try again
             if saved and not manual:
                 saved = dict(saved, steps=(saved.get("steps") or []) + ["(saved result from an earlier lookup)"])
             result = saved or find_local(lib, row["artist"], row["title"])
