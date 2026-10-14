@@ -58,7 +58,7 @@ The running app uses its own copy of the files. After changing any file in the f
 
 ## Using the feed
 
-The feed shows everything collected from your tracked artists, newest first. It refreshes itself every hour while the app is running. **Refresh Feed** checks immediately.
+The feed shows everything collected from your tracked artists, newest first. It refreshes itself every hour while the app is running. **Refresh Feed** checks immediately. If a refresh is already under way (for example for pages just added), a full one follows as soon as it ends. When it finishes, the line beside the buttons says what it found: how many new posts, how many Bandcamp pages were skipped because a Link Finder lookup was running (they are checked on the next refresh), and how many pages couldn't be read. The reasons for those are in the Status column of Tracked Artists and in the app's log (docker compose logs). If a refresh is already under way (for example for pages just added), a full one follows as soon as it ends. When it finishes, the line beside the buttons says what it found: how many new posts, how many Bandcamp pages were skipped because a Link Finder lookup was running (they are checked on the next refresh), and how many pages couldn't be read. The reasons for those are in the Status column of Tracked Artists and in the app's log (docker compose logs).
 
 ### Views
 
@@ -443,6 +443,8 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 49 | Refresh Feed: no longer ignored while a smaller refresh is running (a full one is queued behind it). After a refresh, the status line reports new posts, Bandcamp pages skipped during a lookup, and pages that couldn't be read; each refresh is also summarised in the app's log. |
+| 49 | Refresh Feed: no longer ignored while a smaller refresh is running (a full one is queued behind it). After a refresh, the status line reports new posts, Bandcamp pages skipped during a lookup, and pages that couldn't be read; each refresh is also summarised in the app's log. |
 | 48 | Tracked Artists: an artist can have other names, typed after the first and separated by commas; Link Finder matches any of them and falls back to that artist's tracked Bandcamp page or SoundCloud profile. Find missing links shows the same glow and row highlighting as a Link Finder lookup. |
 | 47 | Names: a symbol written into a word is kept when a name is tidied ("∑1" was becoming "1", and "Myca$h" "myca h"). Punctuation and symbols standing alone are still dropped. An imported list is re-filed under the new tidied names at start-up, so it does not need importing again. |
 | 46 | Saved results: click a column heading to sort by it. The sort covers the whole table, not only the rows loaded, and the export follows it. |

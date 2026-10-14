@@ -2,6 +2,7 @@ import asyncio
 import csv
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -16,8 +17,16 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "48"   # shown beside the title, so you can tell which version is running
+VERSION = "49"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+
+_log = logging.getLogger("artist-feed")          # refresh summaries and problems, in the container's log
+if not _log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _log.addHandler(_handler)
+    _log.setLevel(logging.INFO)
 
 
 @asynccontextmanager
@@ -546,14 +555,13 @@ async def retry_lookup_row(job_id: str, body: RetryIn):
 
 @app.post("/api/refresh")
 async def refresh_now():
-    if not refresh.state["refreshing"]:
-        refresh.refresh_in_background()
-    return {"ok": True}
+    return {"ok": True, "state": refresh.request_refresh()}
 
 
 @app.get("/api/status")
 def status():
     return {"version": VERSION, "refreshing": refresh.state["refreshing"] > 0,
             "bandcamp_on_hold": pace.on_hold() or refresh.state["held"] > 0,
-            "last_refresh": refresh.state["last_refresh"],
+            "last_refresh": refresh.state["last_refresh"], "queued": refresh.state["queued"],
+            "last_result": refresh.state["last_result"],
             "refresh_minutes": refresh.REFRESH_MINUTES}

@@ -16,7 +16,7 @@ CONCURRENCY = int(os.environ.get("REFRESH_CONCURRENCY", "3"))
 # Pages whose back catalogue is still loading are visited again this often, between full refreshes.
 CATCH_UP_MINUTES = float(os.environ.get("CATCH_UP_MINUTES", "10"))
 
-state = {"refreshing": 0, "last_refresh": None, "held": 0}
+state = {"refreshing": 0, "last_refresh": None, "held": 0, "queued": False, "last_result": None}
 _tasks = set()
 
 
@@ -24,25 +24,34 @@ def make_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(headers=BROWSER_HEADERS, follow_redirects=True, timeout=25)
 
 
-async def _refresh_one(client, sem, account):
+async def _refresh_one(client, sem, account, tally):
     async with sem:
         source = SOURCES.get(account["source"])
         if source is None:
             return
+        problem = None
         try:
-            result = await source.fetch(client, account, db.known_ids(account["id"]))
+            known = db.known_ids(account["id"])
+            result = await source.fetch(client, account, known)
             db.save_result(account, result)
+            tally["new"] += sum(1 for p in result.posts if p.external_id not in known)
+            tally["checked"] += 1
         except pace.Busy:
             state["held"] += 1      # not an error: tried again on the next refresh
+            tally["held"] += 1
         except SourceError as e:
-            db.save_error(account["id"], str(e))
+            problem = str(e)
         except httpx.HTTPStatusError as e:
-            db.save_error(account["id"], f"{source.label} answered with error {e.response.status_code}.")
+            problem = f"{source.label} answered with error {e.response.status_code}."
         except httpx.HTTPError as e:
-            db.save_error(account["id"], f"Couldn't reach {source.label} ({type(e).__name__}).")
+            problem = f"Couldn't reach {source.label} ({type(e).__name__})."
         except Exception as e:  # a site changed its layout, most likely
             log.exception("refresh failed for %s", account["url"])
-            db.save_error(account["id"], f"Unexpected problem reading this page: {e}")
+            problem = f"Unexpected problem reading this page: {e}"
+        if problem:
+            db.save_error(account["id"], problem)
+            log.warning("refresh: %s: %s", account["url"], problem)
+            tally["errors"] += 1
 
 
 async def refresh(account_ids=None):
@@ -51,15 +60,45 @@ async def refresh(account_ids=None):
         return
     state["refreshing"] += 1
     state["held"] = 0
+    tally = {"pages": len(accounts), "checked": 0, "new": 0, "errors": 0, "held": 0,
+             "lookup_running": pace.on_hold()}
     try:
         sem = asyncio.Semaphore(CONCURRENCY)
         async with make_client() as client:
-            await asyncio.gather(*(_refresh_one(client, sem, a) for a in accounts))
+            await asyncio.gather(*(_refresh_one(client, sem, a, tally) for a in accounts))
         if account_ids is None:
             state["last_refresh"] = db.now()
             db.kv_set("last_refresh", state["last_refresh"])
+            state["last_result"] = dict(tally, at=state["last_refresh"])
+            log.info("refresh: %(checked)s of %(pages)s pages read, %(new)s new posts, %(errors)s problems, "
+                     "%(held)s Bandcamp pages left for later", tally)
     finally:
         state["refreshing"] -= 1
+
+
+async def refresh_when_free():
+    """Asked for a full refresh while another (often a few new pages after a save) is running:
+    do it as soon as that one ends, instead of ignoring the request."""
+    try:
+        while state["refreshing"]:
+            await asyncio.sleep(1)
+        await refresh()
+    finally:
+        state["queued"] = False
+
+
+def request_refresh() -> str:
+    """The Refresh Feed button: "started", or "queued" behind a refresh already running."""
+    if state["queued"]:
+        return "queued"
+    if state["refreshing"]:
+        state["queued"] = True
+        task = asyncio.create_task(refresh_when_free())
+        _tasks.add(task)
+        task.add_done_callback(_tasks.discard)
+        return "queued"
+    refresh_in_background()
+    return "started"
 
 
 def refresh_in_background(account_ids=None):

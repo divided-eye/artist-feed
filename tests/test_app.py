@@ -1447,3 +1447,27 @@ def test_tracked_artist_with_other_names(client):
     finally:
         client.put("/api/table", json={"rows": keep})
         client.delete("/api/saved", params={"key": "zao|unfindable qqq www"})
+
+
+def test_refresh_button_reports_and_queues(client):
+    import asyncio
+    from app import refresh
+    assert client.post("/api/refresh").json()["state"] == "started"
+    for _ in range(100):
+        time.sleep(0.05)
+        s = client.get("/api/status").json()
+        if not s["refreshing"]:
+            break
+    result = s["last_result"]
+    assert result and result["pages"] >= 1 and result["checked"] + result["errors"] + result["held"] == result["pages"], s
+    refresh.state["refreshing"] += 1                    # as if a few new pages were still being read
+    try:
+        assert client.post("/api/refresh").json()["state"] == "queued"
+        assert client.post("/api/refresh").json()["state"] == "queued" and client.get("/api/status").json()["queued"]
+    finally:
+        refresh.state["refreshing"] -= 1
+    for _ in range(100):
+        time.sleep(0.05)
+        if not client.get("/api/status").json()["queued"]:
+            break
+    assert not client.get("/api/status").json()["queued"]

@@ -467,6 +467,7 @@ function ago(isoText) {
   const t = new Date(isoText), s = (Date.now() - t) / 1000;
   if (isNaN(s)) return "";
   if (s < -86400) return "out " + t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  if (s < 60) return "just now";
   if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m ago";
   if (s < 86400) return Math.round(s / 3600) + "h ago";
   if (s < 86400 * 14) return Math.round(s / 86400) + "d ago";
@@ -1187,18 +1188,30 @@ async function reload() {
   if (!$("drawer").hidden && !dirty) await loadTable();   // pick up new post counts and warnings
 }
 
+// What the last full refresh did, in a few words.
+function refreshSummary(r) {
+  if (!r) return "";
+  const parts = [r.new ? `${r.new} new post${r.new > 1 ? "s" : ""}` : "nothing new"];
+  if (r.held) parts.push(`${r.held} Bandcamp page${r.held > 1 ? "s" : ""} skipped${r.lookup_running ? " while a lookup ran" : ""}, tried again next time`);
+  if (r.errors) parts.push(`${r.errors} page${r.errors > 1 ? "s" : ""} couldn't be read (see Tracked Artists)`);
+  return " · " + parts.join(" · ");
+}
+
+let statusTimer = null;
 async function pollStatus() {
+  clearTimeout(statusTimer);                  // one polling loop, however often it is kicked
   try {
     const s = await api("/api/status");
-    $("status").textContent = s.refreshing ? "Checking for new posts…" : (s.last_refresh ? "Updated " + ago(s.last_refresh) : "");
+    $("status").textContent = s.refreshing ? "Checking for new posts…" + (s.queued ? " (a full refresh follows)" : "")
+      : (s.last_refresh ? "Updated " + ago(s.last_refresh) + refreshSummary(s.last_result) : "");
     $("status").title = s.bandcamp_on_hold ? "Bandcamp checks are on hold while a lookup runs or Bandcamp has asked for a pause; they resume on the next refresh." : "";
-    if (s.bandcamp_on_hold && !s.refreshing) $("status").textContent += " · Bandcamp on hold";
-    $("refreshBtn").disabled = s.refreshing;
+    if (s.bandcamp_on_hold && !s.refreshing && !(s.last_result && s.last_result.held)) $("status").textContent += " · Bandcamp on hold";
+    $("refreshBtn").disabled = s.refreshing && s.queued;
     $("version").textContent = s.version ? "v" + s.version : "";
     if (wasRefreshing && !s.refreshing) await reload();
     wasRefreshing = s.refreshing;
-    setTimeout(pollStatus, s.refreshing ? 2000 : 15000);
-  } catch { setTimeout(pollStatus, 15000); }
+    statusTimer = setTimeout(pollStatus, s.refreshing ? 2000 : 15000);
+  } catch { statusTimer = setTimeout(pollStatus, 15000); }
 }
 
 // ---- tracklist lookup ----
@@ -1561,7 +1574,12 @@ $("fMax").onchange = e => { maxResults = Number(e.target.value) || 0; try { loca
 let searchTimer;
 $("search").oninput = e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filter.q = e.target.value; loadFeed(); }, 250); };
 $("artistFilter").onchange = e => { filter.artist_id = e.target.value; loadFeed(); };
-$("refreshBtn").onclick = async () => { await api("/api/refresh", { method: "POST" }); wasRefreshing = true; $("status").textContent = "Checking for new posts…"; setTimeout(pollStatus, 800); };
+$("refreshBtn").onclick = async () => {
+  const r = await api("/api/refresh", { method: "POST" });
+  wasRefreshing = true;
+  $("status").textContent = r.state === "queued" ? "Checking for new posts… (a full refresh follows)" : "Checking for new posts…";
+  setTimeout(pollStatus, 800);
+};
 (async function start() {
   sources = await api("/api/sources");
   renderChips();
