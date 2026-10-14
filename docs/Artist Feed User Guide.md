@@ -1,6 +1,6 @@
 # Artist Feed: User Guide
 
-Oct 12, 2026
+Oct 13, 2026
 
 ## About this guide
 
@@ -10,13 +10,13 @@ The guide is meant to be edited. Change anything here that you want described di
 
 To download a copy of this guide, click the guide's name at the top of the page and choose **Export**, then pick Word, PDF or Markdown. In the phone apps, Export is under Share. A download is a snapshot: later edits made here are not carried into it.
 
-One thing applies throughout: the app was built without access to the real Bandcamp and SoundCloud sites. Its logic is tested against stand-in copies of their pages, and corrected from reports of how it behaves on the real ones. Parts that have only been tested that way are noted under Known limits.
+One thing applies throughout: the app was built without access to the real Bandcamp, SoundCloud and YouTube sites. Its logic is tested against stand-in copies of their pages, and corrected from reports of how it behaves on the real ones. Parts that have only been tested that way are noted under Known limits.
 
 ## What the app does
 
 Artist Feed is a small web app that runs on your own computer and does two jobs.
 
-- **The feed.** It checks the Bandcamp and SoundCloud pages of the artists and labels you track and shows their newest releases and uploads on one page, newest first. You can browse as a grid of covers or as a sortable list of tracks, filter and search, listen without leaving the page, and export the list.
+- **The feed.** It checks the Bandcamp, SoundCloud and YouTube pages of the artists and labels you track and shows their newest releases and uploads on one page, newest first. You can browse as a grid of covers or as a sortable list of tracks, filter and search, listen without leaving the page, and export the list.
 - **Link Finder.** You give it a tracklist (artist and title per row). For each track it returns a link to the Bandcamp release the track is on, with the release year. When the track is not on Bandcamp it returns the track on SoundCloud, or failing that an artist page.
 
 What it does not do:
@@ -144,6 +144,24 @@ Each row has a **Rescan** checkbox. Tick it and press Find missing links to sear
 
 **Clear All** empties the table after asking you to confirm. Nothing is removed from the feed until you press Save changes, which asks again; Discard brings the rows back.
 
+## Settings
+
+The **Settings** button at the top opens two lists of checkboxes.
+
+**Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one site has to stay on.
+
+**Link Finder searches.** Tick the sites Link Finder looks on. A track found on a site higher in the list is preferred: Bandcamp first, then SoundCloud, then YouTube. YouTube starts unticked. Saved answers stay as they were, except that a link on a site you have unticked gives way to the next best one. When you tick a site, rows saved as not found are searched again the next time they are looked up; when the newly ticked site is YouTube, only YouTube is looked at for them, and only for the artists ticked for it.
+
+### YouTube
+
+Put a channel in the YouTube column of Tracked Artists as its @handle or its address (youtube.com/@name, /channel/UC…, or an old /c/ or /user/ address). Its newest uploads appear in the feed like any other post and play in the player at the bottom.
+
+Link Finder only looks on YouTube for the rows ticked in the **YouTube search** column of Tracked Artists, so it doesn't search YouTube for every artist just because their other links aren't set:
+
+- For a ticked artist, it first looks through the uploads of the YouTube channels you track for ticked rows, then runs a YouTube search for the artist and title.
+- For a ticked label, it looks through the uploads of the label's channel, which needs to be in the label's YouTube cell. Labels aren't searched by name, because a tracklist doesn't say which label a track is on.
+- YouTube comes third: it is only looked at when the track wasn't found on Bandcamp or SoundCloud.
+
 ## Link Finder
 
 The **Link Finder** button opens a panel that takes a tracklist and returns one link per track.
@@ -162,13 +180,15 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | Bandcamp release | Title and artist both matched. The link is the release the track is on. |
 | Bandcamp · check match | A partial match. Worth a click before you trust it. |
 | SoundCloud track | Not on Bandcamp, but found on SoundCloud under a profile whose name fits. The link is the track itself. |
+| YouTube video | Not found on Bandcamp or SoundCloud, but on YouTube: among the uploads of a channel you track, or by a YouTube search for an artist ticked for it. Only when YouTube is ticked for Link Finder in Settings. |
 | SoundCloud artist page | The track was not found. This is the artist's (or remixer's) profile. |
 | Bandcamp artist page | The track was not found. This is the artist's (or remixer's) Bandcamp page. |
 | SoundCloud search | No profile matched. The link opens a SoundCloud search. |
+| YouTube channel | The track was not found, and the artist has neither a Bandcamp page nor a SoundCloud profile to link. This is the YouTube channel you track for them. |
 | Link you set | You entered this link yourself. |
 | Error | The search could not finish. Run the list again to retry. |
 
-The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". Each of those rows has **Skip** and **Add link**. Skip stops the search for that track at once (or before it starts) and moves on; it is marked Skipped and nothing is saved for it, so it is searched for next time unless you add a link. Add link sets the link you already know, and that track is not searched. A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
+The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". Each of those rows has \*\*Skip\*\* and \*\*Add link\*\*. Skip stops the search for that track at once (or before it starts) and moves on; it is marked Skipped and nothing is saved for it, so it is searched for next time unless you add a link. Add link sets the link you already know, and that track is not searched. A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
 
 ### Options in the panel
 
@@ -196,7 +216,9 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, have no link to the track itself (only an artist page, a profile or a search), have the track found on Bandcamp or SoundCloud, have a link you set, are in your list, or have no spelling on file. Click a column heading to sort the whole table by it, again to reverse the order, and a third time to return to newest first. Rows with nothing in that column go last. Export downloads whatever the search and filter show, in the order shown.
 
-Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are, and so is a symbol written into a word, as in "∑1", "Myca$h" or "Mor£"), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column. A track saved under a name that doesn't match your list exactly (saved before versions had entries of their own, or typed without brackets) shows the closest entry, marked "closest in your list": the one with the same words, or the only version of that title. **Edit spelling** (or Add spelling) under the title lets you type how the artist and title should be written; it is saved to your list for that track, and Remove takes the track out of your list.
+The filter **Searched in the last lookup** shows only the tracks the latest lookup had to search for (not the ones answered from what was already saved), and keeps showing them after the lookup finishes, so you have one list of new links to review. It starts again each time you press a Look up button; Search again on a row adds that row to it.
+
+Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are, and so is a symbol written into a word, as in "∑1", "Myca$h" or "Mor£"), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column. A track saved under a name that doesn't match your list exactly (saved before versions had entries of their own, or typed without brackets) shows the closest entry, marked "closest in your list": the one with the same words, or the only version of that title. \*\*Edit spelling\*\* (or Add spelling) under the title lets you type how the artist and title should be written; it is saved to your list for that track, and Remove takes the track out of your list.
 
 Each row has Edit, Search again and Forget, plus Looks right on rows marked for review. Forget opens a choice of what to forget: Saved answer (the track is searched for next time), List entry (takes that track out of your imported list; on a row marked "closest in your list" it is called Closest list entry), or Both. Only the choices that apply to the row are shown.
 
@@ -206,7 +228,7 @@ Each row has Edit, Search again and Forget, plus Looks right on rows marked for 
 
 - Your spelling is shown beside the tidied form here, under the names in lookup results, and as its own columns in both exports. The tidied form is kept.
 - The list may include links, in columns named Link, URL, Bandcamp or SoundCloud, or Buy. When the list has a header row, columns without a heading are ignored. Without a header row, links are read wherever a web address appears. Text written beside a link, such as "(limited time only)" or "(Patreon)", is kept separately as a note and shown and exported in its own column.
-- A list may repeat tracks: rows for the same track are merged. The spelling used most often is kept. When rows give different links, a Bandcamp release or SoundCloud track link is preferred over a shop page, a label's front page or a profile, then the link given most often. The import reports how many tracks had either difference. Versions that tidy to the same title, such as "Eski" and "Eski [alternate version]", stay separate entries, each with its own spelling, link and note. A Year column is kept and used when the lookup has no year of its own. Rows whose title has no letters or digits, such as "???", are left out.
+- A list may repeat tracks: rows for the same track are merged. The spelling used most often is kept. When rows give different links, a Bandcamp release or SoundCloud track link is preferred over a shop page, a label's front page or a profile, then the link given most often. The import reports how many tracks had either difference. Versions that tidy to the same title, such as "Eski" and "Eski \[alternate version\]", stay separate entries, each with its own spelling, link and note. A Year column is kept and used when the lookup has no year of its own. Rows whose title has no letters or digits, such as "???", are left out.
 - Importing again updates the list. Remove my list deletes it; saved results and links you set are kept.
 
 A link from your list is used only when the lookup has nothing better:
@@ -224,11 +246,15 @@ Neither site offers an official way to do what the app does, so it reads their p
 
 ### Reading Bandcamp
 
-Bandcamp has no public API or artist feed. For each tracked page the app reads the `/music` page, which lists the releases, then opens each release it has not read before to get the release date, posting date, label, track list, durations and the id its player needs. At most 6 new releases are opened per artist per refresh, so a long back catalogue fills in over several visits. Between the hourly refreshes, pages that still have older releases to load are visited again every 10 minutes (CATCH_UP_MINUTES in docker-compose.yml), 6 releases at a time. A release page that cannot be read is retried after the unread ones, so it cannot hold up the rest.
+Bandcamp has no public API or artist feed. For each tracked page the app reads the `/music` page, which lists the releases, then opens each release it has not read before to get the release date, posting date, label, track list, durations and the id its player needs. At most 6 new releases are opened per artist per refresh, so a long back catalogue fills in over several visits. Between the hourly refreshes, pages that still have older releases to load are visited again every 10 minutes (CATCH\_UP\_MINUTES in docker-compose.yml), 6 releases at a time. A release page that cannot be read is retried after the unread ones, so it cannot hold up the rest.
 
 ### Reading SoundCloud
 
 SoundCloud's RSS feeds are empty for most musicians, so the app uses the same data endpoints the soundcloud.com website calls. They need a public key that is embedded in the site's own code. The app finds that key itself and replaces it when it expires. Only an artist's own uploads are read, not reposts.
+
+### Reading YouTube
+
+YouTube publishes a feed of every channel's 15 newest videos, which needs no key. A channel given by its @handle (or an old address) is opened once to read its id, which is then remembered. The feed gives no running times, so YouTube posts have no duration, and it does not mark Shorts apart from other videos. Link Finder's YouTube search reads YouTube's own results page, and keeps each answer for a week.
 
 ### Pacing
 
@@ -354,7 +380,7 @@ How saved results behave:
 
 - A saved result is reused instantly unless **Search again for saved results** is ticked.
 - Results that ended in an error or a rate limit are not saved, so they are retried next time.
-- When a new version improves the search, results that were **not** a Bandcamp release are searched again once. Found releases and links you set are kept. Bandcamp's search answers are themselves kept for 7 days (LOOKUP_SEARCH_DAYS in docker-compose.yml), so a repeat search like this asks Bandcamp almost nothing. Pressing Search again, or ticking either search-again box, asks Bandcamp anew.
+- When a new version improves the search, results that were **not** a Bandcamp release are searched again once. Found releases and links you set are kept. Bandcamp's search answers are themselves kept for 7 days (LOOKUP\_SEARCH\_DAYS in docker-compose.yml), so a repeat search like this asks Bandcamp almost nothing. Pressing Search again, or ticking either search-again box, asks Bandcamp anew.
 - When a track isn't found, both the artist's Bandcamp page and SoundCloud profile are saved, so changing the preference needs no new search.
 
 View, column widths, page width and Hide no-preview tracks are stored in the browser, not in `data`.
@@ -372,6 +398,7 @@ View, column widths, page width and Hide no-preview tracks are stored in the bro
 - **Label is often blank in the feed.** On Bandcamp it is filled in when a release sits on a label's page. On SoundCloud it appears only when the uploader entered it.
 - **Excel may store a title such as "02" as the number 2.** Format the cell as text if a numeric title is not matching.
 - **No Instagram, no login, no "mark as unheard".**
+- YouTube has only been tested against stand-in copies of its pages. Its channel feed holds the 15 newest videos, has no running times and includes Shorts. Its search page is not an official interface and may change, or ask for a sign-in or a cookie choice in some countries; if it stops answering, YouTube search steps say so and the rest of the lookup carries on.
 
 ## FAQ
 
@@ -443,6 +470,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 55 | YouTube as a third site: channels in the feed and player, a YouTube button at the top, a YouTube column and a YouTube search column in Tracked Artists. A new Settings button switches sites off completely and chooses which sites Link Finder searches (Bandcamp, then SoundCloud, then YouTube; YouTube off by default). Saved results has a "Searched in the last lookup" filter. |
 | 54 | Feed search: only the newest search is shown when answers arrive out of order, Enter searches at once, and a failed load is reported instead of silently leaving the old list. |
 | 53 | Forget in Saved results opens a choice: Saved answer, List entry (including the closest list entry), or Both. |
 | 52 | Forget is now on every row in Saved results, including tracks that are only in your imported list, and it can take a track out of your list. |

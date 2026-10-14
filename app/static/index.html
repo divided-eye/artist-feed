@@ -235,6 +235,18 @@
   .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
   .tag.ok { color: #9be28f; border-color: #3d6b3a; } .tag.check { color: #e6b450; border-color: #6b5626; }
   .tag.sc { color: #ff9a66; border-color: #6b3a22; } .tag.bad { color: var(--danger); border-color: #6b2c2c; }
+  dialog#settings { background: var(--panel, #17191d); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+    padding: 0; width: min(560px, calc(100vw - 32px)); }
+  dialog#settings::backdrop { background: rgba(0,0,0,.55); }
+  .settings-in { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .settings-in header { display: flex; align-items: center; justify-content: space-between; }
+  .settings-in h2 { margin: 0; font-size: 18px; } .settings-in h3 { margin: 0 0 4px; font-size: 14px; }
+  .settings-in .hint { padding: 0; margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  .toggles label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+  .toggles label.off { opacity: .45; cursor: default; }
+  .toggles .order { color: var(--muted); font-size: 12px; }
+  td.ytlook { text-align: center; }
   .tag.wait { color: var(--muted); } .tag.mine { color: var(--accent); border-color: #5d6a25; }
   .res td.link .btn { margin-top: 4px; }
   .res td.link { min-width: 230px; }
@@ -284,8 +296,9 @@
     <span class="status" id="status"></span> <span class="error" id="feedError" role="alert"></span>
     <div class="actions">
       <button class="btn" id="refreshBtn" title="Check every tracked artist for new posts now">Refresh Feed</button>
-      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find Bandcamp or SoundCloud links for a tracklist">Link Finder</button>
+      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
       <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
+      <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
     </div>
   </div>
   <div class="bar filters">
@@ -355,6 +368,22 @@
 </div>
 
 <div class="scrim" id="scrim" hidden></div>
+<dialog id="settings" aria-labelledby="settingsTitle">
+  <form method="dialog" class="settings-in">
+    <header><h2 id="settingsTitle">Settings</h2><button class="btn" value="close">Close</button></header>
+    <section>
+      <h3>Sites</h3>
+      <p class="hint">A site switched off is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, and Link Finder doesn't use it. The pages you track there are kept, so switching it back on brings them back.</p>
+      <div id="siteToggles" class="toggles"></div>
+    </section>
+    <section>
+      <h3>Link Finder searches</h3>
+      <p class="hint">Tick the sites Link Finder looks on. A track found on one higher in the list is preferred: Bandcamp, then SoundCloud, then YouTube. YouTube is only searched for the artists and labels ticked in the <b>YouTube search</b> column of Tracked Artists (for a label, the uploads of its channel you track there are looked through).</p>
+      <div id="lookupToggles" class="toggles"></div>
+    </section>
+    <span class="error" id="settingsError" role="alert"></span>
+  </form>
+</dialog>
 <aside id="drawer" hidden aria-label="Manage artists">
   <header><h2>Tracked Artists</h2><button class="btn" id="closeBtn">Close</button></header>
   <div class="tools">
@@ -369,7 +398,7 @@
     <button class="btn" id="revertBtn" hidden>Discard</button>
     <button class="btn primary" id="saveBtn">Save changes</button>
   </div>
-  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). <b>Find missing links</b> fills empty cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
+  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). A YouTube channel goes in the YouTube column; tick <b>YouTube search</b> on the rows Link Finder may look for on YouTube. <b>Find missing links</b> fills empty Bandcamp and SoundCloud cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
   <div class="table-wrap" id="artistWrap"><table id="artistTable"><colgroup id="artistCols"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
   <div class="bulk">
     <label for="bulkText">Paste a list to add: one artist or label per line. A name, a Bandcamp or SoundCloud link, or name, Bandcamp, SoundCloud separated by tabs or commas.</label>
@@ -414,7 +443,7 @@
     <span class="status" id="fanStatus"></span>
   </div>
   <div class="hint"><b>Each row needs two things: the artist and the track title.</b> That is all a search uses; any other columns are ignored. Paste rows copied from your spreadsheet below (artist, then title), type one <i>Artist - Title</i> per line, or upload an Excel (.xlsx) or CSV file. A header row is optional. A row with no title can only return the artist's page.
-    Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's SoundCloud profile or Bandcamp page instead (the remixer's, for an edit, remix, bootleg or flip). Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
+    Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page, then on SoundCloud, then (if ticked in Settings) on YouTube; if it isn't found you get the artist's SoundCloud profile or Bandcamp page instead (the remixer's, for an edit, remix, bootleg or flip). Settings chooses which sites are searched. Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
   <textarea id="lookupText" spellcheck="false" aria-label="Pasted tracklist" placeholder="Track #&#9;Artist&#9;Title&#9;…&#10;1&#9;Masot&#9;Especies Endémicas&#9;…"></textarea>
   <div class="table-wrap"><table class="res"><thead id="lookupHead"></thead><tbody id="lookupBody"></tbody></table></div>
   </div>
@@ -496,6 +525,8 @@ const PLAYERS = {
   soundcloud: it => safeUrl(it.url) ? { height: 166, hint: "",
     src: "https://w.soundcloud.com/player/?url=" + encodeURIComponent(it.url) +
       "&auto_play=true&color=%23ff5500&hide_related=true&show_comments=false&show_teaser=false&visual=false" } : null,
+  youtube: it => /^[\w-]{6,20}$/.test(it.embed || "") ? { height: 240, hint: "",
+    src: `https://www.youtube-nocookie.com/embed/${it.embed}?autoplay=1&rel=0` } : null,
 };
 const player = it => (PLAYERS[it.source] || (() => null))(it);
 
@@ -957,6 +988,13 @@ function rowEl(row) {
     });
     tr.append(el("td", {}, input));
   });
+  if (hasYoutube()) {
+    const yt = el("input", { type: "checkbox", "aria-label": "Link Finder may search YouTube for this artist",
+      title: "Link Finder may look for this artist's tracks on YouTube (and through this row's YouTube channel, for a label)" });
+    yt.checked = !!row.youtube_lookup;
+    yt.addEventListener("change", () => { row.youtube_lookup = yt.checked; setDirty(true); });
+    tr.append(el("td", { class: "ytlook" }, yt));
+  }
   const rescan = el("input", { type: "checkbox", "aria-label": "Rescan this row",
     title: "Search again for this row's empty cells, including ones you cleared. Earlier guesses you removed are not offered again." });
   rescan.checked = !!row.rescan;
@@ -971,10 +1009,11 @@ function rowEl(row) {
 // Column widths in the artist table. The artist's name comes first: its column is as wide as the
 // longest name needs, and the site columns share what is left. Drag a heading's edge to set a width
 // yourself (remembered in this browser); double-click the edge to hand it back.
-const TCOL_FIXED = { num: 44, rescan: 66, act: 40 }, TCOL_MIN = 70;
+const TCOL_FIXED = { num: 44, rescan: 66, act: 40, ytlook: 122 }, TCOL_MIN = 70;
 let tcolW = {};
 try { tcolW = JSON.parse(localStorage.getItem("artistColumns") || "{}") || {}; } catch {}
-const tcolKeys = () => ["num", "name", ...sources.map(s => s.key), "rescan", "state", "act"];
+const hasYoutube = () => sources.some(s => s.key === "youtube");
+const tcolKeys = () => ["num", "name", ...sources.map(s => s.key), ...(hasYoutube() ? ["ytlook"] : []), "rescan", "state", "act"];
 let measure;
 function nameWidth() {
   const sample = $("tbody").querySelector("input[type=text]");
@@ -989,7 +1028,8 @@ function applyTableCols() {
   const room = $("artistWrap").clientWidth;
   if (!room) return;                                   // drawer closed
   const sites = sources.map(s => s.key), w = { ...TCOL_FIXED };
-  const stateMin = 150, fixed = TCOL_FIXED.num + TCOL_FIXED.rescan + TCOL_FIXED.act;
+  if (!hasYoutube()) delete w.ytlook;
+  const stateMin = 150, fixed = TCOL_FIXED.num + TCOL_FIXED.rescan + TCOL_FIXED.act + (hasYoutube() ? TCOL_FIXED.ytlook : 0);
   // The name is never cut short. When that leaves too little room, the other columns keep a
   // usable minimum and the table scrolls sideways instead.
   w.name = tcolW.name || nameWidth();
@@ -1034,6 +1074,7 @@ function renderTable() {
   $("artistCols").replaceChildren(...tcolKeys().map(() => el("col")));
   $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }), el("th", {}, "Artist", tgrip("name", "Artist")),
     ...sources.map(s => el("th", {}, el("span", { class: "dot", style: `background:${s.color};margin-right:6px` }), s.label, tgrip(s.key, s.label))),
+    ...(hasYoutube() ? [el("th", { text: "YouTube search", title: "Tick the artists and labels Link Finder may look for on YouTube (when YouTube is ticked for Link Finder in Settings)" })] : []),
     el("th", { text: "Rescan", title: "Tick a row to have Find missing links search its cleared cells again" }),
     el("th", {}, "Status", tgrip("state", "Status")), el("th", {})));
   $("tbody").replaceChildren(...table.map(rowEl));
@@ -1059,7 +1100,8 @@ function paintFill() {
 
 async function fillMissing() {
   if (filling) { filling = false; return; }           // the button reads "Stop" while running
-  const open = r => columns().filter(c => !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
+  const guessable = c => c === "name" || (src(c) && src(c).suggest);          // Find missing links can't guess every site
+  const open = r => columns().filter(c => guessable(c) && !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
   const todo = table.filter(r => !isBlank(r) && open(r).length);
   if (!todo.length) { $("fillStatus").textContent = "Nothing to look for. Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
   filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
@@ -1109,7 +1151,7 @@ function pasteGrid(grid, startRow, startCol) {
 function addPasted(text) {
   const lines = text.replace(/\r/g, "").split("\n").map(l => l.trim()).filter(Boolean);
   if (!lines.length) return 0;
-  const cols = columns(), siteOf = v => /bandcamp\.com/i.test(v) ? "bandcamp" : /soundcloud\.com/i.test(v) ? "soundcloud" : null;
+  const cols = columns(), siteOf = v => /bandcamp\.com/i.test(v) ? "bandcamp" : /soundcloud\.com/i.test(v) ? "soundcloud" : /youtube\.com|youtu\.be/i.test(v) ? "youtube" : null;
   while (table.length && isBlank(table[table.length - 1])) table.pop();
   let added = 0;
   lines.forEach((line, n) => {
@@ -1181,7 +1223,8 @@ async function saveTable() {
   if (removed && !confirm(`This stops tracking ${removed} artist${removed > 1 ? "s" : ""} and removes their posts from the feed. Continue?`)) { renderTable(); return; }
   $("tableError").textContent = "";
   const r = await fetch("/api/table", { method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected })) }) });
+    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected,
+      ...(hasYoutube() ? { youtube_lookup: !!youtube_lookup } : {}) })) }) });
   const data = await r.json().catch(() => ({}));
   table.forEach(row => row.errors = []);
   if (!r.ok) {
@@ -1236,6 +1279,7 @@ async function pollStatus() {
 const LOOKUP_TAGS = { imported: ["mine", "From your list"], manual: ["mine", "Link you set"], bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
   bandcamp_artist: ["page", "Bandcamp artist page"],
   soundcloud_track: ["ok", "SoundCloud track"], soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
+  youtube: ["ok", "YouTube video"], youtube_channel: ["page", "YouTube channel"],
   none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Waiting to be searched"], skipped: ["page", "Skipped"] };
 let lookupTimer = null, lookupJob = null, editingRow = null;
 
@@ -1339,10 +1383,10 @@ async function skipRow(r) {
 
 function renderLookupStatus(job) {
   const found = job.rows.filter(r => r.status === "bandcamp" || r.status === "bandcamp_check").length;
-  const onSc = job.rows.filter(r => r.status === "soundcloud_track").length;
+  const onSc = job.rows.filter(r => r.status === "soundcloud_track").length, onYt = job.rows.filter(r => r.status === "youtube").length;
   const hold = job.paused > 0 ? ` · Bandcamp asked for a pause; carrying on in ${waitText(job.paused)}` : "";
   const doubt = job.rows.filter(r => r.review).length;
-  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` + (onSc ? `, ${onSc} on SoundCloud` : "") + (doubt ? ` · ${doubt} to review` : "") : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
+  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` + (onSc ? `, ${onSc} on SoundCloud` : "") + (onYt ? `, ${onYt} on YouTube` : "") + (doubt ? ` · ${doubt} to review` : "") : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
   $("lookupError").textContent = job.warning || "";
   $("lookupExport").hidden = !job.finished;
   $("lookup").classList.toggle("busy", !job.finished);
@@ -1390,7 +1434,7 @@ async function loadFan(fill) {
 }
 
 // ---- Link Finder: everything saved so far ----
-const SAVED_PAGE = 200, SAVED_FILTERS = [["", "All"], ["review", "Needs review"], ["missing", "Track not found (artist page only)"], ["found", "Track found"],
+const SAVED_PAGE = 200, SAVED_FILTERS = [["", "All"], ["lastrun", "Searched in the last lookup"], ["review", "Needs review"], ["missing", "Track not found (artist page only)"], ["found", "Track found"],
   ["manual", "Links you set"], ["list", "In your list"], ["nospelling", "No spelling on file"], ["unsearched", "In your list, not looked up yet"]];
 let savedState = { q: "", filter: "", rows: [], total: 0, sort: "", dir: "asc" };
 const SAVED_COLUMNS = [["artist", "Artist (tidied)"], ["title", "Title (tidied)"], ["list_artist", "Artist (your spelling)"],
@@ -1655,6 +1699,40 @@ let searchTimer;
 $("search").oninput = e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filter.q = e.target.value; loadFeed(); }, 250); };
 $("search").onkeydown = e => { if (e.key === "Enter") { clearTimeout(searchTimer); filter.q = e.target.value; loadFeed(); } };
 $("artistFilter").onchange = e => { filter.artist_id = e.target.value; loadFeed(); };
+// ---- Settings: which sites are on, and which ones Link Finder searches ----
+async function renderSettings() {
+  const st = await api("/api/settings");
+  const box = (checked, label, color, onchange, extra = {}) => {
+    const input = el("input", { type: "checkbox", ...extra });
+    input.checked = checked;
+    input.onchange = () => onchange(input.checked).catch(x => { $("settingsError").textContent = x.message; input.checked = !input.checked; });
+    return el("label", { class: extra.disabled ? "off" : "" }, input,
+      color ? el("span", { class: "dot", style: `background:${color}` }) : null, label);
+  };
+  const save = async body => { $("settingsError").textContent = ""; await api("/api/settings", { method: "PUT", body }); await renderSettings(); await sitesChanged(); };
+  $("siteToggles").replaceChildren(...st.sites.map(x => box(x.on, x.label, x.color, on => save({ sites: { [x.key]: on } }))));
+  const on = new Set(st.sites.filter(x => x.on).map(x => x.key)), chosen = new Set(st.lookup_sites);
+  $("lookupToggles").replaceChildren(...st.lookup_order.map((key, i) => {
+    const site = st.sites.find(x => x.key === key);
+    const label = el("span", {}, site.label, " ", el("span", { class: "order", text: ["1st", "2nd", "3rd"][i] || "" }));
+    const lab = box(chosen.has(key), label, site.color,
+      tick => save({ lookup_sites: st.lookup_order.filter(k => k === key ? tick : chosen.has(k)) }),
+      on.has(key) ? {} : { disabled: true, title: `${site.label} is switched off above` });
+    if (!on.has(key)) lab.title = `${site.label} is switched off above`;
+    return lab;
+  }));
+}
+// A site switched on or off: the buttons at the top, the table's columns and the feed follow.
+async function sitesChanged() {
+  sources = await api("/api/sources");
+  if (filter.source && !sources.some(x => x.key === filter.source)) filter.source = "";
+  renderChips();
+  if (!$("drawer").hidden && !dirty) await loadTable();
+  else if (!$("drawer").hidden) renderTable();
+  await loadFeed();
+}
+$("settingsBtn").onclick = () => { $("settingsError").textContent = ""; renderSettings().catch(x => { $("settingsError").textContent = x.message; }); $("settings").showModal(); };
+
 $("refreshBtn").onclick = async () => {
   const r = await api("/api/refresh", { method: "POST" });
   wasRefreshing = true;

@@ -320,8 +320,12 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
 
     more: optional {"year", "label", "kind", "length"}; label "-" means "no label".
     """
+    from . import sites                        # (imported here: sites reads its settings through this module)
     more = more or {}
     where, args = [], []
+    on = sites.enabled()
+    where.append("a.source IN (" + ",".join("?" * len(on)) + ")")      # a site switched off is left out
+    args += on
     if not more.get("hidden"):                 # hidden items only appear when asked for
         where.append("p.hidden=0")
     # The same release can reach the feed through two tracked pages (an artist's

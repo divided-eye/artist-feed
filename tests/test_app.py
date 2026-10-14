@@ -257,7 +257,37 @@ def handler(request: httpx.Request) -> httpx.Response:
                 {"kind": "track", "id": 901, "title": "No Art", "permalink_url": "https://soundcloud.com/nightferry/no-art",
                  "artwork_url": None, "display_date": "2026-08-01T10:00:00Z", "created_at": "2020-01-01T00:00:00Z",
                  "user": {"username": "Night Ferry", "avatar_url": "https://i1.sndcdn.com/avatars-1-large.jpg"}}]})
+    if host == "www.youtube.com":
+        youtube_calls.append(str(request.url))
+        if path == "/@tubeband":
+            return httpx.Response(200, text='<html><link rel="canonical" href="https://www.youtube.com/channel/UC1234567890123456789012"></html>')
+        if path == "/feeds/videos.xml" and request.url.params["channel_id"] == "UC1234567890123456789012":
+            return httpx.Response(200, text=YT_FEED)
+        if path == "/results":
+            q = request.url.params["search_query"]
+            videos = YT_RESULTS.get(q, [])
+            data = {"contents": {"sectionListRenderer": {"contents": [{"itemSectionRenderer": {"contents": [
+                {"videoRenderer": {"videoId": v[0], "title": {"runs": [{"text": v[1]}]}, "ownerText": {"runs": [{"text": v[2]}]},
+                                   "lengthText": {"simpleText": "4:01"}}} for v in videos]}}]}}}
+            return httpx.Response(200, text=f'<script>var ytInitialData = {json.dumps(data)};</script>')
     return httpx.Response(404)
+
+
+youtube_calls = []
+YT_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <title>Tube Band</title>
+ <entry><yt:videoId>vid00000001</yt:videoId><title>Tube Band - Glass River</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=vid00000001"/>
+  <author><name>Tube Band</name></author><published>2026-10-02T12:00:00+00:00</published>
+  <media:group><media:thumbnail url="https://i1.ytimg.com/vi/vid00000001/hqdefault.jpg" width="480" height="360"/></media:group></entry>
+ <entry><yt:videoId>vid00000002</yt:videoId><title>Studio Diary</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=vid00000002"/>
+  <author><name>Tube Band</name></author><published>2026-09-01T12:00:00+00:00</published></entry>
+</feed>"""
+YT_RESULTS = {"Tube Band Hidden Lake": [("vid00000009", "Someone Else - Hidden Lake (cover)", "Covers Inc"),
+                                        ("vid00000010", "Tube Band - Hidden Lake", "Tube Band Archive")],
+              "Unticked Artist Lost Song": [("vid00000011", "Unticked Artist - Lost Song", "Unticked Artist")]}
 
 
 @pytest.fixture(scope="module")
@@ -794,7 +824,7 @@ def test_table(client):
     client.post("/api/refresh")                        # second pass loads the third release
     wait(client)
     rows = client.get("/api/table").json()
-    assert rows[0]["name"] == "Night Ferry" and rows[0]["cells"] == {"bandcamp": "nightferry", "soundcloud": "nightferry"}
+    assert rows[0]["name"] == "Night Ferry" and rows[0]["cells"] == {"bandcamp": "nightferry", "soundcloud": "nightferry", "youtube": ""}
     before = len(client.get("/api/feed?source=bandcamp").json())
     nf = rows[0]["id"]
 
@@ -815,14 +845,14 @@ def test_table(client):
     wait(client)
     rows = client.get("/api/table").json()
     assert [r["name"] for r in rows] == ["NF", "Night Ferry"]      # blank name filled from the page
-    assert rows[0]["cells"] == {"bandcamp": "nightferry", "soundcloud": ""}
-    assert rows[1]["cells"] == {"bandcamp": "solo, nightferry2", "soundcloud": "nightferry"}
+    assert rows[0]["cells"] == {"bandcamp": "nightferry", "soundcloud": "", "youtube": ""}
+    assert rows[1]["cells"] == {"bandcamp": "solo, nightferry2", "soundcloud": "nightferry", "youtube": ""}
     assert any("not found" in p for p in rows[1]["problems"])      # nightferry2 does not exist
     assert len(client.get(f"/api/feed?artist_id={nf}&source=bandcamp").json()) == before  # untouched page keeps its posts
     assert client.get(f"/api/feed?artist_id={nf}&source=soundcloud").json() == []
 
     csv_text = client.get("/api/artists.csv").text.splitlines()
-    assert csv_text[0] == "name,bandcamp,soundcloud" and csv_text[2] == 'Night Ferry,"solo, nightferry2",nightferry'
+    assert csv_text[0] == "name,bandcamp,soundcloud,youtube" and csv_text[2] == 'Night Ferry,"solo, nightferry2",nightferry,'
 
     # Leaving a row out removes that artist; an empty table clears the list.
     assert client.put("/api/table", json={"rows": [{"id": nf, "name": "NF", "cells": {"bandcamp": "nightferry"}}]}).status_code == 200
@@ -1552,3 +1582,115 @@ def test_forgetting_a_track_from_your_list(client):
     assert titles == ["Other Tune"]
     assert len(db.query("SELECT * FROM known_tracks WHERE artist='ListOnly'")) == 1
     client.delete("/api/known")
+
+
+def test_youtube_channel_addresses():
+    from app.sources.youtube import YouTube, parse_feed
+    yt = YouTube()
+    assert yt.normalize("@TubeBand") == ("@tubeband", "https://www.youtube.com/@tubeband")
+    assert yt.normalize("https://www.youtube.com/@TubeBand/videos")[0] == "@tubeband"
+    assert yt.normalize("youtube.com/channel/UC1234567890123456789012") == (
+        "UC1234567890123456789012", "https://www.youtube.com/channel/UC1234567890123456789012")
+    assert yt.normalize("https://youtube.com/c/OldName")[0] == "c/OldName"
+    assert yt.normalize("https://www.youtube.com/user/older")[0] == "user/older"
+    with pytest.raises(Exception):
+        yt.normalize("https://www.youtube.com/watch?v=abc")
+    name, posts = parse_feed(YT_FEED)
+    assert name == "Tube Band" and [p.external_id for p in posts] == ["vid00000001", "vid00000002"]
+    assert posts[0].embed == "vid00000001" and posts[0].published_at == "2026-10-02T12:00:00Z"
+    assert posts[1].image == "https://i.ytimg.com/vi/vid00000002/hqdefault.jpg"
+
+
+def test_youtube_in_the_feed_and_switching_a_site_off(client):
+    from app import db
+    r = client.post("/api/artists", json={"name": "Tube Band", "accounts": [{"source": "youtube", "handle": "@TubeBand"}]})
+    assert r.status_code == 201, r.text
+    wait(client)
+    tube = next(a for a in client.get("/api/artists").json() if a["name"] == "Tube Band")
+    rows = client.get(f"/api/feed?artist_id={tube['id']}").json()
+    assert [p["title"] for p in rows] == ["Tube Band - Glass River", "Studio Diary"] and rows[0]["source"] == "youtube"
+    assert "youtube" in [s["key"] for s in client.get("/api/sources").json()]
+    # switched off: gone from the sources, the table and the feed; its pages are kept through a table save
+    s = client.put("/api/settings", json={"sites": {"youtube": False}}).json()
+    assert not next(x for x in s["sites"] if x["key"] == "youtube")["on"]
+    assert "youtube" not in [x["key"] for x in client.get("/api/sources").json()]
+    assert client.get(f"/api/feed?artist_id={tube['id']}").json() == []
+    table = client.get("/api/table").json()
+    assert all("youtube" not in r["cells"] for r in table)
+    assert client.put("/api/table", json={"rows": table}).status_code == 200
+    assert db.query("SELECT COUNT(*) n FROM accounts WHERE source='youtube'")[0]["n"] == 1
+    youtube_calls.clear()
+    client.post("/api/refresh"); wait(client)
+    assert youtube_calls == []                                   # not checked while off
+    assert client.put("/api/settings", json={"sites": {"bandcamp": False, "soundcloud": False}}).status_code == 400
+    client.put("/api/settings", json={"sites": {"youtube": True, "bandcamp": True, "soundcloud": True}})
+    assert len(client.get(f"/api/feed?artist_id={tube['id']}").json()) == 2
+
+
+def test_link_finder_youtube_is_off_until_ticked_and_only_for_ticked_artists(client):
+    from app import lookup, sites
+
+    def run(text, query="?fresh=true"):
+        j = client.post("/api/lookup" + query, content=("Artist\tTitle\n" + text).encode()).json()
+        for _ in range(300):
+            time.sleep(0.05)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                return got["rows"]
+        raise AssertionError("lookup never finished")
+
+    assert client.get("/api/settings").json()["lookup_sites"] == ["bandcamp", "soundcloud"]   # YouTube off by default
+    youtube_calls.clear()
+    assert run("Tube Band\tHidden Lake")[0]["status"] != "youtube" and not any("/results" in u for u in youtube_calls)
+    client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud", "youtube"]})
+    # ticked in Tracked Artists: a video on its channel is found with no search, others by YouTube search
+    table = client.get("/api/table").json()
+    for row in table:
+        row["youtube_lookup"] = row["name"] == "Tube Band"
+    assert client.put("/api/table", json={"rows": table}).status_code == 200
+    assert sites.youtube_names() == {"tube band"}
+    assert next(r for r in client.get("/api/table").json() if r["name"] == "Tube Band")["youtube_lookup"]
+    youtube_calls.clear()
+    on_channel = run("Tube Band\tGlass River")[0]
+    assert on_channel["status"] == "youtube" and on_channel["url"] == "https://www.youtube.com/watch?v=vid00000001", on_channel
+    assert not any("/results" in u for u in youtube_calls)
+    searched = run("Tube Band\tHidden Lake")[0]
+    assert searched["status"] == "youtube" and searched["url"].endswith("vid00000010"), searched
+    # an artist not ticked is never searched on YouTube
+    youtube_calls.clear()
+    other = run("Unticked Artist\tLost Song")[0]
+    assert other["status"] != "youtube" and not any("/results" in u for u in youtube_calls)
+    # SoundCloud's own find comes before YouTube
+    assert run("Sean Paul\tTemperature (River Dub Edit)")[0]["status"] == "soundcloud_track"
+    # Saved results: the tracks searched in the latest lookup, until the next one
+    run("Tube Band\tHidden Lake\nTube Band\tGlass River")
+    got = client.get("/api/saved?filter=lastrun&limit=1000").json()
+    assert {r["key"] for r in got["rows"]} == {"tube band|hidden lake", "tube band|glass river"}, got["rows"]
+    run("Tube Band\tGlass River", query="")                      # answered from what is saved: nothing searched
+    assert client.get("/api/saved?filter=lastrun").json()["rows"] == []
+    client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"]})
+    # switched off for Link Finder: a saved YouTube answer gives way to the other links
+    again = run("Tube Band\tHidden Lake", query="")[0]
+    assert again["status"] != "youtube"
+
+
+def test_a_saved_miss_only_gets_youtube_added_when_youtube_is_switched_on(client):
+    from app import lookup
+    table = client.get("/api/table").json()
+    for row in table:
+        row["youtube_lookup"] = row["name"] == "Tube Band"
+    client.put("/api/table", json={"rows": table})
+    miss = {"status": "none", "note": "", "steps": ["searched Bandcamp"], "options": {}, "sites": ["bandcamp", "soundcloud"], "engine": lookup.ENGINE}
+    lookup._remember(lookup._cache_key("Tube Band", "Hidden Lake"), miss, "Tube Band", "Hidden Lake")
+    client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud", "youtube"]})
+    before = len(searched)
+    j = client.post("/api/lookup", content="Artist\tTitle\nTube Band\tHidden Lake".encode()).json()
+    for _ in range(200):
+        time.sleep(0.05)
+        got = client.get(f"/api/lookup/{j['id']}").json()
+        if got["finished"]:
+            break
+    row = got["rows"][0]
+    assert row["status"] == "youtube" and len(searched) == before, row     # Bandcamp wasn't searched again
+    assert "youtube" in lookup._saved_for("Tube Band", "Hidden Lake")["sites"]
+    client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"]})

@@ -32,7 +32,7 @@ from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
 
-from . import db, pace, refresh
+from . import db, pace, refresh, sites
 from .sources import SOURCES
 from .sources.bandcamp import parse_music_grid, parse_profile, parse_release, parse_search
 
@@ -1736,13 +1736,16 @@ async def _find_as_typed(net, lib, artist, title, state):
     """All the steps for one track. Returns (result, keep) - keep is False when a site refused
     requests part-way, so the answer may be incomplete and should not be remembered."""
     steps, keep, check, pages, maker_pages = [], True, None, [], []
+    use = sites.lookup_sites()                          # the sites Link Finder is set to search
+    bc, sc = "bandcamp" in use, "soundcloud" in use
 
     def done(result):
         result["steps"] = steps
+        result["sites"] = use
         return result, keep
 
     # 1. the feed
-    verdict, hit = best_candidate(artist, title, lib.feed.get(norm(title), []))
+    verdict, hit = best_candidate(artist, title, lib.feed.get(norm(title), [])) if bc else ("", None)
     if verdict == "bandcamp":
         steps.append("feed: already collected from a page you track")
         return done({"status": "bandcamp", "site": "Bandcamp", "url": hit["url"], "release": hit["release"],
@@ -1750,7 +1753,7 @@ async def _find_as_typed(net, lib, artist, title, state):
                      "found": f"{hit['artist']} — {hit['name']}"})
     # 1b. any release page read during an earlier lookup (all of its tracks were saved, not just the one wanted)
     #     A release you own is preferred over another release that happens to carry the same track.
-    known = page_index().get(norm(title), [])
+    known = page_index().get(norm(title), []) if bc else []
     mine = [c for c in known if lib.owns(c["rel"])]
     verdict, hit = best_candidate(artist, title, mine)
     if verdict != "bandcamp":
@@ -1765,7 +1768,7 @@ async def _find_as_typed(net, lib, artist, title, state):
                                  "In your purchases" if owned else "On a page read earlier")
         if verdict == "bandcamp" and (owned or not lib.owned_for(artist, title)):
             return done(earlier)
-    if state["bandcamp_ok"] and title:
+    if bc and state["bandcamp_ok"] and title:
         try:
             # 2. your purchases
             result, check = await owned_step(net, lib, artist, title, steps)
@@ -1806,7 +1809,7 @@ async def _find_as_typed(net, lib, artist, title, state):
                                 "feed, your saved purchases and SoundCloud; run the lookup again later.")
         if not state["search_ok"]:
             keep = False
-    elif title:
+    elif bc and title:
         keep = False
         verdict, cand = best_candidate(artist, title, lib.owned_tracks.get(norm(title), []))
         if cand:
@@ -1830,24 +1833,152 @@ async def _find_as_typed(net, lib, artist, title, state):
     if credits:
         if maker_pages:
             options["bandcamp"] = page_option(maker_pages[0], "Remixer's")
-        sc = await from_soundcloud(net, artist, steps, title, credits)
-        if sc and sc["status"] in ("soundcloud", "soundcloud_track"):
-            options["track" if sc["status"] == "soundcloud_track" else "soundcloud"] = sc
+        found = await from_soundcloud(net, artist, steps, title, credits) if sc else None
+        if found and found["status"] in ("soundcloud", "soundcloud_track"):
+            options["track" if found["status"] == "soundcloud_track" else "soundcloud"] = found
             options["remix"] = True                     # that profile is the remixer's own
         if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
             steps.append(f'no page found for "{credits[0]}"; falling back to the artist')
     if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
         artist_only = [p for p in pages if p not in maker_pages]
-        mine = tracked_page("bandcamp", artist_parts(artist))
+        mine = tracked_page("bandcamp", artist_parts(artist)) if bc else None
         if mine:                                        # a page you track for this artist, under any of their names
             options["bandcamp"] = dict(page_option(mine, "Artist's"), note="A page you track; the track isn't on any release there now")
             steps.append(f"Bandcamp: {mine[0]} is a page you track for this artist")
         elif artist_only:
             options["bandcamp"] = page_option(artist_only[0], "Artist's")
-        sc = await from_soundcloud(net, artist, steps, title)
-        if sc:
-            options[{"soundcloud_track": "track", "soundcloud": "soundcloud"}.get(sc["status"], "search")] = sc
+        found = await from_soundcloud(net, artist, steps, title) if sc else None
+        if found:
+            options[{"soundcloud_track": "track", "soundcloud": "soundcloud"}.get(found["status"], "search")] = found
+    # 6. YouTube, third: only when the track wasn't found on SoundCloud
+    if not options.get("track"):
+        video, channel = await youtube_step(net, artist, title, steps)
+        if video:
+            options["youtube"] = video
+        if channel:
+            options["youtube_channel"] = channel
     return done(dict(pick_fallback(options), options=options))
+
+
+# ---------- YouTube: third choice, only for the artists and labels ticked for it ----------
+
+YT_SEARCH = "https://www.youtube.com/results"
+YT_DATA = re.compile(r"(?:var ytInitialData|window\[\"ytInitialData\"\])\s*=\s*(\{.*?\})\s*;\s*</script>", re.S)
+
+
+def youtube_rows() -> list:
+    """Tracked Artists rows ticked for YouTube: [(id, every tidied name they go by)]."""
+    allowed = sites.youtube_names()
+    out = []
+    for r in db.query("SELECT id, name, aliases FROM artists"):
+        names = {norm(n) for n in [r["name"]] + split_names(r["aliases"])} - {""}
+        if names & allowed:
+            out.append((r["id"], names))
+    return out
+
+
+def youtube_names_for(artist, title) -> list:
+    """The tidied names in this row (artist, and whoever made this version) ticked for YouTube."""
+    allowed = sites.youtube_names()
+    names = list(artist_parts(artist))
+    for credit in remix_credits(title):
+        names += artist_parts(credit)
+    return [n for n in dict.fromkeys(names) if n in allowed]
+
+
+def youtube_wanted(artist, title) -> bool:
+    """Would YouTube be searched for this row? Only when the artist (or remixer) is ticked for it, or
+    a ticked label has a channel you track whose uploads can be looked through."""
+    if "youtube" not in sites.lookup_sites() or not title:
+        return False
+    if youtube_names_for(artist, title):
+        return True
+    ids = [i for i, _ in youtube_rows()]
+    return bool(ids) and bool(db.query(
+        f"SELECT 1 FROM accounts WHERE source='youtube' AND artist_id IN ({','.join('?' * len(ids))}) LIMIT 1", ids))
+
+
+def parse_youtube_search(html: str) -> list:
+    """[{"id", "title", "channel", "length"}] from a YouTube search results page."""
+    m = YT_DATA.search(html or "")
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(1))
+    except ValueError:
+        return []
+    out, stack = [], [data]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            v = node.get("videoRenderer")
+            if isinstance(v, dict) and v.get("videoId"):
+                text = lambda k: "".join(r.get("text", "") for r in ((v.get(k) or {}).get("runs") or [])) or (v.get(k) or {}).get("simpleText", "")
+                out.append({"id": v["videoId"], "title": text("title"), "channel": text("ownerText") or text("longBylineText"),
+                            "length": (v.get("lengthText") or {}).get("simpleText", "")})
+            stack.extend(reversed(list(node.values())))
+        elif isinstance(node, list):
+            stack.extend(reversed(node))
+    return list({v["id"]: v for v in reversed(out)}.values())[::-1]
+
+
+async def youtube_search(net, text: str) -> list:
+    saved = cache_get("yt_search", text, SEARCH_DAYS)
+    if saved is not None:
+        return saved
+    from .sources.youtube import COOKIES
+    r = await net.client.get(YT_SEARCH, params={"search_query": text, "sp": "EgIQAQ=="}, headers=COOKIES)   # videos only
+    if r.status_code != 200:
+        raise RuntimeError(f"YouTube search answered {r.status_code}")
+    found = parse_youtube_search(r.text)[:20]
+    cache_put("yt_search", text, found)
+    return found
+
+
+def _video(url, channel, name, year, note):
+    return {"status": "youtube", "site": "YouTube", "url": url, "release": "", "year": year or "",
+            "found": f"{channel} — {name}" if channel else name, "note": note}
+
+
+async def youtube_step(net, artist, title, steps):
+    """The track on YouTube: first among the uploads of channels you track for artists and labels
+    ticked for YouTube (no request needed), then - only for an artist ticked for it - a YouTube search.
+    Returns (video result or None, channel page option or None)."""
+    if "youtube" not in sites.lookup_sites() or not title:
+        return None, None
+    rows = youtube_rows()
+    ids = [i for i, _ in rows]
+    if ids:
+        cands = [{"name": p["title"], "artists": [p["author"], p["name"]], "url": p["url"], "channel": p["author"] or p["name"],
+                  "year": (p["published_at"] or "")[:4]}
+                 for p in db.query("SELECT p.title, p.url, p.author, p.published_at, ar.name FROM posts p "
+                                   "JOIN accounts a ON a.id=p.account_id JOIN artists ar ON ar.id=a.artist_id "
+                                   f"WHERE a.source='youtube' AND ar.id IN ({','.join('?' * len(ids))})", ids)]
+        verdict, hit = best_candidate(artist, title, cands)
+        if verdict == "bandcamp":
+            steps.append(f'YouTube: "{hit["name"]}" on a channel you track')
+            return _video(hit["url"], hit["channel"], hit["name"], hit["year"], "On a YouTube channel you track"), None
+    names = youtube_names_for(artist, title)
+    if not names:
+        steps.append("YouTube: not searched (this artist isn't ticked for YouTube in Tracked Artists)")
+        return None, None
+    page = tracked_page("youtube", names)
+    channel = ({"status": "youtube_channel", "site": "YouTube", "url": page[0], "found": page[1], "release": "", "year": "",
+                "note": "A YouTube channel you track; the track wasn't found there"} if page else None)
+    query = f"{artist} {title}".strip()
+    try:
+        found = await youtube_search(net, query)
+    except Exception as e:
+        steps.append(f"YouTube search unavailable: {e}"[:200])
+        return None, channel
+    cands = [{"name": v["title"], "artists": [v["channel"]], "v": v} for v in found]
+    verdict, hit = best_candidate(artist, title, cands)
+    if verdict == "bandcamp":
+        v = hit["v"]
+        steps.append(f'YouTube search: "{v["title"]}" by {v["channel"]}')
+        return _video(f"https://www.youtube.com/watch?v={v['id']}", v["channel"], v["title"], "", "Found by YouTube search"), channel
+    steps.append(f'YouTube search: nothing matching among {len(found)} videos')
+    return None, channel
 
 
 def tracked_page(source: str, names):
@@ -1860,7 +1991,10 @@ def tracked_page(source: str, names):
     return None
 
 
-FALLBACK_STATUSES = ("soundcloud_track", "bandcamp_artist", "soundcloud", "soundcloud_search", "none")
+FALLBACK_STATUSES = ("soundcloud_track", "bandcamp_artist", "soundcloud", "soundcloud_search", "youtube",
+                     "youtube_channel", "none")
+OPTION_SITE = {"track": "soundcloud", "soundcloud": "soundcloud", "search": "soundcloud", "bandcamp": "bandcamp",
+               "youtube": "youtube", "youtube_channel": "youtube"}
 
 
 def fallback_pref() -> str:
@@ -1875,10 +2009,13 @@ def pick_fallback(options: dict) -> dict:
     order = ("soundcloud", "bandcamp") if fallback_pref() == "soundcloud" else ("bandcamp", "soundcloud")
     if options.get("remix") and options.get("soundcloud"):
         order = ("soundcloud", "bandcamp")              # a remix with no link of its own: the remixer's SoundCloud
-    for key in ("track",) + order + ("search",):      # the track itself beats any artist link
-        if options.get(key):
+    allowed = sites.lookup_sites()                     # only sites Link Finder is set to use
+    # the track itself beats any artist link: on SoundCloud first, then on YouTube
+    for key in ("track", "youtube") + order + ("youtube_channel", "search"):
+        if options.get(key) and OPTION_SITE[key] in allowed:
             return dict(options[key])
-    return {"status": "none", "note": "No artist name to search for"}
+    return {"status": "none", "note": "Not found on the sites Link Finder searches" if any(
+        options.get(k) for k in OPTION_SITE) else "No artist name to search for"}
 
 
 def with_current_fallback(saved: dict):
@@ -1898,6 +2035,10 @@ def with_current_fallback(saved: dict):
 
 def set_fallback(value: str):
     db.kv_set("lookup_fallback", value)
+    sites_changed()
+
+
+def sites_changed():
     for job in jobs.values():          # lookups still on screen follow the new choice
         for row in job["rows"]:
             if row.get("options") and row.get("status") in FALLBACK_STATUSES:
@@ -1943,6 +2084,47 @@ def find_local(lib, artist, title):
         out["steps"] = [f'pages read earlier: "{hit["name"]}" on "{rel.get("title")}"']
         return out
     return None
+
+
+def newly_on(saved, artist, title) -> set:
+    """Sites Link Finder searches now that weren't searched when this not-found answer was saved
+    (YouTube only counts where it would be searched for this row)."""
+    if saved.get("status") not in FALLBACK_STATUSES:
+        return set()
+    now = set(sites.lookup_sites()) - set(saved.get("sites") or ("bandcamp", "soundcloud"))
+    if "youtube" in now and not youtube_wanted(artist, title):
+        now.discard("youtube")
+    return now
+
+
+async def add_youtube(net, saved, artist, title):
+    """A saved not-found answer, with YouTube looked at too (nothing else is searched again)."""
+    steps = [s for s in saved.get("steps") or [] if s != "(saved result from an earlier lookup)"]
+    options = dict(saved.get("options") or {})
+    video, channel = await youtube_step(net, artist, title, steps)
+    if video:
+        options["youtube"] = video
+    if channel:
+        options["youtube_channel"] = channel
+    out = dict(saved)
+    out.update({k: "" for k in ("site", "url", "found", "note", "release", "year")})
+    out.update(pick_fallback(options), options=options, steps=steps,
+               sites=sorted(set(saved.get("sites") or ("bandcamp", "soundcloud")) | {"youtube"}))
+    return out
+
+
+# Tracks searched for in the latest lookup: Saved results can show just these ("Searched in the
+# last lookup"), so the links found can be reviewed after it finishes. Replaced by the next lookup.
+def last_run() -> set:
+    try:
+        return set(json.loads(db.kv_get("last_run") or "[]"))
+    except ValueError:
+        return set()
+
+
+def _note_run(keys, reset=False):
+    keys = ([] if reset else sorted(last_run())) + [k for k in keys if k]
+    db.kv_set("last_run", json.dumps(sorted(set(keys))))
 
 
 def _fill(row, result):
@@ -2008,8 +2190,16 @@ async def _run(job, fresh, retry_missing=False):
             if saved and not manual:
                 saved = with_current_fallback(saved)
             if saved and not manual:
+                extra = newly_on(saved, row["artist"], row["title"])
+                if extra == {"youtube"}:
+                    row["_extend"] = saved                 # only YouTube is new: look there, keep the rest
+                    left.append(row)
+                    continue
+                if extra:
+                    saved = None                           # a site switched on since: search again
+            if saved and not manual:
                 saved = dict(saved, steps=(saved.get("steps") or []) + ["(saved result from an earlier lookup)"])
-            result = saved or find_local(lib, row["artist"], row["title"])
+            result = saved or (find_local(lib, row["artist"], row["title"]) if "bandcamp" in sites.lookup_sites() else None)
             if not manual:
                 listed = known_for(row["artist"], row["title"])["url"]
                 # A link from your list answers the row when nothing better is saved - except that a
@@ -2069,17 +2259,28 @@ async def _run(job, fresh, retry_missing=False):
             except Exception:
                 pass
         # 3. everything not answered yet
+        _note_run([track_key(r["artist"], r["title"]) for r in todo])
         for n, row in enumerate(todo, 1):
+            extend = row.pop("_extend", None)
             if row.get("n") in job.setdefault("skip", set()):
                 if row["status"] == "pending":              # skipped before its turn came
                     _fill(row, with_list_link(SKIPPED, row["artist"], row["title"]))
                 job["done"] += 1
                 continue
             job["current"] = row.get("n")           # the row being searched right now
-            job["phase"] = (f"Searching Bandcamp for \u201c{row['title']}\u201d by {row['artist']} "
+            where = "YouTube" if extend else " and ".join(dict.fromkeys(
+                SOURCES[k].label for k in sites.lookup_sites())) or "nothing"
+            job["phase"] = (f"Searching {where} for \u201c{row['title']}\u201d by {row['artist']} "
                             f"({n} of {len(todo)} not already saved)")
             try:
-                found = await _unless_skipped(job, row.get("n"), find(net, lib, row["artist"], row["title"], state))
+                if extend:
+                    work = add_youtube(net, extend, row["artist"], row["title"])
+
+                    async def wrapped(work=work):
+                        return await work, True
+                    found = await _unless_skipped(job, row.get("n"), wrapped())
+                else:
+                    found = await _unless_skipped(job, row.get("n"), find(net, lib, row["artist"], row["title"], state))
             except Exception as e:
                 found = ({"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]], "note":
                           f"Couldn't complete the search ({type(e).__name__}); run it again to retry"}, False)
@@ -2109,6 +2310,7 @@ def start(tracks, fresh=False, retry_missing=False):
            "rows": [dict(t, status="pending", site="", url="", year="", release="", found="", note="", steps=[])
                     for t in tracks]}
     jobs[job_id] = job
+    _note_run([], reset=True)                 # a new lookup starts a new "searched in the last lookup" list
 
     async def guarded():
         try:
@@ -2126,6 +2328,7 @@ def start(tracks, fresh=False, retry_missing=False):
 STATUS_TEXT = {"imported": "From your list", "manual": "Link you set", "bandcamp": "Bandcamp release", "bandcamp_check": "Bandcamp, check match",
                "bandcamp_artist": "Bandcamp artist page", "soundcloud_track": "SoundCloud track",
                "soundcloud": "SoundCloud artist page", "soundcloud_search": "SoundCloud search",
+               "youtube": "YouTube video", "youtube_channel": "YouTube channel",
                "none": "Not found", "error": "Error", "pending": "Not looked up yet", "skipped": "Skipped"}
 
 
@@ -2437,6 +2640,7 @@ def retry_row(job, n: int):
     if not job["finished"]:
         raise ValueError("Wait for the lookup to finish, then search this row again.")
     _fill(row, {"status": "pending"})
+    _note_run([track_key(row["artist"], row["title"])])
     job.update(finished=False, current=n, done=max(0, job["done"] - 1),
                phase=f"Searching again for \u201c{row['title']}\u201d by {row['artist']}")
 

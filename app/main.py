@@ -13,11 +13,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import db, lookup, pace, refresh, saved
+from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "54"   # shown beside the title, so you can tell which version is running
+VERSION = "55"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -88,8 +88,34 @@ def index():
 
 @app.get("/api/sources")
 def sources():
-    return [{"key": s.key, "label": s.label, "color": s.color, "placeholder": s.placeholder}
-            for s in SOURCES.values()]
+    """The sites switched on. suggest: Find missing links can guess this site's page."""
+    return [{"key": s.key, "label": s.label, "color": s.color, "placeholder": s.placeholder,
+             "suggest": s.key in ("bandcamp", "soundcloud")}
+            for s in SOURCES.values() if sites.is_on(s.key)]
+
+
+class SiteSettings(BaseModel):
+    sites: Optional[dict[str, bool]] = None      # site key: switched on
+    lookup_sites: Optional[list[str]] = None     # the sites Link Finder searches
+
+
+@app.get("/api/settings")
+def get_settings():
+    return dict(sites.settings(), fallback=lookup.fallback_pref())
+
+
+@app.put("/api/settings")
+def put_settings(body: SiteSettings):
+    """Switch sites on or off, and choose which ones Link Finder searches."""
+    try:
+        for key, on in (body.sites or {}).items():
+            sites.set_on(key, on)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if body.lookup_sites is not None:
+        sites.set_lookup_sites(body.lookup_sites)
+    lookup.sites_changed()
+    return get_settings()
 
 
 @app.get("/api/artists")
@@ -101,7 +127,7 @@ def artists():
 async def create_artist(body: ArtistIn):
     wanted = [a for a in body.accounts if a.handle.strip()]
     if not wanted:
-        raise HTTPException(400, "Add at least one Bandcamp or SoundCloud page.")
+        raise HTTPException(400, "Add at least one page (Bandcamp, SoundCloud or YouTube).")
     # Validate everything before writing anything.
     for a in wanted:
         source = SOURCES.get(a.source)
@@ -126,6 +152,7 @@ class TableRow(BaseModel):
     id: Optional[int] = None
     name: str = ""
     cells: dict[str, str] = {}
+    youtube_lookup: Optional[bool] = None   # Link Finder may search YouTube for this artist or label
     skip: list[str] = []                 # cells cleared on purpose: "Find missing links" leaves them alone
     rejected: dict[str, list[str]] = {}  # guesses turned down, never offered again
 
@@ -143,13 +170,13 @@ class TableIn(BaseModel):
 
 
 def _table_rows():
-    rows, remembered = [], _left_empty()
+    rows, remembered, on, youtube = [], _left_empty(), sites.enabled(), sites.youtube_names()
     for a in db.list_artists():
-        cells = {key: [] for key in SOURCES}
+        cells = {key: [] for key in on}
         problems = []
         for acc in a["accounts"]:
             source = SOURCES.get(acc["source"])
-            if source is None:
+            if source is None or source.key not in cells:      # a site switched off: kept, not shown
                 continue
             short = source.short(acc["handle"])
             cells[source.key].append(short)
@@ -160,6 +187,7 @@ def _table_rows():
         note = remembered.get(lookup.norm(a["name"])) or {}
         shown = lookup.join_names([a["name"]] + lookup.split_names(a.get("aliases") or ""))
         rows.append({"id": a["id"], "name": shown, "post_count": a["post_count"],
+                     "youtube_lookup": lookup.norm(a["name"]) in youtube,
                      "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
                      "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
                      "rejected": note.get("rejected") or {}})
@@ -175,9 +203,10 @@ def get_table():
 def export_csv():
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["name"] + list(SOURCES))
+    on = sites.enabled()
+    writer.writerow(["name"] + on)
     for row in _table_rows():
-        writer.writerow([row["name"]] + [row["cells"][k] for k in SOURCES])
+        writer.writerow([row["name"]] + [row["cells"][k] for k in on])
     return Response(out.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="artists.csv"'})
 
@@ -208,10 +237,13 @@ async def suggest_row(body: SuggestIn):
 async def save_table(body: TableIn):
     """Replace the whole artist list with the rows sent. Nothing changes unless every row is valid."""
     existing = {a["id"]: a for a in db.list_artists()}
-    errors, claimed, plan, remember = [], {}, [], {}
+    errors, claimed, plan, remember, youtube = [], {}, [], {}, set()
+    on = set(sites.enabled())
     for index, row in enumerate(body.rows):
         pages = []
         for key, text in row.cells.items():
+            if key in SOURCES and key not in on:
+                continue                            # a site switched off: its pages are left as they are
             for piece in filter(None, (t.strip() for t in re.split(r"[,;\n]+", text or ""))):
                 source = SOURCES.get(key)
                 if source is None:
@@ -239,6 +271,8 @@ async def save_table(body: TableIn):
                 "rejected": {k: list(dict.fromkeys(v))[:20] for k, v in row.rejected.items() if k in SOURCES and v}}
         if note["skip"] or note["rejected"]:
             remember[lookup.norm(plan[-1][1])] = note
+        if row.youtube_lookup:                      # every name the artist goes by
+            youtube.update(lookup.norm(n) for n in [plan[-1][1]] + lookup.split_names(aliases))
     if errors:
         return JSONResponse({"detail": "Some rows need fixing; nothing was saved.",
                              "errors": errors}, status_code=400)
@@ -252,12 +286,14 @@ async def save_table(body: TableIn):
         current = existing[artist_id]
         if name != current["name"] or aliases != (current.get("aliases") or ""):
             renames.append((artist_id, name, aliases))
-        have = {(a["source"], a["handle"]): a["id"] for a in current["accounts"]}
+        have = {(a["source"], a["handle"]): a["id"] for a in current["accounts"] if a["source"] in on}
         wanted = {(s, h) for s, h, _ in pages}
         drop_accounts += [acc_id for key, acc_id in have.items() if key not in wanted]
         new_accounts += [(artist_id, s, h, u) for s, h, u in pages if (s, h) not in have]
     added = db.apply_table(keep, drop_accounts, renames, new_accounts, new_artists)
     db.kv_set("table_left_empty", json.dumps(remember))
+    if any(r.youtube_lookup is not None for r in body.rows):       # sent only while YouTube is on
+        sites.set_youtube_names(youtube)
     lookup.forget_aliases()
     if added:
         refresh.refresh_in_background(added)

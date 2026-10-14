@@ -6,6 +6,7 @@ import os
 import httpx
 
 from . import db, pace
+from . import sites
 from .sources import SOURCES
 from .sources.base import BROWSER_HEADERS, SourceError
 
@@ -27,7 +28,7 @@ def make_client() -> httpx.AsyncClient:
 async def _refresh_one(client, sem, account, tally):
     async with sem:
         source = SOURCES.get(account["source"])
-        if source is None:
+        if source is None or not sites.is_on(source.key):     # a site switched off isn't checked
             return
         problem = None
         try:
@@ -55,7 +56,7 @@ async def _refresh_one(client, sem, account, tally):
 
 
 async def refresh(account_ids=None):
-    accounts = db.list_accounts(account_ids=account_ids)
+    accounts = [a for a in db.list_accounts(account_ids=account_ids) if sites.is_on(a["source"])]
     if not accounts:
         return
     state["refreshing"] += 1

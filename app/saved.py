@@ -8,8 +8,9 @@ from . import db, lookup
 
 # No link to the track itself: an artist's page, a profile, a search, or nothing. (A track found on
 # SoundCloud is found, even though the lookup still checks Bandcamp for it again later.)
-NOT_FOUND = ("bandcamp_artist", "soundcloud", "soundcloud_search", "none", "error")
-FILTERS = ("", "review", "missing", "found", "manual", "list", "nospelling", "unsearched")
+NOT_FOUND = ("bandcamp_artist", "soundcloud", "soundcloud_search", "youtube_channel", "none", "error")
+FOUND = ("bandcamp", "soundcloud_track", "bandcamp_check", "youtube")
+FILTERS = ("", "lastrun", "review", "missing", "found", "manual", "list", "nospelling", "unsearched")
 
 
 def _entry(rest: str) -> dict:
@@ -55,7 +56,9 @@ def all_rows() -> list:
     by_artist = {}
     for key, entries in tracks.items():
         by_artist.setdefault(key.partition("|")[0], []).extend(entries)
+    run = lookup.last_run()
     for row in out.values():
+        row["last_run"] = row["key"] in run
         if not (row["list_title"] or row["list_link"]):        # nothing under this exact entry: the closest one
             guess = _closest(by_artist.get(row["tidy_artist"], []), row)
             if guess:
@@ -94,8 +97,8 @@ def _stamp(at: str) -> int:
 
 def _keep(row, which: str) -> bool:
     status = row["status"]
-    return {"": True, "review": bool(row["review"]), "missing": status in NOT_FOUND,
-            "found": status in ("bandcamp", "soundcloud_track", "bandcamp_check"), "manual": status == "manual",
+    return {"": True, "lastrun": row["last_run"], "review": bool(row["review"]), "missing": status in NOT_FOUND,
+            "found": status in FOUND, "manual": status == "manual",
             "list": bool(row["list_title"] or row["list_link"]), "nospelling": not (row["list_title"] or row["list_artist"]),
             "unsearched": not row["searched"]}.get(which, True)
 
