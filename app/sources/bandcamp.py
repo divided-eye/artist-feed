@@ -14,12 +14,13 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from .. import pace
 from .base import FetchResult, Post, Source, SourceError, Track, iso
 
 # Release pages opened per account per refresh. A long back catalogue fills in
 # over the next few refreshes instead of hammering the site on day one.
 MAX_NEW = int(os.environ.get("BANDCAMP_MAX_NEW", "12"))
-PAUSE = float(os.environ.get("BANDCAMP_PAUSE_SECONDS", "0.7"))
+PAUSE = float(os.environ.get("BANDCAMP_PAUSE_SECONDS", "0"))   # extra gap on top of the shared pace (see pace.py)
 
 
 def _clean(url: str) -> str:
@@ -286,7 +287,10 @@ class Bandcamp(Source):
         return host, f"https://{host}"
 
     async def _get(self, client, url):
+        await pace.wait()
         r = await client.get(url)
+        if r.status_code == 429:
+            pace.slow_down(pace.pause_for(r, 0))
         if r.status_code == 404:
             raise SourceError("Bandcamp page not found (check the name).")
         if r.status_code == 429:

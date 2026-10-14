@@ -31,12 +31,10 @@ from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
 
-from . import db, refresh
+from . import db, pace, refresh
 from .sources import SOURCES
 from .sources.bandcamp import parse_music_grid, parse_profile, parse_release, parse_search
 
-PAUSE = float(os.environ.get("LOOKUP_PAUSE_SECONDS", "0.6"))     # gap between requests to one site
-RETRY_WAIT = float(os.environ.get("LOOKUP_RETRY_SECONDS", "20"))  # wait once when told to slow down
 MAX_ROWS = int(os.environ.get("LOOKUP_MAX_ROWS", "500"))
 SCAN_RELEASES = int(os.environ.get("LOOKUP_SCAN_RELEASES", "40"))  # releases opened per artist page, per row
 OWNED_RELEASES = int(os.environ.get("LOOKUP_OWNED_RELEASES", "15"))  # purchases by the artist opened per row
@@ -238,22 +236,25 @@ class Blocked(Exception):
 
 
 class Net:
-    """One polite line of requests: a pause between calls, one retry when told to slow down."""
+    """Requests to Bandcamp, taken at the app-wide pace (see pace.py). A 429 answer is waited
+    out and retried, several times, before it is passed back to the caller."""
 
-    def __init__(self, client):
-        self.client, self.last, self.count = client, 0.0, 0
+    def __init__(self, client, on_wait=None):
+        self.client, self.count, self.on_wait = client, 0, on_wait
 
     async def request(self, method, url, **kw):
-        for attempt in (0, 1):
-            wait = self.last + PAUSE - time.monotonic()
-            if wait > 0:
-                await asyncio.sleep(wait)
-            self.last = time.monotonic()
+        for attempt in range(pace.TRIES):
+            await pace.wait()
             self.count += 1
             r = await self.client.request(method, url, **kw)
-            if r.status_code != 429 or attempt:
+            if r.status_code != 429 or attempt == pace.TRIES - 1:
+                if self.on_wait:
+                    self.on_wait("")
                 return r
-            await asyncio.sleep(RETRY_WAIT)
+            seconds = pace.pause_for(r, attempt)
+            pace.slow_down(seconds)
+            if self.on_wait:
+                self.on_wait(f"Bandcamp asked for a pause; carrying on in {int(seconds)}s")
 
     async def get(self, url, **kw):
         return await self.request("GET", url, **kw)
@@ -405,7 +406,8 @@ def collection_status():
     counts = db.query("SELECT (SELECT COUNT(*) FROM collection_items) AS items,"
                       " (SELECT COUNT(*) FROM collection_tracks) AS tracks")[0]
     return {"fan": collection_fan(), "items": counts["items"], "tracks": counts["tracks"],
-            "synced_at": db.kv_get("collection_synced_at"), **collection_state}
+            "synced_at": db.kv_get("collection_synced_at"),
+            "complete": db.kv_get("collection_complete") == "1", **collection_state}
 
 
 def _store_collection(fan, items, tracklists):
@@ -446,18 +448,36 @@ def _store_collection(fan, items, tracklists):
 
 async def sync_collection(full=False, on_progress=None):
     """Read the public collection page of the configured Bandcamp account, newest purchases first.
-    After the first time, it stops as soon as it reaches purchases it already has."""
+
+    The first read works back through every purchase; if it is interrupted it carries on from
+    where it stopped next time. Once complete, later reads only fetch purchases made since.
+    full=True starts a complete re-read (when the previous one had finished).
+    """
     fan = collection_fan()
     if not fan or collection_state["syncing"]:
         return
-    collection_state.update(syncing=True, error="", progress="Reading your Bandcamp purchases…")
+    collection_state.update(syncing=True, error="", progress="Reading your Bandcamp purchases\u2026")
+
+    def say(text):
+        collection_state["progress"] = text
+        if on_progress:
+            on_progress(text)
+
+    done = total = 0
     try:
         if db.query("SELECT 1 FROM collection_items WHERE fan<>? LIMIT 1", (fan,)):
             db.execute("DELETE FROM collection_tracks")          # a different account: start over
             db.execute("DELETE FROM collection_items")
-        first_time = full or not db.query("SELECT 1 FROM collection_items LIMIT 1")
+            db.kv_set("collection_complete", "")
+            db.kv_set("collection_token", "")
+        complete = db.kv_get("collection_complete") == "1"
+        if full and complete:
+            complete = False
+            db.kv_set("collection_complete", "")
+            db.kv_set("collection_token", "")
         async with refresh.make_client() as client:
-            net = Net(client)
+            waiting = {"text": ""}
+            net = Net(client, on_wait=lambda text: (waiting.update(text=text), text and say(text)))
             r = await net.get(f"https://bandcamp.com/{quote(fan)}")
             if r.status_code == 404:
                 raise ValueError(f'No Bandcamp fan page called "{fan}".')
@@ -471,26 +491,35 @@ async def sync_collection(full=False, on_progress=None):
                 raise ValueError("Couldn't read that collection page (is the collection public?).")
             cache = (blob.get("item_cache") or {}).get("collection") or {}
             order = info.get("sequence") or list(cache)
-            done = len(order)
             new = _store_collection(fan, [cache[k] for k in order if k in cache],
                                     (blob.get("tracklists") or {}).get("collection") or {})
-            token, total = info.get("last_token"), info.get("item_count") or 0
-            while token and (first_time or new):
-                collection_state["progress"] = f"Reading your Bandcamp purchases: {done} of {total or '?'}"
-                if on_progress:
-                    on_progress(collection_state["progress"])
+            total = info.get("item_count") or 0
+            # Not finished yet: carry on from the saved place. Finished: only what is newer.
+            token = (db.kv_get("collection_token") or info.get("last_token")) if not complete else info.get("last_token")
+            while token and (not complete or new):
+                done = db.query("SELECT COUNT(*) AS n FROM collection_items")[0]["n"]
+                say(f"Reading your Bandcamp purchases: {done:,} of {total:,}" if total else
+                    f"Reading your Bandcamp purchases: {done:,}")
                 j = await net.request("POST", COLLECTION_API, json={
                     "fan_id": fan_id, "older_than_token": token, "count": 100})
                 if j.status_code != 200:
-                    raise ValueError(f"Bandcamp answered {j.status_code} part-way through your collection.")
+                    raise ValueError(f"Bandcamp answered {j.status_code} while reading your purchases.")
                 data = j.json()
                 items = data.get("items") or []
                 new = _store_collection(fan, items, data.get("tracklists") or {})
-                done += len(items)
                 token = data.get("last_token") if data.get("more_available") and items else None
+                if not complete:
+                    db.kv_set("collection_token", token or "")   # where to carry on if interrupted
+            if not complete:
+                db.kv_set("collection_complete", "1")
         db.kv_set("collection_synced_at", db.now())
     except Exception as e:
-        collection_state["error"] = str(e) if isinstance(e, ValueError) else f"Couldn't read your purchases ({type(e).__name__})."
+        have = db.query("SELECT COUNT(*) AS n FROM collection_items")[0]["n"]
+        reason = str(e) if isinstance(e, ValueError) else f"Couldn't reach Bandcamp ({type(e).__name__})."
+        if db.kv_get("collection_complete") != "1" and have:
+            reason += (f" {have:,}" + (f" of {total:,}" if total else "") + " purchases are saved so far; "
+                       "the next read carries on from there.")
+        collection_state["error"] = reason
     finally:
         collection_state.update(syncing=False, progress="")
 
@@ -503,7 +532,7 @@ def sync_in_background(full=False):
 
 def collection_is_stale():
     at = db.kv_get("collection_synced_at")
-    if not at:
+    if not at or db.kv_get("collection_complete") != "1":     # never read, or the first read isn't finished
         return True
     try:
         age = datetime.now(timezone.utc) - datetime.fromisoformat(at.replace("Z", "+00:00"))
@@ -771,8 +800,8 @@ async def find(net, lib, artist, title, state):
         except Blocked as e:
             state["bandcamp_ok"], keep = False, False
             steps.append(f"stopped asking Bandcamp: {e}")
-            state["warning"] = (f"{e}. Rows after that were only checked against your feed, your saved "
-                                "purchases and SoundCloud; run the lookup again later.")
+            state["warning"] = (f"{e}, even after waiting. Rows after that were only checked against your "
+                                "feed, your saved purchases and SoundCloud; run the lookup again later.")
         if not state["search_ok"]:
             keep = False
     elif title:
@@ -803,7 +832,7 @@ async def _run(job, fresh):
     lib = Library()
     state = {"bandcamp_ok": True, "search_ok": True, "warning": ""}
     async with refresh.make_client() as client:
-        net = Net(client)
+        net = Net(client, on_wait=lambda text: job.update(phase=text))
         for row in job["rows"]:
             key = _cache_key(row["artist"], row["title"])
             result = None if fresh else _cached(key)

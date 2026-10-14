@@ -16,8 +16,8 @@ os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t.db")
 os.environ["DISABLE_SCHEDULER"] = "1"
 os.environ["BANDCAMP_PAUSE_SECONDS"] = "0"
 os.environ["BANDCAMP_MAX_NEW"] = "2"
-os.environ["LOOKUP_PAUSE_SECONDS"] = "0"
-os.environ["LOOKUP_RETRY_SECONDS"] = "0"
+os.environ["BANDCAMP_GAP_SECONDS"] = "0"
+os.environ["BANDCAMP_BACKOFF_SECONDS"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -154,6 +154,9 @@ def handler(request: httpx.Request) -> httpx.Response:
     if host == "bandcamp.com" and path == "/api/fancollection/1/collection_items":
         body = json.loads(request.content)
         assert body["fan_id"] == 77 and body["older_than_token"] == "tok1"
+        if calls.get("collection_fail"):                  # Bandcamp saying "slow down", or an outage
+            status = calls["collection_fail"].pop(0)
+            return httpx.Response(status, headers={"retry-after": "0"} if status == 429 else {})
         return httpx.Response(200, json=FAN_MORE)
     if host == "bandcamp.com" and path == "/search":
         q, kind = request.url.params["q"], request.url.params["item_type"]
@@ -377,13 +380,24 @@ def test_tracklist_lookup(client):
 
 def test_lookup_uses_purchases_and_artist_pages(client):
     """The situations in a real list: purchases, label releases, clumsy search, removed tracks."""
-    assert client.post("/api/collection", json={"fan": "https://bandcamp.com/divided_eye"}).json()["fan"] == "divided_eye"
-    for _ in range(100):
-        time.sleep(0.02)
-        status = client.get("/api/collection").json()
-        if not status["syncing"] and status["synced_at"]:
-            break
-    assert (status["items"], status["tracks"], status["error"]) == (4, 4, "")
+    def read_purchases():
+        assert client.post("/api/collection", json={"fan": "https://bandcamp.com/divided_eye"}).json()["fan"] == "divided_eye"
+        for _ in range(200):
+            time.sleep(0.02)
+            status = client.get("/api/collection").json()
+            if not status["syncing"]:
+                return status
+        raise AssertionError("still reading")
+
+    # An outage part-way: what was read is kept, and the next read carries on from there.
+    calls["collection_fail"] = [500]
+    status = read_purchases()
+    assert (status["items"], status["complete"]) == (2, False) and "2 of 4 purchases are saved" in status["error"]
+    # Told to slow down twice (429): it waits and retries rather than giving up.
+    calls["collection_fail"] = [429, 429]
+    status = read_purchases()
+    assert (status["items"], status["tracks"], status["error"], status["complete"]) == (4, 4, "", True)
+    assert calls["collection_fail"] == []
 
     rows = [("Masot", "02"), ("Masot", "Especies Endémicas"), ("Blocklab", "Gargantua"), ("contactghost", "Spelling Mitsake"),
             ("Siadic", "Air"), ("Somah", "Gnosis"), ("Pugilist", "Asteroids"), ("Anecho", "UFO"),

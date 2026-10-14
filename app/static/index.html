@@ -747,10 +747,12 @@ async function loadFan(fill) {
     $("fanStatus").textContent = c.syncing ? (c.progress || "Reading your purchases…")
       : c.error ? c.error
       : !c.fan ? "Not set: purchases won't be checked"
+      : !c.complete && c.items ? `${c.items.toLocaleString()} purchases read so far; the rest are read on the next lookup`
       : c.synced_at ? `${c.items.toLocaleString()} purchases, ${c.tracks.toLocaleString()} track titles · read ${ago(c.synced_at)}`
       : "Not read yet; it happens on the first lookup";
     $("fanStatus").classList.toggle("error", !c.syncing && !!c.error);
     $("fanSync").disabled = c.syncing;
+    $("fanSync").textContent = c.items && !c.complete ? "Continue reading" : "Read purchases";
     if (c.syncing && !$("lookup").hidden) fanTimer = setTimeout(loadFan, 1500);
   } catch {}
 }
