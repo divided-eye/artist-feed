@@ -91,6 +91,10 @@ SEARCHES.update({
                                         "from Open The Door LP by DNO Records")
                                  + result("Trigger Activation", "https://other.bandcamp.com/track/trigger-activation",
                                           "from Something Else by Other Label"),
+    # a label release that only turns up when searching for the artist's name
+    ("a", "Howman"): result("DNO022 - Howman - Trap Eastwood EP", "https://dnorecords.bandcamp.com/album/dno022-howman-trap-eastwood-ep",
+                            "by DNO Records", "released 28 August 2026", "ALBUM")
+                     + result("Unrelated Album", "https://zzz.bandcamp.com/album/unrelated", "by Someone", kind="ALBUM"),
     ("b", "nightmare"): result("Nightmare", "https://nightmare.bandcamp.com", "", "", "ARTIST"),
     ("b", "bbbb cccc"): result("Cccc", "https://ccc.bandcamp.com", "", "", "ARTIST"),
 })
@@ -147,6 +151,12 @@ PAGES = {
     ("seanpaul.bandcamp.com", "/album/hits"): album("Hits", "Sean Paul", "Temperature", "Get Busy"),
     ("nightmare.bandcamp.com", "/music"): grid("Nightmare", ("bootlegs", "Bootlegs Vol. 1")),
     ("nightmare.bandcamp.com", "/album/bootlegs"): album("Bootlegs Vol. 1", "Nightmare", "Nas - You Owe Me (Nightmare & Oni 140 Bootleg)", "Other"),
+    ("dnorecords.bandcamp.com", "/album/dno022-howman-trap-eastwood-ep"): album(
+        "DNO022 - Howman - Trap Eastwood EP", "DNO Records", "Strip Search", "Frosty", date="28 Aug 2026 00:00:00 GMT"),
+    # a subscriber-only track: not in the label's public list, not in search, but it has a page
+    ("dungeonbeats.bandcamp.com", "/track/hannibal-rex-manyothers"): release(
+        "Hannibal Rex - Manyothers", "16 Aug 2026 00:00:00 GMT", "MusicRecording", {"byArtist": {"name": "Dungeon Beats"}}),
+    ("labelx.bandcamp.com", "/album/lx001"): album("LX001", "Label X", "Somebody - Catalogue Tune", "Other - Thing"),
     ("somahuk.bandcamp.com", "/music"): grid("Somah UK", ("older", "Older Thing"), ("gnosis-railroads", "Gnosis / Railroads")),
     ("somahuk.bandcamp.com", "/album/older"): album("Older Thing", "Somah", "Aaa", "Bbb"),
     ("somahuk.bandcamp.com", "/album/gnosis-railroads"): album("Gnosis / Railroads", "Somah", "Gnosis", "Railroads"),
@@ -849,3 +859,38 @@ def test_soundcloud_is_the_default_fallback():
         os.environ["LOOKUP_FALLBACK"] = env
         if saved:
             db.kv_set("lookup_fallback", saved)
+
+
+def test_label_releases_and_unlisted_tracks(client):
+    from app import lookup
+    assert lookup.slugify("Hannibal Rex Manyothers") == "hannibal-rex-manyothers"
+    assert lookup.slugify("Especies Endémicas (Live!)") == "especies-endemicas-live"
+    # Release lists of pages you know, as the background reader saves them.
+    lookup.cache_put("grid", "https://dungeonbeats.bandcamp.com", {"name": "Dungeon Beats", "items": [
+        {"title": "Hannibal Rex - An Older One", "url": "https://dungeonbeats.bandcamp.com/track/hannibal-rex-an-older-one", "artist": ""},
+        {"title": "Someone Else - Thing", "url": "https://dungeonbeats.bandcamp.com/track/someone-else-thing", "artist": ""}]})
+    lookup.cache_put("grid", "https://labelx.bandcamp.com", {"name": "Label X", "items": [
+        {"title": "LX001", "url": "https://labelx.bandcamp.com/album/lx001", "artist": "Somebody"}]})
+    rows = [("Howman", "Strip Search"), ("Hannibal Rex", "Manyothers"), ("Somebody", "Catalogue Tune"), ("Hannibal Rex", "Never Existed")]
+    j = client.post("/api/lookup?fresh=true", content=("Artist\tTitle\n" + "\n".join(f"{a}\t{t}" for a, t in rows)).encode()).json()
+    for _ in range(300):
+        time.sleep(0.02)
+        got = client.get(f"/api/lookup/{j['id']}").json()
+        if got["finished"]:
+            break
+    r = {(x["artist"], x["title"]): x for x in got["rows"]}
+    # credited to the label; found by searching for the artist and opening the release that names them
+    howman = r[rows[0]]
+    assert (howman["status"], howman["url"], howman["year"]) == (
+        "bandcamp", "https://dnorecords.bandcamp.com/album/dno022-howman-trap-eastwood-ep", "2026"), howman
+    # not listed anywhere: found at the address it would have on a label page that carries the artist
+    hannibal = r[rows[1]]
+    assert (hannibal["status"], hannibal["url"], hannibal["year"]) == (
+        "bandcamp", "https://dungeonbeats.bandcamp.com/track/hannibal-rex-manyothers", "2026"), hannibal
+    assert "not publicly listed" in hannibal["note"]
+    # listed on a label page you know, under the artist's name: opened and matched without any search hit
+    known = r[rows[2]]
+    assert (known["status"], known["url"], known["note"]) == ("bandcamp", "https://labelx.bandcamp.com/album/lx001", "On a label page you know")
+    assert r[rows[3]]["status"] not in ("bandcamp", "bandcamp_check")
+    status = client.get("/api/collection").json()
+    assert status["labels"] >= 1 and 0 <= status["labels_read"] <= status["labels"]

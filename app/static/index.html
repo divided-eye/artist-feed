@@ -804,13 +804,13 @@ async function loadFan(fill) {
       : c.error ? c.error
       : !c.fan ? "Not set: purchases won't be checked"
       : !c.complete && c.items ? `${c.items.toLocaleString()} purchases read so far; the rest are read on the next lookup`
-      : c.synced_at ? `${c.items.toLocaleString()} purchases · read ${ago(c.synced_at)} · full track lists: ${c.releases_read.toLocaleString()} of ${c.releases.toLocaleString()} releases`
+      : c.synced_at ? `${c.items.toLocaleString()} purchases · read ${ago(c.synced_at)} · full track lists: ${c.releases_read.toLocaleString()} of ${c.releases.toLocaleString()} releases · label pages: ${c.labels_read.toLocaleString()} of ${c.labels.toLocaleString()}`
           + (c.deep_running ? ` (reading in the background${c.deep_note ? "; " + c.deep_note : ""}${c.paused > 0 ? "; Bandcamp asked for a pause, " + waitText(c.paused) : ""})` : "")
       : "Not read yet; it happens on the first lookup";
     $("fanStatus").classList.toggle("error", !c.syncing && !!c.error);
     $("fanSync").disabled = c.syncing;
     $("fanSync").textContent = c.items && !c.complete ? "Continue reading" : "Read purchases";
-    $("fanDeep").hidden = c.syncing || c.deep_running || !c.complete || c.releases_read >= c.releases;
+    $("fanDeep").hidden = c.syncing || c.deep_running || !c.complete || (c.releases_read >= c.releases && c.labels_read >= c.labels);
     if ((c.syncing || c.deep_running) && !$("lookup").hidden) fanTimer = setTimeout(loadFan, c.syncing ? 1500 : 5000);
   } catch {}
 }

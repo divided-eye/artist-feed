@@ -71,6 +71,16 @@ otherwise their SoundCloud page.
   then on only new purchases need reading. The panel shows how far it has got
   ("full track lists: N of M releases"). Tracks on releases already read are
   answered instantly; the rest are still found the slow way until it finishes.
+- After the track lists, the background reader also saves the release list of
+  every Bandcamp page you track or have bought from ("label pages: N of M" in
+  the panel), and refreshes each one every two weeks. A track the search
+  misses is then looked for on those pages: releases that name the artist are
+  opened and their track lists read. If none carries it, the address the track
+  would have on those pages is tried directly, which finds tracks that exist
+  but are not listed publicly, such as subscriber-only ones.
+- Bandcamp is also searched for the artist's name alone, and the releases that
+  name them are opened. This finds label releases whose individual tracks the
+  search doesn't return.
 - A lookup works in three passes, quickest first. Everything it can answer
   from saved data (your feed, your purchases, pages read before, earlier
   results) is filled in within a second or two, with no requests to Bandcamp.
@@ -160,7 +170,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v23. Labels, track lists and durations for Bandcamp
+is v24. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

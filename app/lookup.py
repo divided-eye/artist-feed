@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 7             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 8             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -550,13 +550,41 @@ async def search_step(net, artist, title, steps):
         if verdict == "bandcamp":
             return out
         check = check or out
-    return check
+    if check:
+        return check
+    # Nothing by title. Search for the artist alone and open the releases that name them: a label
+    # release such as "DNO022 - Howman - Trap Eastwood EP" turns up this way when its tracks don't.
+    names = [artist] + [p for p in artist_parts(artist)[1:3]]
+    names += [c for c in remix_credits(title)[:1]]
+    opened = 0
+    for who in dict.fromkeys(n for n in names if n):
+        found = [c for c in await bandcamp_search(net, who, "a") if c["url"] not in verified]
+        naming = [c for c in found if c["type"] in ("album", "")
+                  and score(who, c["name"], dict(c, artists=[c.get("artist")],
+                                                 context=[c.get("name"), slug_words(c.get("url"))]))[1] >= 0.85]
+        steps.append(f'search releases naming "{who}": {len(naming)} of {len(found)} result(s)')
+        for c in naming[:8]:
+            verified.add(c["url"])
+            opened += 1
+            rel = await _safe_release(net, c["url"])
+            v, name = match_in_release(artist, title, rel) if rel else ("", "")
+            if v == "bandcamp":
+                steps.append(f'opened "{c["name"]}": "{name}" is on it')
+                return release_result(rel, v, f'{c["artist"]} \u2014 {name}', "Bandcamp search")
+    return None
 
 
 # ---------- Bandcamp: your purchases ----------
 
 def collection_fan():
     return (db.kv_get("bandcamp_fan") or os.environ.get("BANDCAMP_FAN") or "").strip()
+
+
+def _label_counts():
+    hosts = set(known_hosts())
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    fresh = {r["key"] for r in db.query("SELECT key FROM web_cache WHERE kind='grid' AND at>=?", (cutoff,))}
+    return {"labels": len(hosts), "labels_read": len(hosts & fresh)}
 
 
 def collection_status():
@@ -569,6 +597,7 @@ def collection_status():
             "synced_at": db.kv_get("collection_synced_at"),
             "complete": db.kv_get("collection_complete") == "1", "paused": pace.paused_seconds(),
             "releases": counts["releases"], "releases_read": counts["releases_read"],
+            **_label_counts(),
             "deep_running": deep_state["running"], "deep_note": deep_state["note"],
             **collection_state}
 
@@ -715,17 +744,24 @@ async def deep_read():
                     todo.append(r["key"])
             except ValueError:
                 pass
-        if not todo:
+        # Then the release list of every page you track or have bought from, refreshed every two weeks.
+        pages = [h for h in known_hosts() if cache_get("grid", h, 14) is None]
+        if not todo and not pages:
             return
         async with refresh.make_client() as client:
             net = Net(client)
-            for url in todo:
+            for kind, url in [("release", u) for u in todo] + [("grid", h) for h in pages]:
                 while any(not job["finished"] for job in jobs.values()):
                     deep_state["note"] = "waiting for the lookup to finish"
                     await asyncio.sleep(2)                # lookups go first
-                deep_state["note"] = ""
+                deep_state["note"] = "" if kind == "release" else "label pages"
                 try:
-                    await get_release(net, url)
+                    if kind == "release":
+                        await get_release(net, url)
+                    else:
+                        db.execute("DELETE FROM web_cache WHERE kind='grid' AND key=?", (url,))   # refresh it
+                        if await get_grid(net, url) is None and cache_get("grid", url, 14) is None:
+                            cache_put("grid", url, {})    # unreadable just now: don't retry for two weeks
                 except Blocked:                           # still refused after every retry: rest a while
                     deep_state["note"] = "Bandcamp asked for a long pause; carrying on in 15 minutes"
                     await asyncio.sleep(900)
@@ -788,6 +824,17 @@ class Library:
             self._add(self.feed, r["name"], r)
         self.owned_items = db.query("SELECT key, title, band, url, kind FROM collection_items ORDER BY rowid")
         self.owned_urls = {i["url"] for i in self.owned_items}
+        self.catalogue = []                              # every release listed on the pages you know
+        for row in db.query("SELECT key, data FROM web_cache WHERE kind='grid'"):
+            try:
+                page = json.loads(row["data"]) or {}
+            except ValueError:
+                continue
+            for it in page.get("items") or []:
+                if it.get("url") and it.get("title"):
+                    self.catalogue.append({"host": row["key"], "label": page.get("name") or "", "url": it["url"],
+                                           "title": it["title"],
+                                           "blob": f' {plain(it["title"])} {plain(it.get("artist") or "")} '})
         self._by_artist = {}
         by_key = {i["key"]: i for i in self.owned_items}
         self.by_name = {}                                # normalised credited name -> purchases
@@ -890,6 +937,73 @@ async def owned_step(net, lib, artist, title, steps):
     steps.append(f"purchases: no match ({len(cands)} same-title track(s), {len(owned)} release(s) by this artist"
                  + (f", {opened} opened" if opened else "") + ")")
     return None, check
+
+
+def slugify(text: str) -> str:
+    """How Bandcamp turns a title into the last part of an address."""
+    return re.sub(r"[^a-z0-9]+", "-", _fold(text)).strip("-")
+
+
+def known_hosts() -> list:
+    """Every Bandcamp page in your world: the ones you track and the ones you have bought from."""
+    hosts = {root_of(r["url"]) for r in db.query("SELECT DISTINCT url FROM collection_items")}
+    hosts |= {r["url"].rstrip("/") for r in db.query("SELECT url FROM accounts WHERE source='bandcamp'")}
+    return sorted(h for h in hosts if h.startswith("http"))
+
+
+async def catalogue_step(net, lib, artist, title, steps):
+    """Look on the pages of labels and artists you already know - the ones you track or have bought
+    from. Their release lists are read in the background and kept, so this costs nothing until a
+    likely release is opened. Finds label releases that Bandcamp's search misses, and (by trying
+    the obvious address) tracks that are not listed publicly, such as subscriber-only ones.
+    Returns a result or None."""
+    if not lib.catalogue:
+        return None
+    names = [n for n in artist_parts(artist) + list(remixer_names(title)) if len(n) >= 3]
+    want = norm(title)
+    first = (want.split() or [""])[0]
+    hits, hosts = [], {}
+    for it in lib.catalogue:
+        naming = any(f" {n} " in it["blob"] for n in names)
+        if naming:
+            hosts[it["host"]] = hosts.get(it["host"], 0) + 1
+        elif not (first and f" {first} " in it["blob"] and distinctive(title)):
+            continue
+        t = max(ratio(want, norm(it["title"])), ratio(want, norm(it["title"].partition(" - ")[2])),
+                ratio(want, norm(it["title"].rpartition(" - ")[2])))
+        if naming or t >= 0.88:
+            hits.append(((t >= 0.88) + naming, t, it))
+    hits.sort(key=lambda h: (-h[0], -h[1]))
+    budget, opened = 8, 0
+    for _rank, _t, it in hits:
+        if cache_get("release", it["url"], 180) is None:
+            if budget <= 0:
+                continue
+            budget -= 1
+        rel = await _safe_release(net, it["url"])
+        opened += 1
+        v, name = match_in_release(artist, title, rel) if rel else ("", "")
+        if v == "bandcamp":
+            steps.append(f'pages you know: "{name}" is on "{rel["title"]}" at {it["host"].replace("https://", "")}')
+            return release_result(rel, v, f'{rel["artist"] or it["label"]} \u2014 {name}', "On a label page you know")
+    # Not listed. On the pages that carry this artist, try the address the track would have.
+    for own in lib.owned_for(artist, title):
+        hosts[root_of(own["url"])] = hosts.get(root_of(own["url"]), 0) + 1
+    tried = 0
+    for host in sorted(hosts, key=lambda h: -hosts[h])[:4]:
+        for slug in dict.fromkeys([slugify(f"{artist} {title}"), slugify(f"{artist} {base_title(title)}"),
+                                   slugify(title), slugify(base_title(title))]):
+            if not slug:
+                continue
+            tried += 1
+            rel = await _safe_release(net, f"{host}/track/{slug}")
+            v, name = match_in_release(artist, title, rel) if rel else ("", "")
+            if v == "bandcamp":
+                steps.append(f'pages you know: found at the expected address on {host.replace("https://", "")} (not in its public list)')
+                return release_result(rel, v, f'{rel["artist"]} \u2014 {name}', "On a label page you know; not publicly listed")
+    steps.append(f"pages you know: no match ({len(hits)} release(s) naming the artist or title, {opened} opened, "
+                 f"{tried} address(es) tried on {min(len(hosts), 4)} page(s))")
+    return None
 
 
 async def _safe_release(net, url):
@@ -1176,6 +1290,10 @@ async def find(net, lib, artist, title, state):
             if result and result["status"] == "bandcamp":
                 return done(result)
             check = check or result
+            # 3b. pages of labels and artists you already know
+            result = await catalogue_step(net, lib, artist, title, steps)
+            if result:
+                return done(result)
             # 4. the artist's own page
             for credit in remix_credits(title):       # an edit, remix or bootleg: its maker's page first
                 maker_pages = await artist_pages(net, lib, credit, steps, state["search_ok"])
