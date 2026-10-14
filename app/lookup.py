@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 8             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 9             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -144,7 +144,8 @@ def pick_tracks(rows: list) -> list:
 # Words that mark a bracketed tag as "someone's version of this track".
 _REMIX_WORD = (r"remix|rmx|re-?mix|edit|re-?edit|bootleg|boot|flip|refix|re-?fix|rework|re-?work|re-?rub|"
                r"remake|re-?lick|mash-?up|redo|re-?twist|re-?fit|cover|treatment|version|mix|dub|vip")
-_REMIX_TAG = re.compile(r"[\(\[]\s*([^\)\]]*?)\s*\b(?:%s)\b\s*[\)\]]" % _REMIX_WORD, re.I)
+_REMIX_TAG = re.compile(r"[\(\[]\s*([^\)\]]*?)\s*\b(%s)\b\s*[\)\]]" % _REMIX_WORD, re.I)
+_VIP_TAG = re.compile(r"[\(\[]([^\)\]]*)\bvip\b([^\)\]]*)[\)\]]", re.I)
 _ANY_TAG = re.compile(r"[\(\[][^\)\]]*(?:mix|edit|version|remaster|bonus|free|dub|\b(?:%s)\b)[^\)\]]*[\)\]]" % _REMIX_WORD)
 # Words in such a tag that describe the version rather than name a person.
 _GENERIC = set("""original extended radio club instrumental vocal dub vip album single full short long clean
@@ -180,9 +181,12 @@ def remix_credits(title: str) -> tuple:
 
     The second form drops describing words from the ends ("Jah Beer Dub Refix" -> "Jah Beer"), since
     it can't be known whether "Dub" is part of the name. Empty for "(Original Mix)", "(VIP)" etc.
+    A VIP is the artist's own second version, so "(Continental VIP)" credits nobody (see vip_words).
     """
     out = []
-    for inner in _REMIX_TAG.findall(title or ""):
+    for inner, word in _REMIX_TAG.findall(title or ""):
+        if word.casefold() == "vip":
+            continue
         words = [w for w in inner.replace("&", " & ").split() if not w.strip(".,'").isdigit()]
         trimmed = list(words)
         while trimmed and (plain(trimmed[-1]) in _GENERIC or not plain(trimmed[-1])):
@@ -202,6 +206,32 @@ def remix_credits(title: str) -> tuple:
 def remixer_names(title: str) -> tuple:
     """Normalised names of the people in remix_credits, each form and each person."""
     return tuple(dict.fromkeys(p for credit in remix_credits(title) for p in artist_parts(credit)))
+
+
+@lru_cache(maxsize=8192)
+def vip_words(title: str):
+    """None unless the title is a VIP version; then the words that name which VIP it is:
+    "Re-use, Reduce (Continental VIP)" -> ("continental",), "Thing VIP" -> ()."""
+    if not re.search(r"\bvip\b", plain(title)):
+        return None
+    words = []
+    for before, after in _VIP_TAG.findall(title or ""):
+        words += [w for w in plain(before + " " + after).split() if w not in _GENERIC and not w.isdigit()]
+    return tuple(dict.fromkeys(words))
+
+
+def same_vip(title: str, name: str) -> bool:
+    """Is `name` the VIP version asked for in `title`? (True when `title` isn't a VIP.)"""
+    want = vip_words(title)
+    if want is None:
+        return True
+    told = f" {plain(name)} "
+    return vip_words(name) is not None and all(f" {w} " in told for w in want)
+
+
+def versioned(title: str) -> bool:
+    """Asked for a particular version (someone's remix, a VIP) rather than the plain track."""
+    return bool(remixer_names(title)) or vip_words(title) is not None
 
 
 def base_title(title: str) -> str:
@@ -281,6 +311,11 @@ def score(artist: str, title: str, cand: dict) -> tuple:
         else:
             t = min(t, 0.7)
     elif remixer_names(name):
+        t = min(t, 0.8)
+    # A VIP is a different recording from the original: one is never an answer for the other.
+    if not same_vip(title, name):
+        t = min(t, 0.7)
+    elif vip_words(title) is None and vip_words(name) is not None:
         t = min(t, 0.8)
     return t, a
 
@@ -930,6 +965,8 @@ async def owned_step(net, lib, artist, title, steps):
     # b. releases you own by this artist: a purchase named after the track, or open them and read the track lists
     owned = lib.owned_for(artist, title)
     for item in owned:
+        if versioned(title):        # the release is named after the track, but is this version on it? open it
+            break
         if ratio(norm(title), norm(item["title"])) >= 0.88 or ratio(norm(title), norm(item["title"].partition(" - ")[2])) >= 0.88:
             rel = await _safe_release(net, item["url"])
             steps.append(f'purchases: you own "{item["title"]}" by {item["band"]}')
@@ -1144,6 +1181,8 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
                         continue
                     same = max(ratio(norm(title), norm(name)), ratio(norm(title), norm(name.partition(" - ")[2])))
                     if same < 0.85:
+                        continue
+                    if not same_vip(title, name):
                         continue
                     if credits:      # must be this version: its maker named in the title or as the uploader
                         told = f" {plain(name)} {plain(user.get('username') or '')} "
@@ -1432,7 +1471,7 @@ def find_local(lib, artist, title):
                             f'purchases: track "{cand["name"]}" on "{cand["item"]["title"]}"')
     owned = lib.owned_for(artist, title)
     for item in owned:
-        if max(ratio(norm(title), norm(item["title"])), ratio(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
+        if not versioned(title) and max(ratio(norm(title), norm(item["title"])), ratio(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
             return owned_result(item, item["title"], f'purchases: you own "{item["title"]}" by {item["band"]}')
     known = page_index().get(norm(title), [])
     verdict, hit = best_candidate(artist, title, [c for c in known if lib.owns(c["rel"])])
@@ -1467,7 +1506,8 @@ async def _run(job, fresh):
         for row in rows:
             manual = _cached(_manual_key(row["artist"], row["title"]))   # your own link always wins
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
-            if saved and not manual and saved.get("status") != "bandcamp" and saved.get("engine", 0) < ENGINE:
+            if saved and not manual and saved.get("engine", 0) < ENGINE and (
+                    saved.get("status") != "bandcamp" or vip_words(row["title"]) is not None):
                 saved = None                               # a miss from an older version: try again
             if saved and not manual:
                 saved = with_current_fallback(saved)

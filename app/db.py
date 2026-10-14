@@ -410,7 +410,7 @@ def feed(source=None, artist_id=None, limit=60, offset=0, q=None, more=None):
         " (SELECT COUNT(*) FROM tracks WHERE post_id=p.id) AS track_count,"
         " (SELECT SUM(duration) FROM tracks WHERE post_id=p.id) AS duration "
         + JOINS + where
-        + f"ORDER BY {WHEN} DESC, p.id DESC LIMIT ? OFFSET ?")
+        + f"ORDER BY COALESCE({POSTED}, {WHEN}) DESC, p.id DESC LIMIT ? OFFSET ?")
     return query(sql, args + [limit, offset])
 
 

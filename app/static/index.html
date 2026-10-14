@@ -143,8 +143,10 @@
     0%, 100% { box-shadow: 0 0 18px 2px rgba(125, 200, 255, .22), -1px 0 0 rgba(125, 200, 255, .35); }
     50% { box-shadow: 0 0 46px 10px rgba(125, 200, 255, .55), -1px 0 0 rgba(125, 200, 255, .9); }
   }
-  #lookup { border-left-color: rgba(125, 200, 255, .45); animation: lookup-glow 5s ease-in-out infinite; }
-  @media (prefers-reduced-motion: reduce) { #lookup { animation: none; box-shadow: 0 0 28px 4px rgba(125, 200, 255, .35); } }
+  /* steady when idle or finished; pulses only while a lookup is running */
+  #lookup { border-left-color: rgba(125, 200, 255, .45); box-shadow: 0 0 28px 4px rgba(125, 200, 255, .35), -1px 0 0 rgba(125, 200, 255, .6); }
+  #lookup.busy { animation: lookup-glow 5s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { #lookup.busy { animation: none; } }
   aside { position: fixed; top: 0; right: 0; bottom: 0; width: min(1000px, 100%); z-index: 10;
     background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
   aside header { position: static; background: none; display: flex; align-items: center; padding: 14px 16px; }
@@ -308,7 +310,7 @@ const $ = id => document.getElementById(id);
 let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "" }, offset = 0, wasRefreshing = false;
 let hideNoPreview = false;      // a standing preference, kept in this browser; not cleared by "Clear filters"
 try { hideNoPreview = localStorage.getItem("hideNoPreview") === "1"; } catch {}
-let view = "grid", sort = { key: "date", dir: "desc" }, playing = null;
+let view = "grid", sort = { key: "posted", dir: "desc" }, playing = null;
 try { if (localStorage.getItem("view") === "list") view = "list"; } catch {}
 
 function el(tag, props = {}, ...kids) {
@@ -843,22 +845,24 @@ function renderLookupStatus(job) {
   $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` + (onSc ? `, ${onSc} on SoundCloud` : "") : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
   $("lookupError").textContent = job.warning || "";
   $("lookupExport").hidden = !job.finished;
+  $("lookup").classList.toggle("busy", !job.finished);
   $("lookupExport").href = `/api/lookup/${job.id}.csv`;
 }
 
 async function startLookup(body) {
   clearTimeout(lookupTimer);
   $("lookupError").textContent = ""; $("lookupStatus").textContent = "Reading the list…"; $("lookupExport").hidden = true;
+  $("lookup").classList.add("busy");
   const r = await fetch("/api/lookup" + ($("lookupFresh").checked ? "?fresh=true" : ""), { method: "POST", body });
   const job = await r.json().catch(() => ({}));
-  if (!r.ok) { $("lookupStatus").textContent = ""; $("lookupError").textContent = typeof job.detail === "string" ? job.detail : "Couldn't read that list."; return; }
+  if (!r.ok) { $("lookup").classList.remove("busy"); $("lookupStatus").textContent = ""; $("lookupError").textContent = typeof job.detail === "string" ? job.detail : "Couldn't read that list."; return; }
   renderLookup(job);
   const poll = async () => {
     try {
       const now = await api(`/api/lookup/${job.id}`);
       renderLookup(now);
       if (!now.finished) lookupTimer = setTimeout(poll, 1200); else loadFan();
-    } catch (x) { $("lookupError").textContent = x.message; }
+    } catch (x) { $("lookup").classList.remove("busy"); $("lookupError").textContent = x.message; }
   };
   lookupTimer = setTimeout(poll, 600);
 }

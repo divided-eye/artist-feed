@@ -309,14 +309,14 @@ def test_add_and_feed(client):
     bc = next(a for a in artist["accounts"] if a["source"] == "bandcamp")
     assert "1 older release" in bc["last_error"]      # BANDCAMP_MAX_NEW=2 of 3
     feed = client.get("/api/feed").json()
-    assert [p["title"] for p in feed] == ["Demo", "Second", "No Art", "First"]
+    assert [p["title"] for p in feed] == ["Demo", "Second", "First", "No Art"]
     assert feed[0]["image"].endswith("artworks-9-t500x500.jpg")
-    assert feed[2]["image"].endswith("avatars-1-t500x500.jpg")
+    assert feed[3]["image"].endswith("avatars-1-t500x500.jpg")
 
     client.post("/api/refresh")                        # second pass picks up the rest, no duplicates
     wait(client)
     feed = client.get("/api/feed").json()
-    assert [p["title"] for p in feed] == ["Demo", "Second", "No Art", "First", "Third"]
+    assert [p["title"] for p in feed] == ["Demo", "Second", "First", "Third", "No Art"]
     assert [p["title"] for p in client.get("/api/feed?source=bandcamp").json()] == ["Second", "First", "Third"]
     assert client.get("/api/artists").json()[0]["accounts"][0]["last_error"] is None
 
@@ -972,3 +972,31 @@ def test_track_bought_on_its_own_links_to_its_album(client):
         assert (row["status"], row["url"], row["release"], row["year"]) == ("bandcamp", album, "SHKHT013 - JOHNEY", "2026"), row
     finally:
         db.execute("DELETE FROM collection_items WHERE key='t998'")
+
+
+def test_vip_is_not_the_original(client):
+    """Owning the EP with the original on it is not an answer for the VIP version."""
+    from app import db, lookup
+    url = "https://toomuchcollective.bandcamp.com/album/re-use-reduce-ep"
+    db.execute("INSERT INTO collection_items(key, fan, title, band, url, kind) VALUES('a997','x','Re-use, Reduce EP','Anecho',?,'a')", (url,))
+    db.execute("INSERT INTO collection_tracks(item_key, position, title, artist) VALUES('a997',1,'Re-use, Reduce','Anecho')")
+    lookup.cache_put("release", url, {"url": url, "asked": url, "title": "Re-use, Reduce EP", "artist": "Anecho", "year": "2025",
+                                      "release": "", "release_url": "", "label": "",
+                                      "tracks": [{"title": "Re-use, Reduce", "artist": ""}, {"title": "Other One", "artist": ""}], "v": 3})
+    lookup.page_index.cache_clear() if hasattr(lookup.page_index, "cache_clear") else None
+    try:
+        j = client.post("/api/lookup?fresh=true", content=(
+            "Artist\tTitle\nAnecho\tRe-use, Reduce (Continental VIP)\nAnecho\tRe-use, Reduce").encode()).json()
+        for _ in range(200):
+            time.sleep(0.05)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                break
+        vip, original = got["rows"]
+        assert (original["status"], original["url"]) == ("bandcamp", url), original
+        # not the EP: falls back to the artist (the tests run with the Bandcamp page preferred)
+        assert vip["status"] in lookup.FALLBACK_STATUSES and vip["url"] != url, vip
+        assert vip["options"]["soundcloud"]["url"] == "https://soundcloud.com/anechoicchamber", vip
+    finally:
+        db.execute("DELETE FROM collection_items WHERE key='a997'")
+        db.execute("DELETE FROM collection_tracks WHERE item_key='a997'")
