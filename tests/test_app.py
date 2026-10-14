@@ -128,7 +128,14 @@ FAN_MORE = {"items": [{"tralbum_type": "a", "tralbum_id": 3, "item_title": "Espe
                       {"tralbum_type": "a", "tralbum_id": 4, "item_title": "Half Empty", "band_name": "contactghost",
                        "item_url": "https://artikalmusic.bandcamp.com/album/half-empty?from=fanpub"}],
             "tracklists": {"a3": [{"id": 31, "title": "Intro Piece"}]}, "more_available": False, "last_token": "tok2"}
+# A track bought on its own: the page names its album only in the player data.
+DEAD_ANGLE = release("Dead Angle", "30 Sep 2026 00:00:00 GMT", "MusicRecording",
+                     {"byArtist": {"name": "JOHNEY"}, "inAlbum": {"name": "SHKHT013 - JOHNEY"}}).replace(
+    "</head>", "</head><body><script data-tralbum='" + json.dumps(
+        {"item_type": "track", "album_url": "/album/shkht013-johney",
+         "trackinfo": [{"title": "Dead Angle", "duration": 240, "track_id": 77}]}) + "'></script></body>")
 PAGES = {
+    ("shakhtarecords.bandcamp.com", "/track/dead-angle"): DEAD_ANGLE,
     ("bandcamp.com", "/divided_eye"): '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(FAN_BLOB)) + '"></div>',
     ("masot.bandcamp.com", "/album/archivos-pt-1"): album("Archivos Pt. 1", "Masot", "01", "02"),
     ("masot.bandcamp.com", "/album/especies-endemicas"): album("Especies Endémicas", "Masot", "Intro Piece", "Especies Endémicas"),
@@ -943,3 +950,25 @@ def test_label_releases_and_unlisted_tracks(client):
     assert r[rows[3]]["status"] not in ("bandcamp", "bandcamp_check")
     status = client.get("/api/collection").json()
     assert status["labels"] >= 1 and 0 <= status["labels_read"] <= status["labels"]
+
+
+def test_track_bought_on_its_own_links_to_its_album(client):
+    from app import db, lookup
+    from app.sources.bandcamp import parse_release
+    url, album = "https://shakhtarecords.bandcamp.com/track/dead-angle", "https://shakhtarecords.bandcamp.com/album/shkht013-johney"
+    assert parse_release(DEAD_ANGLE, url)["release_url"] == album
+    db.execute("INSERT INTO collection_items(key, fan, title, band, url, kind) VALUES('t998','x','Dead Angle','JOHNEY',?,'t')", (url,))
+    # the page as an older version saved it: no album
+    lookup.cache_put("release", url, {"url": url, "asked": url, "title": "Dead Angle", "artist": "JOHNEY", "year": "2026",
+                                      "release": "SHKHT013 - JOHNEY", "release_url": "", "label": "", "tracks": [], "v": 2})
+    try:
+        j = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nJohney\tDead Angle".encode()).json()
+        for _ in range(100):
+            time.sleep(0.05)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                break
+        row = got["rows"][0]
+        assert (row["status"], row["url"], row["release"], row["year"]) == ("bandcamp", album, "SHKHT013 - JOHNEY", "2026"), row
+    finally:
+        db.execute("DELETE FROM collection_items WHERE key='t998'")

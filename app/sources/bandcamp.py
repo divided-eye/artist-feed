@@ -278,6 +278,16 @@ def parse_release(html: str, url: str) -> dict:
                             _clean(urljoin(url, link)) if link else None))
     if tracks or ld_tracks:
         out["tracks"] = tracks or ld_tracks
+    # A track page names its album in the player data too, sometimes only there.
+    album_link = tralbum.get("album_url")
+    if not out["release_url"] and "/track/" in out["url"] and isinstance(album_link, str) and album_link.strip():
+        out["release_url"] = _clean(urljoin(url, album_link.strip()))
+    if not out["release_url"] and "/track/" in out["url"]:
+        for a in soup.select("#name-section a[href], .albumTitle a[href], .fromAlbum a[href]"):
+            if "/album/" in a["href"]:
+                out["release_url"] = _clean(urljoin(url, a["href"]))
+                out["release"] = out["release"] or a.get_text(" ", strip=True) or None
+                break
     # Track names that are only written out in the description (see listed_titles).
     _strings(tralbum, texts)
     for holder in soup.find_all(attrs={"data-blob": True}):       # other data the page carries

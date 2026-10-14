@@ -397,13 +397,25 @@ def page_index():
     return _pages["index"]
 
 
-PAGE_FORMAT = 2   # 2: also keeps track names that are only written out in the description
+PAGE_FORMAT = 3   # 2: also keeps track names that are only written out in the description
+                  # 3: a track page's album is also read from the player data
 
 
 def needs_rereading(saved, url) -> bool:
     """Saved by a version that only kept playable tracks, and it found at most one on an album:
     the real track list may be in the description (a preview mix plus a written list)."""
-    return bool(saved) and saved.get("v", 1) < PAGE_FORMAT and "/album/" in url and len(saved.get("tracks") or []) <= 1
+    if not saved:
+        return False
+    v = saved.get("v", 1)
+    if v < 2 and "/album/" in url and len(saved.get("tracks") or []) <= 1:
+        return True
+    # A track page saved without its album: an older version may simply not have seen it.
+    return v < 3 and "/track/" in url and not saved.get("release_url")
+
+
+def album_of(rel, url):
+    """The link to give for a page: the album when the page is a single track on one."""
+    return (rel or {}).get("release_url") or url
 
 
 async def get_release(net, url):
@@ -898,7 +910,8 @@ async def owned_step(net, lib, artist, title, steps):
     verdict, cand = best_candidate(artist, title, cands)
     if cand:
         rel = await _safe_release(net, cand["item"]["url"])
-        out = {"status": verdict, "site": "Bandcamp", "url": cand["item"]["url"], "release": cand["item"]["title"],
+        out = {"status": verdict, "site": "Bandcamp", "url": album_of(rel, cand["item"]["url"]),
+               "release": (rel or {}).get("release") or cand["item"]["title"],
                "year": (rel or {}).get("year", ""), "note": "In your purchases",
                "found": f'{cand["item"]["band"]} — {cand["name"]}'}
         steps.append(f'purchases: track "{cand["name"]}" on "{cand["item"]["title"]}"'
@@ -920,7 +933,8 @@ async def owned_step(net, lib, artist, title, steps):
         if ratio(norm(title), norm(item["title"])) >= 0.88 or ratio(norm(title), norm(item["title"].partition(" - ")[2])) >= 0.88:
             rel = await _safe_release(net, item["url"])
             steps.append(f'purchases: you own "{item["title"]}" by {item["band"]}')
-            return {"status": "bandcamp", "site": "Bandcamp", "url": item["url"], "release": item["title"],
+            return {"status": "bandcamp", "site": "Bandcamp", "url": album_of(rel, item["url"]),
+                    "release": (rel or {}).get("release") or item["title"],
                     "year": (rel or {}).get("year", ""), "found": f'{item["band"]} — {item["title"]}',
                     "note": "In your purchases"}, None
     opened = 0
@@ -1484,17 +1498,22 @@ async def _run(job, fresh):
 
     async with refresh.make_client() as client:
         net = Net(client)
-        # 2. years for answers found in your purchases whose page hasn't been read yet
-        need_year = [r for r in job["rows"] if r["status"] == "bandcamp" and not r["year"]
-                     and r["site"] == "Bandcamp" and r["note"] == "In your purchases"]
+        # 2. years for answers found in your purchases whose page hasn't been read yet, and the
+        #    album for any answer that is a single-track page (a track bought on its own, say)
+        need_year = [r for r in job["rows"] if r["site"] == "Bandcamp" and r["status"] in ("bandcamp", "check")
+                     and ((not r["year"] and r["note"] == "In your purchases") or "/track/" in r["url"])]
         for n, row in enumerate(need_year, 1):
             if not state["bandcamp_ok"]:
                 break
-            job["phase"] = f"Found {job['done']} of {job['total']}; reading release years ({n} of {len(need_year)})"
+            job["phase"] = f"Found {job['done']} of {job['total']}; reading release details ({n} of {len(need_year)})"
             try:
                 rel = await get_release(net, row["url"])
-                if rel and rel.get("year"):
+                if rel and rel.get("year") and not row["year"]:
                     row["year"] = rel["year"]
+                if rel and rel.get("release_url") and "/track/" in row["url"]:
+                    row["url"] = rel["release_url"]
+                    row["release"] = rel.get("release") or row["release"]
+                    row["steps"] = (row.get("steps") or []) + ["linked to the album this track is on"]
             except Blocked as e:
                 state["bandcamp_ok"] = False
                 job["warning"] = f"{e}, even after waiting. Run the lookup again later for the rest."
