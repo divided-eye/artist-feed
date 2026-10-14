@@ -125,7 +125,8 @@
   .rowplay { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
     display: grid; place-items: center; font-size: 11px; color: var(--text); padding: 0; }
   .rowplay:hover { background: var(--accent); color: #14160a; border-color: var(--accent); }
-  .rowplay.nostream { border-style: dashed; color: var(--muted); }
+  .rowplay.nostream { border: 2px dashed #e6b450; color: #e6b450; background: transparent; font-size: 12px; }
+  .rowplay.nostream:hover { background: #e6b450; color: #14160a; border-style: solid; }
 
   #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--panel);
     border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.4); }
@@ -547,7 +548,7 @@ function listRow(r) {
   const cell = (text, cls) => el("td", { class: cls, title: text || null, text: text || "" });
   tr.append(
     el("td", { class: "go" }, player(it)
-      ? el("button", { class: "rowplay" + (it.nostream ? " nostream" : ""), "aria-label": `Play ${name}`, text: "▶", onclick: () => play(it, tr),
+      ? el("button", { class: "rowplay" + (it.nostream ? " nostream" : ""), "aria-label": `Play ${name}`, text: it.nostream ? "▷" : "▶", onclick: () => play(it, tr),
           title: it.nostream ? "No preview yet: Bandcamp isn't streaming this track (usually a pre-order). The player will show the track the release does have." : null })
       : el("a", { class: "rowplay", href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${name} on ${s.label}`, text: "↗" })),
     cell(r.artist, "t"), cell(r.label, "t dim"), cell(r.release, "t"), cell(r.track, "t"),
