@@ -190,8 +190,8 @@ def _fold(text: str) -> str:
 
 def _old_spelling(text: str) -> str:
     """The text as it was tidied before "ø" and similar letters were understood ("Nøcase" became
-    "n case"): used only to find answers saved back then."""
-    return "".join(" " if ord(ch) in _LETTERS else ch for ch in text or "")
+    "n case") and other alphabets were dropped: used only to find answers saved back then."""
+    return "".join(" " if ch.isalnum() and not re.search(r"[a-z0-9]", _fold_old(ch)) else ch for ch in text or "")
 
 
 def norm(text: str) -> str:
@@ -199,14 +199,14 @@ def norm(text: str) -> str:
     such as "(Original Mix)" and "(IOWLA Flip)" (who made a version is checked separately)."""
     text = _WIP.sub(" ", _fold(text))            # "work in progress" is a status, not part of the title
     text = _ANY_TAG.sub(" ", text)
-    text = _drop_describing(text) if re.sub(r"[^a-z0-9]+", "", _drop_describing(text)) else text
+    text = _drop_describing(text) if re.sub(r"[\W_]+", "", _drop_describing(text)) else text
     text = re.sub(r"\b(feat|ft|featuring)\b.*$", " ", text)
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+    return re.sub(r"[\W_]+", " ", text).strip()        # letters and digits of any alphabet are kept
 
 
 def plain(text: str) -> str:
     """Like norm, but keeps everything, including version tags."""
-    return re.sub(r"[^a-z0-9]+", " ", _fold(text)).strip()
+    return re.sub(r"[\W_]+", " ", _fold(text)).strip()
 
 
 @lru_cache(maxsize=8192)

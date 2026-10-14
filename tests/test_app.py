@@ -1310,3 +1310,15 @@ def test_letters_like_o_with_a_stroke_and_answers_saved_under_the_old_tidying():
     assert lookup._manual_for("Nøcase", "Old Tune")["url"] == "https://x.bandcamp.com/track/old-tune"
     assert lookup._manual_for("Nocase", "Old Tune") is None
     db.execute("DELETE FROM lookup_cache WHERE key=?", ("manual|n case|old tune",))
+
+
+def test_titles_in_other_alphabets_are_kept_when_tidied(client):
+    from app import lookup
+    assert lookup.norm("Сердце Темноты (ft. Talabun)") == "сердце темноты" and lookup.norm("Tiger 白虎") == "tiger 白虎"
+    assert lookup.norm("Сердце (Original Mix)") == "сердце" and lookup.norm("Too_Hot") == "too hot" and lookup.norm("???") == ""
+    sheet = "Artist,Track,Year,Link\nDuckem,Сердце Темноты,2015,https://soundcloud.com/x/serdtse\nDuckem,Другая Песня,2016,\n"
+    got = client.post("/api/known", content=sheet.encode("utf-8-sig")).json()
+    assert (got["tracks"], got["skipped"]) == (2, 0), got
+    assert lookup.known_for("duckem", "сердце темноты")["url"] == "https://soundcloud.com/x/serdtse"
+    assert lookup.known_for("duckem", "другая песня")["year"] == "2016"
+    assert client.delete("/api/known").json() == {"known_tracks": 0, "known_artists": 0}
