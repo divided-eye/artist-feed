@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tracks(
   url TEXT
 );
 CREATE INDEX IF NOT EXISTS tracks_post ON tracks(post_id, position);
+CREATE INDEX IF NOT EXISTS posts_url ON posts(url);
 CREATE INDEX IF NOT EXISTS posts_when ON posts(COALESCE(published_at, first_seen) DESC);
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 """
@@ -80,6 +81,7 @@ def conn() -> sqlite3.Connection:
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
             migrate(_conn)
+            _conn.execute("CREATE INDEX IF NOT EXISTS posts_embed ON posts(embed)")
         return _conn
 
 
@@ -295,6 +297,15 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
     """
     more = more or {}
     where, args = [], []
+    # The same release can reach the feed through two tracked pages (an artist's
+    # and their label's, say). Show it once: the copy with the most detail.
+    same = ("SELECT p2.id FROM posts p2 JOIN accounts a2 ON a2.id=p2.account_id "
+            "WHERE a2.source=a.source AND (p2.url=p.url OR p2.embed=p.embed)")
+    if artist_id:      # when looking at one artist, only that artist's copies compete
+        same += " AND a2.artist_id=?"
+        args.append(artist_id)
+    where.append(f"p.id=({same} ORDER BY (COALESCE(p2.label,'')='') ASC,"
+                 " p2.detailed DESC, p2.id ASC LIMIT 1)")
     if source:
         where.append("a.source=?")
         args.append(source)

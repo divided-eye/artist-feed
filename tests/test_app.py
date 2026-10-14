@@ -70,6 +70,10 @@ def handler(request: httpx.Request) -> httpx.Response:
                  "/track/second": SECOND,
                  "/album/third": release("Third", "15 Jan 2024 00:00:00 GMT")}
         return httpx.Response(200, text=pages[path]) if path in pages else httpx.Response(404)
+    if host == "deeplabel.bandcamp.com" and path == "/music":      # a label page listing the same album
+        return httpx.Response(200, text='<html><head><meta property="og:site_name" content="Deep Label"></head><body>'
+                              '<ol id="music-grid"><li><a href="https://nightferry.bandcamp.com/album/first?label=9">'
+                              '<p class="title">First</p></a></li></ol></body></html>')
     if host == "solo.bandcamp.com" and path == "/music":
         return httpx.Response(200, text=release("Only One", "02 Feb 2026 00:00:00 GMT").replace(
             '"@type"', '"@id": "https://solo.bandcamp.com/album/only-one", "@type"'))
@@ -227,6 +231,21 @@ def test_upgrade_from_first_version(client):
         wait(client)
     strip = lambda rows: [{k: v for k, v in r.items() if k != "track_id"} for r in rows]
     assert strip(client.get("/api/tracks").json()) == strip(before)
+
+
+def test_release_tracked_through_two_pages_shows_once(client):
+    before = client.get("/api/tracks").json()
+    label = client.post("/api/artists", json={"accounts": [{"source": "bandcamp", "handle": "deeplabel"}]}).json()["id"]
+    wait(client)
+    assert next(a for a in client.get("/api/artists").json() if a["id"] == label)["post_count"] == 1
+    strip = lambda rows: [(r["release"], r["track"], r["label"]) for r in rows]
+    assert strip(client.get("/api/tracks").json()) == strip(before)                 # no second copy
+    assert [p["title"] for p in client.get("/api/feed").json()].count("First") == 1
+    assert [r["track"] for r in client.get(f"/api/tracks?artist_id={label}").json()] == ["Intro", "Long One"]
+    assert [p["title"] for p in client.get(f"/api/feed?artist_id={label}").json()] == ["First"]
+    assert len(client.get("/api/tracks.csv").content.decode("utf-8-sig").splitlines()) == 7
+    client.delete(f"/api/artists/{label}")
+    assert strip(client.get("/api/tracks").json()) == strip(before)                 # the other copy is still there
 
 
 def test_single_release_and_errors(client):

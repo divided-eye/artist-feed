@@ -38,6 +38,13 @@ Label and release come from what each site publishes. On Bandcamp the label is
 filled in when a release sits on a label's page rather than the artist's own;
 on SoundCloud both are only present when the uploader entered them.
 
+A release that reaches the feed through two tracked pages (an artist's page and
+their label's, for example) is shown once.
+
+Pre-orders appear with their future release date. Tracks that are not out yet
+have no duration, and a pre-order with nothing streamable yet has no play
+button.
+
 ## Listening
 
 Press play on a card or a list row and the site's own player opens in a bar at
@@ -54,7 +61,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v6. Labels, track lists and durations for Bandcamp
+is v7. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
