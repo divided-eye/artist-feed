@@ -134,12 +134,37 @@ def parse_music_grid(html: str, base: str) -> list:
     return items
 
 
+def parse_search(html: str) -> list:
+    """Results from a bandcamp.com/search page: type, name, url, artist, album, released."""
+    soup = BeautifulSoup(html, "lxml")
+    text = lambda node: re.sub(r"\s+", " ", node.get_text(" ", strip=True)) if node else ""
+    out = []
+    for li in soup.select("li.searchresult"):
+        info = li.select_one(".result-info") or li
+        heading = info.select_one(".heading a")
+        url = text(info.select_one(".itemurl")) or (heading.get("href") if heading else "")
+        if not heading or not url:
+            continue
+        if "://" not in url:
+            url = "https://" + url
+        sub, artist, album = text(info.select_one(".subhead")), "", ""
+        if sub.startswith("from "):
+            album, _, artist = sub[5:].rpartition(" by ")
+        elif sub.startswith("by "):
+            artist = sub[3:]
+        out.append({"type": text(info.select_one(".itemtype")).lower(), "name": text(heading),
+                    "url": _clean(url), "artist": artist.strip(), "album": album.strip(),
+                    "released": text(info.select_one(".released")).removeprefix("released ").strip()})
+    return out
+
+
 def parse_release(html: str, url: str) -> dict:
     """Title, date, cover and artist from a single album/track page."""
     soup = BeautifulSoup(html, "lxml")
     out = {"url": _clean(url), "title": None, "image": None, "author": None,
            "published_at": None, "is_release": False,
-           "label": None, "release": None, "embed": None, "tracks": None, "posted_at": None}
+           "label": None, "release": None, "embed": None, "tracks": None, "posted_at": None,
+           "release_url": None}
     ld_tracks, publisher = [], None
 
     for script in soup.find_all("script", type="application/ld+json"):
@@ -165,6 +190,9 @@ def parse_release(html: str, url: str) -> dict:
         publisher = _name(ld.get("publisher")) or publisher
         out["label"] = _name(ld.get("recordLabel")) or out["label"]
         out["release"] = _name(ld.get("inAlbum")) or out["release"]
+        album = ld.get("inAlbum")
+        if isinstance(album, dict) and isinstance(album.get("@id"), str) and album["@id"].startswith("http"):
+            out["release_url"] = _clean(album["@id"])     # the album a track page belongs to
         listed = ld.get("track")
         for entry in (listed.get("itemListElement") or []) if isinstance(listed, dict) else []:
             item = entry.get("item") if isinstance(entry, dict) else None

@@ -134,6 +134,20 @@
   td input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg); }
   tr.has-error td { background: rgba(255,107,107,.07); }
   .error { color: var(--danger); font-size: 13px; }
+  #lookupText { display: block; width: calc(100% - 32px); margin: 0 16px 12px; height: 96px; resize: vertical;
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+  #lookupText:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .res td { padding: 7px 10px; border-right: 0; vertical-align: top; font-size: 14px; }
+  .res td.n { color: var(--muted); text-align: right; width: 1%; }
+  .res td.link a { color: var(--accent); word-break: break-all; }
+  .res td.link a:hover { text-decoration: underline; }
+  .res td small { display: block; color: var(--muted); font-size: 12px; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .tag.ok { color: #9be28f; border-color: #3d6b3a; } .tag.check { color: #e6b450; border-color: #6b5626; }
+  .tag.sc { color: #ff9a66; border-color: #6b3a22; } .tag.bad { color: var(--danger); border-color: #6b2c2c; }
+  .tag.wait { color: var(--muted); }
+  label.opt { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -150,6 +164,7 @@
     <div class="spacer"></div>
     <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
     <span class="status" id="status"></span>
+    <button class="btn" id="lookupBtn" title="Find Bandcamp or SoundCloud links for a tracklist">Tracklist</button>
     <button class="btn" id="refreshBtn">Refresh</button>
     <button class="btn primary" id="manageBtn">Artists</button>
   </div>
@@ -207,6 +222,22 @@
   </div>
   <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. <span class="error" id="tableError"></span></div>
   <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+</aside>
+
+<aside id="lookup" hidden aria-label="Tracklist lookup">
+  <header><h2>Tracklist lookup</h2><button class="btn" id="lookupClose">Close</button></header>
+  <div class="tools">
+    <button class="btn" id="lookupFileBtn">Choose file…</button>
+    <input type="file" id="lookupFile" accept=".xlsx,.csv,.tsv,.txt,text/csv" hidden>
+    <button class="btn primary" id="lookupGo">Look up pasted rows</button>
+    <label class="opt" title="Normally a track you've looked up before is answered from the saved result"><input type="checkbox" id="lookupFresh"> Search again for saved results</label>
+    <div class="spacer"></div>
+    <span class="status" id="lookupStatus"></span>
+    <a class="btn" id="lookupExport" hidden download="tracklist-links.csv">Export results</a>
+  </div>
+  <div class="hint">Upload an Excel (.xlsx) or CSV file, or paste rows copied from your spreadsheet below. Include the header row: the Artist column and the first Title column are used. Each track gets a link to the Bandcamp release it's on, or the artist's SoundCloud page if it isn't found on Bandcamp. <span class="error" id="lookupError"></span></div>
+  <textarea id="lookupText" spellcheck="false" aria-label="Pasted tracklist" placeholder="Track #&#9;Artist&#9;Title&#9;…&#10;1&#9;Masot&#9;Especies Endémicas&#9;…"></textarea>
+  <div class="table-wrap"><table class="res"><thead id="lookupHead"></thead><tbody id="lookupBody"></tbody></table></div>
 </aside>
 
 <script>
@@ -654,6 +685,50 @@ async function pollStatus() {
   } catch { setTimeout(pollStatus, 15000); }
 }
 
+// ---- tracklist lookup ----
+const LOOKUP_TAGS = { bandcamp: ["ok", "Bandcamp release"], bandcamp_check: ["check", "Bandcamp · check match"],
+  soundcloud: ["sc", "SoundCloud artist page"], soundcloud_search: ["check", "SoundCloud search"],
+  none: ["bad", "Not found"], error: ["bad", "Error"], pending: ["wait", "Searching…"] };
+let lookupTimer = null;
+
+function renderLookup(job) {
+  $("lookupHead").replaceChildren(el("tr", {}, ...["#", "Artist", "Title", "Link", "Found as", "Year", "Result"].map(t => el("th", { text: t }))));
+  $("lookupBody").replaceChildren(...job.rows.map(r => {
+    const [cls, label] = LOOKUP_TAGS[r.status] || ["wait", r.status];
+    const url = safeUrl(r.url);
+    return el("tr", {},
+      el("td", { class: "n", text: String(r.n) }), el("td", { text: r.artist }), el("td", { text: r.title }),
+      el("td", { class: "link" }, url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null),
+      el("td", {}, r.found || "", r.release ? el("small", { text: "on " + r.release }) : null),
+      el("td", { text: r.year || "" }),
+      el("td", {}, el("span", { class: "tag " + cls, text: label }), r.note ? el("small", { text: r.note }) : null));
+  }));
+  const found = job.rows.filter(r => r.status === "bandcamp" || r.status === "bandcamp_check").length;
+  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` : `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`;
+  $("lookupError").textContent = job.warning || "";
+  $("lookupExport").hidden = !job.finished;
+  $("lookupExport").href = `/api/lookup/${job.id}.csv`;
+}
+
+async function startLookup(body) {
+  clearTimeout(lookupTimer);
+  $("lookupError").textContent = ""; $("lookupStatus").textContent = "Reading the list…"; $("lookupExport").hidden = true;
+  const r = await fetch("/api/lookup" + ($("lookupFresh").checked ? "?fresh=true" : ""), { method: "POST", body });
+  const job = await r.json().catch(() => ({}));
+  if (!r.ok) { $("lookupStatus").textContent = ""; $("lookupError").textContent = typeof job.detail === "string" ? job.detail : "Couldn't read that list."; return; }
+  renderLookup(job);
+  const poll = async () => {
+    try {
+      const now = await api(`/api/lookup/${job.id}`);
+      renderLookup(now);
+      if (!now.finished) lookupTimer = setTimeout(poll, 1200);
+    } catch (x) { $("lookupError").textContent = x.message; }
+  };
+  lookupTimer = setTimeout(poll, 600);
+}
+
+function lookupPanel(open) { $("lookup").hidden = !open; $("scrim").hidden = !open; }
+
 async function drawer(open) {
   if (!open && dirty && !confirm("Discard unsaved changes to the artist table?")) return;
   if (open) await loadTable(); else setDirty(false);
@@ -661,8 +736,18 @@ async function drawer(open) {
 }
 
 $("manageBtn").onclick = () => drawer(true);
-$("closeBtn").onclick = $("scrim").onclick = () => drawer(false);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("drawer").hidden) drawer(false); });
+$("closeBtn").onclick = () => drawer(false);
+$("scrim").onclick = () => $("lookup").hidden ? drawer(false) : lookupPanel(false);
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!$("lookup").hidden) lookupPanel(false); else if (!$("drawer").hidden) drawer(false);
+});
+$("lookupBtn").onclick = () => lookupPanel(true);
+$("lookupClose").onclick = () => lookupPanel(false);
+$("lookupFileBtn").onclick = () => $("lookupFile").click();
+$("lookupFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) startLookup(await f.arrayBuffer()); };
+$("lookupGo").onclick = () => $("lookupText").value.trim() ? startLookup($("lookupText").value) : ($("lookupError").textContent = "Paste some rows first, or choose a file.");
+$("lookupText").addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "\t"); } });
 window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
 $("addRowBtn").onclick = () => { if (!isBlank(table[table.length - 1])) table.push(blankRow()); renderTable(); $("tbody").lastElementChild.querySelector("input").focus(); };
 $("saveBtn").onclick = () => saveTable().catch(x => { $("tableError").textContent = x.message; });

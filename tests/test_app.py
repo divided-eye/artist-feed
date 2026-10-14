@@ -16,6 +16,7 @@ os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "t.db")
 os.environ["DISABLE_SCHEDULER"] = "1"
 os.environ["BANDCAMP_PAUSE_SECONDS"] = "0"
 os.environ["BANDCAMP_MAX_NEW"] = "2"
+os.environ["LOOKUP_PAUSE_SECONDS"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -59,6 +60,20 @@ SECOND = release("Second", "01 Sep 2026 00:00:00 GMT", "MusicRecording",
                  '<meta property="og:video" content="https://bandcamp.com/EmbeddedPlayer/v=2/track=222/size=large/">')
 
 
+def result(name, url, sub, released="released 2 May 2023"):
+    return (f'<li class="searchresult data-search"><div class="result-info"><div class="itemtype">TRACK</div>'
+            f'<div class="heading"><a href="{url}?from=search">\n {name}\n</a></div>'
+            f'<div class="subhead">\n {sub}\n</div><div class="released">{released}</div>'
+            f'<div class="itemurl"><a href="{url}?from=search">{url}</a></div></div></li>')
+
+
+SEARCHES = {   # what the stand-in Bandcamp search returns for a query
+    "Masot Especies Endémicas": result("Especies Endémicas", "https://masot.bandcamp.com/track/especies-end-micas", "from Flora by Masot"),
+    "Other Guy Especies Endémicas": result("Especies Endémicas", "https://masot.bandcamp.com/track/especies-end-micas", "from Flora by Masot"),
+    "idpa State I": result("Idpa - State I (Original Mix)", "https://somelabel.bandcamp.com/track/state-i", "from VA 004 by Some Label", "released 9 January 2021")
+              + result("State Of Mind", "https://x.bandcamp.com/track/state", "by Idpa"),
+}
+searched = []
 calls = {"expired_once": False}
 
 
@@ -74,6 +89,16 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text='<html><head><meta property="og:site_name" content="Deep Label"></head><body>'
                               '<ol id="music-grid"><li><a href="https://nightferry.bandcamp.com/album/first?label=9">'
                               '<p class="title">First</p></a></li></ol></body></html>')
+    if host == "bandcamp.com" and path == "/search":
+        searched.append(request.url.params["q"])
+        return httpx.Response(200, text="<ul>" + SEARCHES.get(request.url.params["q"], "") + "</ul>")
+    if host == "masot.bandcamp.com" and path == "/track/especies-end-micas":
+        return httpx.Response(200, text=release("Especies Endémicas", "02 May 2023 00:00:00 GMT", "MusicRecording", {
+            "byArtist": {"name": "Masot"}, "inAlbum": {"name": "Flora", "@id": "https://masot.bandcamp.com/album/flora"}}))
+    if host == "api-v2.soundcloud.com" and path == "/search/users" and request.url.params.get("client_id") == CID:
+        users = {"Nobody Known": [{"username": "nobody known fan", "permalink_url": "https://soundcloud.com/fan", "followers_count": 9000},
+                                  {"username": "Nobody Known", "permalink_url": "https://soundcloud.com/nobodyknown", "followers_count": 12}]}
+        return httpx.Response(200, json={"collection": users.get(request.url.params["q"], [])})
     if host == "solo.bandcamp.com" and path == "/music":
         return httpx.Response(200, text=release("Only One", "02 Feb 2026 00:00:00 GMT").replace(
             '"@type"', '"@id": "https://solo.bandcamp.com/album/only-one", "@type"'))
@@ -210,6 +235,74 @@ def test_track_list(client):
     assert lines[0] == "artist,label,release,track,duration,year,released,posted,site,url"
     assert lines[1] == "Guest Person,Deep Label,First,Long One,1:02:05,2025,2025-03-07,2025-03-05,Bandcamp,https://nightferry.bandcamp.com/track/long-one"
     assert len(lines) == 7 and "attachment" in r.headers["content-disposition"]
+
+
+def test_reading_tracklists():
+    from app import lookup
+    header = ["Track #", "Artist", "Title", "Crate", "Category / Series", "Title", "Track", "Time"]
+    rows = [header, ["1", "Idpa & Saša Delimar", "State I", "245", "Fresh Produce", "Flummoxed", "1", "0:00"],
+            ["2", "Masot", "02", "245", "Fresh Produce", "Flummoxed", "2", "5:08"], ["", "", "", "", "", "", "", ""]]
+    want = [{"n": 1, "artist": "Idpa & Saša Delimar", "title": "State I"}, {"n": 2, "artist": "Masot", "title": "02"}]
+    as_text = lambda sep: "\r\n".join(sep.join(r) for r in rows).encode("utf-8")
+    assert lookup.pick_tracks(lookup.read_table(as_text("\t"))) == want          # pasted from a spreadsheet
+    assert lookup.pick_tracks(lookup.read_table(b"\xef\xbb\xbf" + as_text(","))) == want   # CSV file
+    import io, openpyxl
+    book = openpyxl.Workbook(); [book.active.append([int(r[0]) if r[0].isdigit() else r[0]] + r[1:]) for r in rows]
+    data = io.BytesIO(); book.save(data)
+    assert lookup.pick_tracks(lookup.read_table(data.getvalue())) == want          # Excel file
+    assert lookup.pick_tracks(lookup.read_table(b"1\tMasot\t02\n2\tIdpa\tState I")) == [
+        {"n": 1, "artist": "Masot", "title": "02"}, {"n": 2, "artist": "Idpa", "title": "State I"}]   # no header
+    assert lookup.pick_tracks(lookup.read_table("1. Masot \u2013 02\nIdpa - State I".encode()))[0] == {"n": 1, "artist": "Masot", "title": "02"}
+    for bad in (b"", b"Artist\tAlbum\nMasot\tFlora"):
+        with pytest.raises(lookup.TracklistError):
+            lookup.pick_tracks(lookup.read_table(bad))
+    assert lookup.norm("Especies Endémicas (Original Mix)") == "especies endemicas"
+    assert lookup.artist_parts("Masot") == ["masot"] and lookup.artist_parts("Idpa & Saša Delimar")[1:] == ["idpa", "sasa delimar"]
+
+
+def test_tracklist_lookup(client):
+    def run(text, fresh=False):
+        job = client.post("/api/lookup" + ("?fresh=true" if fresh else ""), content=text.encode()).json()
+        for _ in range(200):
+            time.sleep(0.02)
+            got = client.get(f"/api/lookup/{job['id']}").json()
+            if got["finished"]:
+                return got
+        raise AssertionError("lookup never finished")
+    listing = "\n".join(["#\tArtist\tTitle\tCrate\tTitle", "1\tNight Ferry\tintro\t245\tMix A",
+                         "2\tMasot\tEspecies Endémicas\t245\tMix A", "3\tIdpa & Saša Delimar\tState I\t245\tMix A",
+                         "4\tNobody Known\tZzz\t245\tMix A", "5\tGhost Person\tQqq Rrr\t245\tMix A",
+                         "6\tOther Guy\tEspecies Endémicas\t245\tMix A", "7\tNight Ferry\tUnreleased Thing\t245\tMix A"])
+    got = run(listing)
+    assert got["done"] == got["total"] == 7 and not got["warning"]
+    r = {row["n"]: row for row in got["rows"]}
+    # 1: already in the feed -> its album, no searching
+    assert (r[1]["status"], r[1]["url"], r[1]["year"], r[1]["release"]) == ("bandcamp", "https://nightferry.bandcamp.com/album/first", "2025", "First")
+    assert not any("intro" in q.lower() for q in searched)
+    # 2: found by search; the link is the album the track is on, with its year
+    assert (r[2]["status"], r[2]["url"], r[2]["year"], r[2]["release"]) == ("bandcamp", "https://masot.bandcamp.com/album/flora", "2023", "Flora")
+    # 3: two artists, track titled "Artist - Title" on a label page; no album page -> the track's own link
+    assert (r[3]["status"], r[3]["url"], r[3]["year"]) == ("bandcamp", "https://somelabel.bandcamp.com/track/state-i", "2021")
+    # 4: not on Bandcamp -> the SoundCloud profile whose name matches, not the most followed one
+    assert (r[4]["status"], r[4]["url"], r[4]["year"]) == ("soundcloud", "https://soundcloud.com/nobodyknown", "")
+    # 5: nowhere -> a SoundCloud search link, flagged as such
+    assert r[5]["status"] == "soundcloud_search" and r[5]["url"].endswith("people?q=Ghost%20Person")
+    # 6: same title by someone else is not accepted as a match
+    assert r[6]["status"] == "soundcloud_search"
+    # 7: not on Bandcamp, but the artist's SoundCloud page is one you track
+    assert (r[7]["status"], r[7]["url"]) == ("soundcloud", "https://soundcloud.com/nightferry")
+
+    lines = client.get(f"/api/lookup/{got['id']}.csv").content.decode("utf-8-sig").splitlines()
+    assert lines[0] == "#,artist,title,link,site,release,year,result,found as,note"
+    assert lines[2] == "2,Masot,Especies Endémicas,https://masot.bandcamp.com/album/flora,Bandcamp,Flora,2023,Bandcamp release,Masot — Especies Endémicas,"
+
+    count = len(searched)
+    again = run(listing)                                  # remembered: no new searches
+    assert len(searched) == count and [x["url"] for x in again["rows"]] == [x["url"] for x in got["rows"]]
+    run(listing, fresh=True)
+    assert len(searched) > count
+    assert client.post("/api/lookup", content=b"Artist\tAlbum\nMasot\tFlora").status_code == 400
+    assert client.get("/api/lookup/nope").status_code == 404
 
 
 def test_upgrade_from_first_version(client):

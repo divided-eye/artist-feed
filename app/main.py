@@ -7,15 +7,15 @@ import sqlite3
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import db, refresh
+from . import db, lookup, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "8"   # shown beside the title, so you can tell which version is running
+VERSION = "9"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -288,6 +288,39 @@ def tracks_csv(source: Optional[str] = None, artist_id: Optional[int] = None,
     # utf-8-sig so Excel reads accented names correctly
     return Response(out.getvalue().encode("utf-8-sig"), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="tracks.csv"'})
+
+
+# --- tracklist lookup ---
+
+def _job(job_id: str):
+    job = lookup.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "That lookup is no longer available; run it again.")
+    return job
+
+
+@app.post("/api/lookup", status_code=201)
+async def start_lookup(request: Request, fresh: bool = False):
+    """Body: the tracklist itself - an .xlsx or CSV file's bytes, or pasted text."""
+    data = await request.body()
+    if len(data) > 5_000_000:
+        raise HTTPException(413, "That file is too large (5 MB limit).")
+    try:
+        tracks = lookup.pick_tracks(lookup.read_table(data))
+    except lookup.TracklistError as e:
+        raise HTTPException(400, str(e))
+    return lookup.start(tracks, fresh)
+
+
+@app.get("/api/lookup/{job_id}.csv")
+def lookup_csv(job_id: str):
+    return Response(lookup.to_csv(_job(job_id)), media_type="text/csv", headers={
+        "Content-Disposition": 'attachment; filename="tracklist-links.csv"'})
+
+
+@app.get("/api/lookup/{job_id}")
+def lookup_status(job_id: str):
+    return _job(job_id)
 
 
 @app.post("/api/refresh")

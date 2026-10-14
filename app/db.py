@@ -61,6 +61,7 @@ CREATE INDEX IF NOT EXISTS tracks_post ON tracks(post_id, position);
 CREATE INDEX IF NOT EXISTS posts_url ON posts(url);
 CREATE INDEX IF NOT EXISTS posts_when ON posts(COALESCE(published_at, first_seen) DESC);
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS lookup_cache(key TEXT PRIMARY KEY, result TEXT NOT NULL, at TEXT NOT NULL);
 """
 
 

@@ -46,6 +46,27 @@ Pre-orders appear with their future release date. Tracks that are not out yet
 have no duration, and a pre-order with nothing streamable yet has no play
 button.
 
+## Tracklist lookup
+
+The **Tracklist** button takes a list of tracks and returns a link for each one:
+the Bandcamp release the track is on, or the artist's SoundCloud page when it
+isn't found on Bandcamp, plus the release year when Bandcamp gives one.
+
+- Upload an Excel (.xlsx) or CSV file, or paste rows copied from a spreadsheet.
+  With a header row, the **Artist** column and the first **Title** column are
+  used; other columns (crate, series, a second "Title" for the mix, times) are
+  ignored. Without a header it expects number, artist, title, or artist, title,
+  or one "Artist - Title" per line.
+- Each row is checked against your own feed first, then Bandcamp's search, then
+  SoundCloud. It takes a few seconds per track; results appear as they arrive.
+- The **Result** column says how far to trust each link: "Bandcamp release" is
+  a match on both title and artist, "Bandcamp · check match" is a partial
+  match worth a look, "SoundCloud artist page" is the fallback, and
+  "SoundCloud search" means no profile matched and the link opens a search.
+- **Export results** downloads the list with links, release, year and result.
+- Looked-up tracks are remembered, so repeating a list is instant. Tick
+  "Search again for saved results" to redo them. Up to 500 tracks at a time.
+
 ## Listening
 
 Press play on a card or a list row and the site's own player opens in a bar at
@@ -62,7 +83,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v8. Labels, track lists and durations for Bandcamp
+is v9. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.
