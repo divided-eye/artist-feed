@@ -174,6 +174,13 @@ views. SoundCloud tracks start on their own. Bandcamp's player does not allow
 that, so press play inside it once. In List view, playing a row from an album
 opens the album at that track.
 
+A list row whose play button has a dashed outline is a Bandcamp track with no
+stream yet, which is usual for the unreleased tracks of a pre-order. Bandcamp's
+player then shows the track the release does have available, not the one you
+picked.
+
+In List view the column headings stay in place while the list scrolls.
+
 A row or card with an arrow instead of a play button has not had its details
 loaded yet, or cannot be embedded; the arrow opens it on the site.
 
@@ -182,7 +189,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v25. Labels, track lists and durations for Bandcamp
+is v26. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

@@ -98,9 +98,12 @@
   .bar.filters select.on { border-color: var(--accent); }
   .bar.filters .lbl { color: var(--muted); font-size: 13px; }
 
-  .list-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  /* The list scrolls inside its own frame, sized to the window, so its headings stay in view. */
+  .list-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+    max-height: max(260px, calc(100vh - var(--top, 130px) - var(--dock, 0px) - 44px)); }
   table.list { table-layout: fixed; width: auto; min-width: 0; }
-  .list th { position: relative; top: auto; padding: 0; overflow: hidden; }
+  .list th { position: sticky; top: 0; z-index: 3; padding: 0; overflow: hidden; background: var(--panel-2);
+    box-shadow: 0 1px 0 var(--line); }
   .grip { position: absolute; top: 0; right: 0; bottom: 0; width: 9px; cursor: col-resize; touch-action: none; z-index: 2; }
   .grip::after { content: ""; position: absolute; top: 7px; bottom: 7px; right: 3px; width: 2px; border-radius: 1px; background: var(--line); }
   .grip:hover::after, .grip.dragging::after { background: var(--accent); }
@@ -122,6 +125,7 @@
   .rowplay { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
     display: grid; place-items: center; font-size: 11px; color: var(--text); padding: 0; }
   .rowplay:hover { background: var(--accent); color: #14160a; border-color: var(--accent); }
+  .rowplay.nostream { border-style: dashed; color: var(--muted); }
 
   #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--panel);
     border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.4); }
@@ -360,11 +364,12 @@ function play(it, node) {
   if (!p) return;
   $("dockFrame").replaceChildren(el("iframe", { src: p.src, height: p.height, title: "Player: " + it.title, allow: "autoplay; encrypted-media" }));
   $("dockTitle").textContent = it.title;
-  $("dockHint").textContent = p.hint;
+  $("dockHint").textContent = it.nostream ? "No preview for this track yet; the player shows what the release has available" : p.hint;
   $("dockLink").href = safeUrl(it.url) || "#";
   $("dockLink").textContent = "Open on " + src(it.source).label;
   $("dock").hidden = false;
   document.body.style.paddingBottom = $("dock").offsetHeight + "px";
+  document.documentElement.style.setProperty("--dock", $("dock").offsetHeight + "px");
   playing = it.key;
   document.querySelectorAll(".playing").forEach(n => n.classList.remove("playing"));
   if (node) node.classList.add("playing", "played");
@@ -384,6 +389,7 @@ async function setHidden(postId, hidden, nodes) {
 function closePlayer() {
   $("dockFrame").replaceChildren();
   $("dock").hidden = true; document.body.style.paddingBottom = "";
+  document.documentElement.style.setProperty("--dock", "0px");
   playing = null;
   document.querySelectorAll(".playing").forEach(n => n.classList.remove("playing"));
 }
@@ -535,11 +541,14 @@ function listRow(r) {
   const name = r.track || r.release || r.post_title;
   const it = { key: `t${r.post_id}-${r.track_id || 0}`, post_id: r.post_id, track_key: r.track_key, source: r.source, url: r.source === "soundcloud" ? r.post_url : r.url,
     embed: r.embed, track_ext_id: r.track_ext_id, title: `${name} — ${r.artist}` };
+  // A Bandcamp track with no length has no stream yet: on a pre-order only the released tracks play.
+  it.nostream = r.source === "bandcamp" && !!r.track && (r.duration === null || r.duration === undefined);
   const tr = el("tr", { "data-post": r.post_id, class: [playing === it.key ? "playing" : "", r.played ? "played" : "", r.hidden ? "is-hidden" : ""].join(" ").trim() });
   const cell = (text, cls) => el("td", { class: cls, title: text || null, text: text || "" });
   tr.append(
     el("td", { class: "go" }, player(it)
-      ? el("button", { class: "rowplay", "aria-label": `Play ${name}`, text: "▶", onclick: () => play(it, tr) })
+      ? el("button", { class: "rowplay" + (it.nostream ? " nostream" : ""), "aria-label": `Play ${name}`, text: "▶", onclick: () => play(it, tr),
+          title: it.nostream ? "No preview yet: Bandcamp isn't streaming this track (usually a pre-order). The player will show the track the release does have." : null })
       : el("a", { class: "rowplay", href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${name} on ${s.label}`, text: "↗" })),
     cell(r.artist, "t"), cell(r.label, "t dim"), cell(r.release, "t"), cell(r.track, "t"),
     el("td", { class: "n dim", text: clock(r.duration) }),
@@ -564,8 +573,16 @@ async function loadList(reset) {
   $("exportBtn").href = "/api/tracks.csv?" + filterQuery({ sort: sort.key, dir: sort.dir });
 }
 
+// The title bar's height changes as it wraps; the list frame is sized to what is left of the window.
+function measureBar() {
+  document.documentElement.style.setProperty("--top", document.querySelector("body > header").offsetHeight + "px");
+}
+window.addEventListener("resize", measureBar);
+if (window.ResizeObserver) new ResizeObserver(measureBar).observe(document.querySelector("body > header"));
+
 async function loadFeed(reset = true) {
   if (reset) offset = 0;
+  measureBar();
   const list = view === "list";
   await (list ? loadList(reset) : loadGrid(reset));
   $("grid").hidden = list || offset === 0;
