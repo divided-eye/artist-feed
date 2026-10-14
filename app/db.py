@@ -1,0 +1,334 @@
+"""SQLite storage. One small file on disk; no server needed."""
+import json
+import os
+import sqlite3
+import threading
+from datetime import datetime, timezone
+
+DB_PATH = os.environ.get("DB_PATH", "data/feed.db")
+
+_lock = threading.RLock()
+_conn = None
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS artists(
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS accounts(
+  id INTEGER PRIMARY KEY,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  url TEXT NOT NULL,
+  display_name TEXT,
+  avatar TEXT,
+  meta TEXT NOT NULL DEFAULT '{}',
+  last_checked TEXT,
+  last_error TEXT,
+  UNIQUE(source, handle)
+);
+CREATE TABLE IF NOT EXISTS posts(
+  id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  external_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  image TEXT,
+  kind TEXT,
+  author TEXT,
+  published_at TEXT,
+  first_seen TEXT NOT NULL,
+  label TEXT,
+  release TEXT,
+  embed TEXT,
+  detailed INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(account_id, external_id)
+);
+CREATE TABLE IF NOT EXISTS tracks(
+  id INTEGER PRIMARY KEY,
+  post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  artist TEXT,
+  duration REAL,
+  ext_id TEXT,
+  url TEXT
+);
+CREATE INDEX IF NOT EXISTS tracks_post ON tracks(post_id, position);
+CREATE INDEX IF NOT EXISTS posts_when ON posts(COALESCE(published_at, first_seen) DESC);
+CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
+"""
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def conn() -> sqlite3.Connection:
+    global _conn
+    with _lock:
+        if _conn is None:
+            folder = os.path.dirname(DB_PATH)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            _conn.row_factory = sqlite3.Row
+            _conn.execute("PRAGMA foreign_keys=ON")
+            _conn.execute("PRAGMA journal_mode=WAL")
+            _conn.executescript(SCHEMA)
+            migrate(_conn)
+        return _conn
+
+
+# Columns added after the first version. A database made by an older version
+# gets them here; its existing posts keep detailed=0, which makes the sources
+# re-read them (a few per refresh) to fill in labels, track lists and durations.
+ADDED_POST_COLUMNS = {
+    "label": "TEXT", "release": "TEXT", "embed": "TEXT",
+    "detailed": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
+def migrate(c):
+    have = {r[1] for r in c.execute("PRAGMA table_info(posts)")}
+    for name, kind in ADDED_POST_COLUMNS.items():
+        if name not in have:
+            c.execute(f"ALTER TABLE posts ADD COLUMN {name} {kind}")
+    c.commit()
+
+
+def reset():
+    """Close the connection (used by tests when DB_PATH changes)."""
+    global _conn
+    with _lock:
+        if _conn is not None:
+            _conn.close()
+        _conn = None
+
+
+def query(sql, args=()):
+    with _lock:
+        return [dict(r) for r in conn().execute(sql, args).fetchall()]
+
+
+def execute(sql, args=()):
+    with _lock:
+        c = conn()
+        cur = c.execute(sql, args)
+        c.commit()
+        return cur.lastrowid
+
+
+# --- key/value (small bits of source state, e.g. a cached API key) ---
+
+def kv_get(key, default=None):
+    rows = query("SELECT value FROM kv WHERE key=?", (key,))
+    return rows[0]["value"] if rows else default
+
+
+def kv_set(key, value):
+    execute("INSERT INTO kv(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+
+# --- artists and accounts ---
+
+def _account_row(r):
+    r["meta"] = json.loads(r.get("meta") or "{}")
+    return r
+
+
+def list_accounts(account_ids=None, artist_id=None):
+    sql, args = "SELECT * FROM accounts", []
+    if account_ids is not None:
+        sql += " WHERE id IN (%s)" % ",".join("?" * len(account_ids))
+        args = list(account_ids)
+    elif artist_id is not None:
+        sql += " WHERE artist_id=?"
+        args = [artist_id]
+    return [_account_row(r) for r in query(sql + " ORDER BY id", args)]
+
+
+def list_artists():
+    artists = query("SELECT * FROM artists ORDER BY name COLLATE NOCASE")
+    by_artist = {}
+    for acc in list_accounts():
+        acc.pop("meta")
+        by_artist.setdefault(acc["artist_id"], []).append(acc)
+    counts = {r["artist_id"]: r["n"] for r in query(
+        "SELECT a.artist_id, COUNT(*) n FROM posts p JOIN accounts a ON a.id=p.account_id "
+        "GROUP BY a.artist_id")}
+    for a in artists:
+        a["accounts"] = by_artist.get(a["id"], [])
+        a["post_count"] = counts.get(a["id"], 0)
+    return artists
+
+
+def add_artist(name):
+    return execute("INSERT INTO artists(name, created_at) VALUES(?,?)", (name, now()))
+
+
+def add_account(artist_id, source, handle, url):
+    return execute("INSERT INTO accounts(artist_id, source, handle, url) VALUES(?,?,?,?)",
+                   (artist_id, source, handle, url))
+
+
+def apply_table(keep_ids, remove_account_ids, renames, new_accounts, new_artists):
+    """Make the artist list match an edited table, as one all-or-nothing change.
+
+    keep_ids: artist ids that stay (every other artist is removed)
+    remove_account_ids: pages to stop tracking
+    renames: [(artist_id, name)]
+    new_accounts: [(artist_id, source, handle, url)]
+    new_artists: [(name, [(source, handle, url), ...])]
+    Returns the ids of the pages that were added.
+    """
+    added = []
+    with _lock:
+        c = conn()
+        try:
+            marks = ",".join("?" * len(keep_ids))
+            c.execute(f"DELETE FROM artists WHERE id NOT IN ({marks})", list(keep_ids))
+            for account_id in remove_account_ids:
+                c.execute("DELETE FROM accounts WHERE id=?", (account_id,))
+            for artist_id, name in renames:
+                c.execute("UPDATE artists SET name=? WHERE id=?", (name, artist_id))
+            insert = "INSERT INTO accounts(artist_id, source, handle, url) VALUES(?,?,?,?)"
+            for artist_id, source, handle, url in new_accounts:
+                added.append(c.execute(insert, (artist_id, source, handle, url)).lastrowid)
+            for name, pages in new_artists:
+                artist_id = c.execute("INSERT INTO artists(name, created_at) VALUES(?,?)",
+                                      (name, now())).lastrowid
+                for source, handle, url in pages:
+                    added.append(c.execute(insert, (artist_id, source, handle, url)).lastrowid)
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
+    return added
+
+
+def known_ids(account_id):
+    return {r["external_id"] for r in query(
+        "SELECT external_id FROM posts WHERE account_id=? AND detailed=1", (account_id,))}
+
+
+def save_result(account, result):
+    """Store what a source returned for one account."""
+    seen = now()
+    with _lock:
+        c = conn()
+        for p in result.posts:
+            c.execute(
+                "INSERT INTO posts(account_id, external_id, title, url, image, kind, author,"
+                " published_at, first_seen, label, release, embed, detailed)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1) "
+                "ON CONFLICT(account_id, external_id) DO UPDATE SET title=excluded.title,"
+                " image=COALESCE(excluded.image, image),"
+                " author=COALESCE(excluded.author, author),"
+                " published_at=COALESCE(excluded.published_at, published_at),"
+                " label=COALESCE(excluded.label, label),"
+                " release=COALESCE(excluded.release, release),"
+                " embed=COALESCE(excluded.embed, embed), detailed=1",
+                (account["id"], p.external_id, p.title, p.url, p.image, p.kind, p.author,
+                 p.published_at, seen, p.label, p.release, p.embed))
+            if p.tracks is not None:
+                post_id = c.execute("SELECT id FROM posts WHERE account_id=? AND external_id=?",
+                                    (account["id"], p.external_id)).fetchone()[0]
+                c.execute("DELETE FROM tracks WHERE post_id=?", (post_id,))
+                c.executemany(
+                    "INSERT INTO tracks(post_id, position, title, artist, duration, ext_id, url)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    [(post_id, i + 1, t.title, t.artist, t.duration, t.ext_id, t.url)
+                     for i, t in enumerate(p.tracks)])
+        c.execute(
+            "UPDATE accounts SET display_name=COALESCE(?, display_name),"
+            " avatar=COALESCE(?, avatar), meta=?, last_checked=?, last_error=? WHERE id=?",
+            (result.display_name, result.avatar, json.dumps(account["meta"]), seen,
+             result.warning, account["id"]))
+        # An artist added without a name takes the name the site reports.
+        if result.display_name:
+            c.execute("UPDATE artists SET name=? WHERE id=? AND name IN "
+                      "(SELECT handle FROM accounts WHERE artist_id=?)",
+                      (result.display_name, account["artist_id"], account["artist_id"]))
+        c.commit()
+
+
+def save_error(account_id, message):
+    execute("UPDATE accounts SET last_checked=?, last_error=? WHERE id=?",
+            (now(), message[:300], account_id))
+
+
+WHEN = "COALESCE(p.published_at, p.first_seen)"
+JOINS = ("FROM posts p JOIN accounts a ON a.id=p.account_id "
+         "JOIN artists ar ON ar.id=a.artist_id ")
+# One row per track; a post whose tracks are not known yet still gets one row.
+T_ARTIST = "COALESCE(NULLIF(t.artist,''), NULLIF(p.author,''), ar.name)"
+T_LABEL = "COALESCE(p.label,'')"
+T_RELEASE = "COALESCE(NULLIF(p.release,''), CASE WHEN p.kind='album' THEN p.title ELSE '' END)"
+T_TRACK = "COALESCE(t.title, CASE WHEN p.kind='album' THEN '' ELSE p.title END)"
+TRACK_SORTS = {"artist": T_ARTIST, "label": T_LABEL, "release": T_RELEASE, "track": T_TRACK}
+
+
+def _like(q):
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _filters(source, artist_id, q, fields):
+    where, args = [], []
+    if source:
+        where.append("a.source=?")
+        args.append(source)
+    if artist_id:
+        where.append("a.artist_id=?")
+        args.append(artist_id)
+    for word in (q or "").split():
+        where.append("(" + " OR ".join(f"{f} LIKE ? ESCAPE '\\'" for f in fields) + ")")
+        args += [_like(word)] * len(fields)
+    return ("WHERE " + " AND ".join(where) + " " if where else ""), args
+
+
+def feed(source=None, artist_id=None, limit=60, offset=0, q=None):
+    """One row per post (release or upload), newest first."""
+    where, args = _filters(source, artist_id, q, [
+        "p.title", "COALESCE(p.author,'')", "ar.name", "COALESCE(p.label,'')",
+        "COALESCE(p.release,'')",
+        "(SELECT COALESCE(GROUP_CONCAT(title, ' '), '') FROM tracks WHERE post_id=p.id)"])
+    sql = (
+        "SELECT p.id, p.title, p.url, p.image, p.kind, p.author, p.published_at, p.first_seen,"
+        " p.label, p.release, p.embed, a.source, a.avatar, a.display_name,"
+        " ar.id AS artist_id, ar.name AS artist,"
+        " (SELECT COUNT(*) FROM tracks WHERE post_id=p.id) AS track_count,"
+        " (SELECT SUM(duration) FROM tracks WHERE post_id=p.id) AS duration "
+        + JOINS + where
+        + f"ORDER BY {WHEN} DESC, p.id DESC LIMIT ? OFFSET ?")
+    return query(sql, args + [limit, offset])
+
+
+def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
+           limit=None, offset=0):
+    """One row per track, for the list view and its export."""
+    where, args = _filters(source, artist_id, q, [
+        T_ARTIST, T_LABEL, T_RELEASE, T_TRACK, "p.title", "ar.name"])
+    way = "ASC" if direction == "asc" else "DESC"
+    newest = f"{WHEN} DESC, p.id DESC, t.position ASC"
+    if sort in TRACK_SORTS:      # blanks last, then newest first within equal values
+        expr = TRACK_SORTS[sort]
+        order = f"({expr}='') ASC, {expr} COLLATE NOCASE {way}, {newest}"
+    elif sort == "duration":
+        order = f"(t.duration IS NULL) ASC, t.duration {way}, {newest}"
+    else:
+        order = f"{WHEN} {way}, p.id {way}, t.position ASC"
+    sql = (
+        f"SELECT p.id AS post_id, t.id AS track_id, {T_ARTIST} AS artist, {T_LABEL} AS label,"
+        f" {T_RELEASE} AS release, {T_TRACK} AS track, t.duration, t.position,"
+        f" t.ext_id AS track_ext_id, {WHEN} AS released, p.published_at,"
+        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind,"
+        " p.title AS post_title, a.source, ar.id AS artist_id, ar.name AS tracked_artist "
+        + JOINS + "LEFT JOIN tracks t ON t.post_id=p.id " + where + "ORDER BY " + order)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        args = args + [limit, offset]
+    return query(sql, args)

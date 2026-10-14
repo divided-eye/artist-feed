@@ -1,0 +1,12 @@
+name: artist-feed   # fixed name, so an update replaces the running app whatever the folder is called
+services:
+  artist-feed:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8000"          # use "127.0.0.1:8080:8000" to keep it to this machine only
+    volumes:
+      - ./data:/data         # the artist list and feed history live here
+    environment:
+      REFRESH_MINUTES: "60"  # how often to check for new posts
+      # SOUNDCLOUD_CLIENT_ID: ""   # optional; found automatically when unset
