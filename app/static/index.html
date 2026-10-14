@@ -188,6 +188,14 @@
   #lookupText:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .res td { padding: 7px 10px; border-right: 0; vertical-align: top; font-size: 14px; }
   .res td.n { color: var(--muted); text-align: right; width: 1%; }
+  /* rows whose link is a guess that a person should check; stays until you confirm or correct it */
+  .res tr.review td { background: rgba(255, 107, 107, .10); }
+  .res tr.review td:first-child { box-shadow: inset 3px 0 0 rgba(255, 107, 107, .85); }
+  .res tr.review:hover td { background: rgba(255, 107, 107, .14); }
+  .tag.review { color: #ff8f8f; border-color: #8a3a3a; background: rgba(255, 107, 107, .12); font-weight: 600; }
+  .res td .why { display: block; color: #ff9c9c; font-size: 12px; margin-top: 2px; }
+  .res td.link .rowbtns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .res td.link .rowbtns .btn { margin-top: 0; }
   /* rows a running lookup hasn't answered yet: a soft blue wash; the one being searched breathes */
   .res tr.waiting td { background: rgba(125, 200, 255, .07); }
   .res tr.waiting td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, .45); }
@@ -353,6 +361,7 @@
     <input type="file" id="lookupFile" accept=".xlsx,.csv,.tsv,.txt,text/csv" hidden>
     <button class="btn primary" id="lookupGo">Look up pasted rows</button>
     <label class="opt" title="Normally a track you've looked up before is answered from the saved result"><input type="checkbox" id="lookupFresh"> Search again for saved results</label>
+    <label class="opt" title="Keep saved answers for tracks that were found, and search again only for the ones saved as not found (those that got an artist page or nothing)"><input type="checkbox" id="lookupRetry"> Search again for not-found rows only</label>
     <div class="spacer"></div>
     <span class="status" id="lookupStatus"></span>
     <a class="btn" id="lookupExport" hidden download="tracklist-links.csv">Export results</a>
@@ -372,7 +381,8 @@
     <button class="btn small" id="fanDeep" hidden title="Open each purchased release and save its whole track list, so tracks you own are found instantly">Read full track lists</button>
     <span class="status" id="fanStatus"></span>
   </div>
-  <div class="hint">Upload an Excel (.xlsx) or CSV file, or paste rows copied from your spreadsheet below. Headers not needed, simply Artist TrackTitle format is fine. Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's SoundCloud profile or Bandcamp page instead (the remixer's, for an edit, remix, bootleg or flip). Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
+  <div class="hint"><b>Each row needs two things: the artist and the track title.</b> That is all a search uses; any other columns are ignored. Paste rows copied from your spreadsheet below (artist, then title), type one <i>Artist - Title</i> per line, or upload an Excel (.xlsx) or CSV file. A header row is optional. A row with no title can only return the artist's page.
+    Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's SoundCloud profile or Bandcamp page instead (the remixer's, for an edit, remix, bootleg or flip). Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
   <textarea id="lookupText" spellcheck="false" aria-label="Pasted tracklist" placeholder="Track #&#9;Artist&#9;Title&#9;…&#10;1&#9;Masot&#9;Especies Endémicas&#9;…"></textarea>
   <div class="table-wrap"><table class="res"><thead id="lookupHead"></thead><tbody id="lookupBody"></tbody></table></div>
 </aside>
@@ -1144,7 +1154,7 @@ function linkEditor(r) {
     try {
       const saved = await api("/api/lookup/link", { method: "PUT", body: { artist: r.artist, title: r.title, url: link, year: link ? year.value : "" } });
       const row = lookupJob.rows.find(x => x.n === r.n) || r;      // the newest copy of this row
-      Object.assign(row, { site: "", url: "", year: "", release: "", found: "", note: "", steps: [] }, saved);
+      Object.assign(row, { site: "", url: "", year: "", release: "", found: "", note: "", steps: [], review: "" }, saved);
       editingRow = null; renderLookup(lookupJob);
     } catch (x) { err.textContent = x.message; }
   };
@@ -1158,6 +1168,38 @@ function linkEditor(r) {
   return form;
 }
 
+// "Looks right" on a row marked for review: its link becomes a link you set, so it is kept as is
+// from now on (and, for a SoundCloud profile, remembered as that artist's).
+async function confirmLink(r) {
+  try {
+    const saved = await api("/api/lookup/link", { method: "PUT", body: { artist: r.artist, title: r.title, url: r.url, year: r.year || "" } });
+    const row = lookupJob.rows.find(x => x.n === r.n) || r;
+    Object.assign(row, { site: "", url: "", year: "", release: "", found: "", note: "", steps: [], review: "" }, saved);
+    renderLookup(lookupJob);
+  } catch (x) { $("lookupError").textContent = x.message; }
+}
+
+// "Search again" on one row of a finished lookup.
+async function retryRow(r) {
+  if (!lookupJob) return;
+  try {
+    const job = await api(`/api/lookup/${lookupJob.id}/retry`, { method: "POST", body: { n: r.n } });
+    editingRow = null; renderLookup(job); watchLookup(job.id);
+  } catch (x) { $("lookupError").textContent = x.message; }
+}
+
+function watchLookup(id) {
+  clearTimeout(lookupTimer);
+  const poll = async () => {
+    try {
+      const now = await api(`/api/lookup/${id}`);
+      renderLookup(now);
+      if (!now.finished) lookupTimer = setTimeout(poll, 1200); else loadFan();
+    } catch (x) { $("lookup").classList.remove("busy"); $("lookupError").textContent = x.message; }
+  };
+  lookupTimer = setTimeout(poll, 600);
+}
+
 function renderLookup(job) {
   lookupJob = job;
   renderLookupStatus(job);
@@ -1168,15 +1210,22 @@ function renderLookup(job) {
     const url = safeUrl(r.url);
     const waiting = !job.finished && r.status === "pending";
     // rows are redrawn on every poll: tying the animation to the clock keeps the pulse unbroken
-    return el("tr", { class: waiting ? (job.current === r.n ? "waiting now" : "waiting") : "", style: waiting ? `--phase:-${Date.now() % 2400}ms` : null },
+    return el("tr", { class: waiting ? (job.current === r.n ? "waiting now" : "waiting") : r.review ? "review" : "", style: waiting ? `--phase:-${Date.now() % 2400}ms` : null },
       el("td", { class: "n", text: String(r.n) }), el("td", { text: r.artist }), el("td", { text: r.title }),
       el("td", { class: "link" }, ...(editingRow === r.n ? [linkEditor(r)] : [
         url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
-        r.status === "pending" ? null : el("div", {}, el("button", { class: "btn small", text: url ? "Edit" : "Add link",
-          title: "Set the correct link for this track; it is saved for future lookups", onclick: () => { editingRow = r.n; renderLookup(job); } }))])),
+        r.status === "pending" ? null : el("div", { class: "rowbtns" },
+          r.review && url ? el("button", { class: "btn small", text: "Looks right", title: "Keep this link: it is saved as yours, and the review mark goes",
+            onclick: () => confirmLink(r) }) : null,
+          el("button", { class: "btn small", text: url ? "Edit" : "Add link",
+            title: "Set the correct link for this track; it is saved for future lookups", onclick: () => { editingRow = r.n; renderLookup(job); } }),
+          job.finished && r.status !== "manual" ? el("button", { class: "btn small ghost", text: "Search again",
+            title: "Search for this one track again now, ignoring what was saved for it", onclick: () => retryRow(r) }) : null)])),
       el("td", {}, r.found || "", r.release ? el("small", { text: "on " + r.release }) : null),
       el("td", { text: r.year || "" }),
-      el("td", {}, el("span", { class: "tag " + cls, text: waiting && job.current === r.n ? "Searching now…" : label }), r.note ? el("small", { text: r.note }) : null,
+      el("td", {}, r.review && !waiting ? el("span", { class: "tag review", text: "Needs review" }) : null,
+        r.review && !waiting ? el("span", { class: "why", text: r.review + "." }) : null,
+        el("span", { class: "tag " + cls, text: waiting && job.current === r.n ? "Searching now…" : label }), r.note ? el("small", { text: r.note }) : null,
         (r.steps || []).length ? el("details", {}, el("summary", { text: "What was tried" }), el("ol", {}, ...r.steps.map(t => el("li", { text: t })))) : null));
   }));
 }
@@ -1185,7 +1234,8 @@ function renderLookupStatus(job) {
   const found = job.rows.filter(r => r.status === "bandcamp" || r.status === "bandcamp_check").length;
   const onSc = job.rows.filter(r => r.status === "soundcloud_track").length;
   const hold = job.paused > 0 ? ` · Bandcamp asked for a pause; carrying on in ${waitText(job.paused)}` : "";
-  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` + (onSc ? `, ${onSc} on SoundCloud` : "") : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
+  const doubt = job.rows.filter(r => r.review).length;
+  $("lookupStatus").textContent = job.finished ? `Done: ${found} of ${job.total} on Bandcamp` + (onSc ? `, ${onSc} on SoundCloud` : "") + (doubt ? ` · ${doubt} to review` : "") : ((job.phase || `Looking up ${Math.min(job.done + 1, job.total)} of ${job.total}…`) + hold);
   $("lookupError").textContent = job.warning || "";
   $("lookupExport").hidden = !job.finished;
   $("lookup").classList.toggle("busy", !job.finished);
@@ -1196,7 +1246,7 @@ async function startLookup(body) {
   clearTimeout(lookupTimer);
   $("lookupError").textContent = ""; $("lookupStatus").textContent = "Reading the list…"; $("lookupExport").hidden = true;
   $("lookup").classList.add("busy");
-  const r = await fetch("/api/lookup" + ($("lookupFresh").checked ? "?fresh=true" : ""), { method: "POST", body });
+  const r = await fetch("/api/lookup" + ($("lookupFresh").checked ? "?fresh=true" : $("lookupRetry").checked ? "?retry=missing" : ""), { method: "POST", body });
   const job = await r.json().catch(() => ({}));
   if (!r.ok) { $("lookup").classList.remove("busy"); $("lookupStatus").textContent = ""; $("lookupError").textContent = typeof job.detail === "string" ? job.detail : "Couldn't read that list."; return; }
   renderLookup(job);

@@ -39,6 +39,7 @@ from .sources.bandcamp import parse_music_grid, parse_profile, parse_release, pa
 MAX_ROWS = int(os.environ.get("LOOKUP_MAX_ROWS", "500"))
 SCAN_RELEASES = int(os.environ.get("LOOKUP_SCAN_RELEASES", "40"))  # releases opened per artist page, per row
 OWNED_RELEASES = int(os.environ.get("LOOKUP_OWNED_RELEASES", "15"))  # purchases by the artist opened per row
+SEARCH_DAYS = float(os.environ.get("LOOKUP_SEARCH_DAYS", "7"))    # how long Bandcamp's search answers are reused
 COLLECTION_MAX_AGE_HOURS = float(os.environ.get("COLLECTION_MAX_AGE_HOURS", "24"))
 SEARCH_URL = "https://bandcamp.com/search"
 # Used only if the search page is unavailable. Not documented by Bandcamp.
@@ -556,21 +557,34 @@ def release_result(rel, verdict, found, source):
 # ---------- Bandcamp: search ----------
 
 async def bandcamp_search(net, text: str, kind: str) -> list:
-    """kind: "t" tracks, "a" albums, "b" artists and labels."""
+    """kind: "t" tracks, "a" albums, "b" artists and labels.
+
+    What Bandcamp answers is kept for SEARCH_DAYS, so searching for the same thing again - after
+    an update that judges matches better, say - costs no request. An explicit "search again"
+    (net.fresh) asks Bandcamp anew."""
+    key = f"{kind}|{plain(text)}"
+    if not getattr(net, "fresh", False):
+        saved = cache_get("search", key, SEARCH_DAYS)
+        if saved is not None:
+            return saved
     r = await net.get(SEARCH_URL, params={"q": text, "item_type": kind})
     if r.status_code == 200:
-        return parse_search(r.text)
+        found = parse_search(r.text)
+        cache_put("search", key, found)
+        return found
     # Search page refused: try the search box's JSON endpoint before giving up.
     try:
         j = await net.request("POST", SEARCH_API, json={"search_text": text, "search_filter": kind,
                                                         "full_page": False, "fan_id": None})
         if j.status_code == 200:
             names = {"t": "track", "a": "album", "b": "artist"}
-            return [{"type": names.get(x.get("type"), ""), "name": x.get("name") or "",
+            found = [{"type": names.get(x.get("type"), ""), "name": x.get("name") or "",
                      "artist": x.get("band_name") or "", "album": x.get("album_name") or "",
                      "url": x.get("item_url_path") or x.get("item_url_root") or "", "released": ""}
                     for x in (j.json().get("auto") or {}).get("results") or []
                     if x.get("type") == kind and (x.get("item_url_path") or x.get("item_url_root"))]
+            cache_put("search", key, found)
+            return found
     except Exception:
         pass
     raise Blocked(f"Bandcamp search answered {r.status_code}")
@@ -1717,7 +1731,7 @@ def _fill(row, result):
     row.update(result)
 
 
-async def _run(job, fresh):
+async def _run(job, fresh, retry_missing=False):
     """Three passes, quickest first, so everything already known shows up straight away:
        1. saved answers, your feed, your purchases and pages read earlier - no requests at all
        2. release years for those answers - one request each, only where the page isn't saved
@@ -1730,6 +1744,8 @@ async def _run(job, fresh):
         for row in rows:
             manual = _cached(_manual_key(row["artist"], row["title"]))   # your own link always wins
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
+            if saved and not manual and retry_missing and saved.get("status") in FALLBACK_STATUSES:
+                saved = None                               # asked to look again for whatever wasn't found
             if saved and not manual and saved.get("engine", 0) < ENGINE and (
                     saved.get("status") != "bandcamp" or vip_words(row["title"]) is not None
                     or re.search(r"\d", norm(row["title"])) or _WIP.search(_fold(row["title"]))):
@@ -1766,6 +1782,7 @@ async def _run(job, fresh):
 
     async with refresh.make_client() as client:
         net = Net(client)
+        net.fresh = bool(fresh or retry_missing)     # an explicit "search again" asks Bandcamp anew
         # 2. years for answers found in your purchases whose page hasn't been read yet, and the
         #    album for any answer that is a single-track page (a track bought on its own, say)
         need_year = [r for r in job["rows"] if r["site"] == "Bandcamp" and r["status"] in ("bandcamp", "check")
@@ -1808,7 +1825,7 @@ async def _run(job, fresh):
     job["finished"] = True
 
 
-def start(tracks, fresh=False):
+def start(tracks, fresh=False, retry_missing=False):
     if len(jobs) > 20:                       # keep only recent lookups in memory
         for old in list(jobs)[:-20]:
             jobs.pop(old, None)
@@ -1821,7 +1838,7 @@ def start(tracks, fresh=False):
     async def guarded():
         try:
             with pace.foreground():
-                await _run(job, fresh)
+                await _run(job, fresh, retry_missing)
         except Exception as e:
             job["warning"] = f"The lookup stopped early: {type(e).__name__}: {e}"
             job["finished"] = True
@@ -1837,13 +1854,63 @@ STATUS_TEXT = {"manual": "Link you set", "bandcamp": "Bandcamp release", "bandca
                "none": "Not found", "error": "Error", "pending": "Not looked up yet"}
 
 
+def review_reason(row) -> str:
+    """Why a row's link should be checked by a person; empty when there is no particular doubt."""
+    status, note = row.get("status"), (row.get("note") or "").lower()
+    if status == "soundcloud" and "name only" in note:
+        return "Profile picked by name alone; it may belong to a different artist with the same name"
+    if status == "bandcamp_check":
+        return "Partial match; check it is the right track"
+    return ""
+
+
+def view(job) -> dict:
+    """A lookup as the page and the export see it: each row says whether it needs review."""
+    return dict(job, rows=[dict(r, review=review_reason(r)) for r in job["rows"]])
+
+
+def retry_row(job, n: int):
+    """Search again for one row of a finished lookup, ignoring what was saved for it."""
+    row = next((r for r in job["rows"] if r.get("n") == n), None)
+    if row is None:
+        raise ValueError("That row isn't in this lookup.")
+    if not job["finished"]:
+        raise ValueError("Wait for the lookup to finish, then search this row again.")
+    _fill(row, {"status": "pending"})
+    job.update(finished=False, current=n, done=max(0, job["done"] - 1),
+               phase=f"Searching again for \u201c{row['title']}\u201d by {row['artist']}")
+
+    async def go():
+        try:
+            with pace.foreground():
+                state = {"bandcamp_ok": True, "search_ok": True, "warning": ""}
+                async with refresh.make_client() as client:
+                    net = Net(client)
+                    net.fresh = True
+                    result, keep = await find(net, Library(), row["artist"], row["title"], state)
+                if keep and result.get("note") != "In your feed":
+                    _remember(_cache_key(row["artist"], row["title"]), result)
+                if state["warning"]:
+                    job["warning"] = state["warning"]
+        except Exception as e:
+            result = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]],
+                      "note": f"Couldn't complete the search ({type(e).__name__}); try again"}
+        _fill(row, result)
+        job.update(done=job["done"] + 1, current=None, phase="", finished=True)
+    task = asyncio.create_task(go())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
 def to_csv(job) -> bytes:
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["#", "artist", "title", "year", "link", "site", "release", "result", "found as",
-                     "note", "steps"])
+    writer.writerow(["#", "artist", "title", "year", "link", "needs review", "site", "release", "result",
+                     "found as", "note", "steps"])
     for r in job["rows"]:
-        writer.writerow([r["n"], r["artist"], r["title"], r["year"], r["url"], r["site"], r["release"],
+        doubt = review_reason(r)
+        writer.writerow([r["n"], r["artist"], r["title"], r["year"], r["url"], ("REVIEW: " + doubt) if doubt else "",
+                         r["site"], r["release"],
                          STATUS_TEXT.get(r["status"], r["status"]), r["found"], r["note"],
                          " | ".join(r.get("steps") or [])])
     return out.getvalue().encode("utf-8-sig")

@@ -4,7 +4,7 @@ Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 38. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 39. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -151,7 +151,7 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 ### Giving it a list
 
 - Upload an Excel (.xlsx) or CSV file, or paste rows copied from a spreadsheet.
-- No header row is needed. Artist then title, separated by a tab, is enough.
+- Each row needs two things: the artist and the track title. That is all a search uses. No header row is needed; artist then title, separated by a tab, is enough.
 - With a header row, the Artist column and the first Title column are used. Other columns are ignored.
 - One "Artist - Title" per line also works. Up to 500 tracks at a time.
 
@@ -168,13 +168,13 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | Link you set | You entered this link yourself. |
 | Error | The search could not finish. Run the list again to retry. |
 
-The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…".
+The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
 
 ### Options in the panel
 
 - **Your Bandcamp username.** Lets the app read your public collection page. Your purchases are checked before anything is searched.
 - **If a track isn't found, link to the artist's…** Chooses between SoundCloud profile first or Bandcamp page first. Changing it re-points results on screen and saved results without searching again.
-- **Search again for saved results.** Normally a track looked up before is answered from the saved result. Tick this to run every step again, for example after a track has been released or bought.
+- **Search again for saved results.** Normally a track looked up before is answered from the saved result. Tick this to run every step again, for example after a track has been released or bought. Search again for not-found rows only keeps the saved answers for tracks that were found and searches again just for the rows saved as not found. Each row of a finished lookup also has its own Search again button.
 
 ### Correcting a result
 
@@ -190,7 +190,7 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 ### Exporting
 
-**Export results** downloads the list in its original order with year, link, site, release, result, and the steps tried.
+**Export results** downloads the list in its original order with year, link, a "needs review" column, site, release, result, and the steps tried.
 
 ## How it works
 
@@ -328,7 +328,7 @@ How saved results behave:
 
 - A saved result is reused instantly unless **Search again for saved results** is ticked.
 - Results that ended in an error or a rate limit are not saved, so they are retried next time.
-- When a new version improves the search, results that were **not** a Bandcamp release are searched again once. Found releases and links you set are kept.
+- When a new version improves the search, results that were **not** a Bandcamp release are searched again once. Found releases and links you set are kept. Bandcamp's search answers are themselves kept for 7 days (LOOKUP_SEARCH_DAYS in docker-compose.yml), so a repeat search like this asks Bandcamp almost nothing. Pressing Search again, or ticking either search-again box, asks Bandcamp anew.
 - When a track isn't found, both the artist's Bandcamp page and SoundCloud profile are saved, so changing the preference needs no new search.
 
 View, column widths, page width and Hide no-preview tracks are stored in the browser, not in `data`.
@@ -413,10 +413,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 38 from 11 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 39 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 39 | Link Finder: uncertain links are marked Needs review with a red tint that stays until confirmed (Looks right) or corrected, and the export has a "needs review" column. Bandcamp search answers are saved for 7 days, so repeat searches after an update are nearly free. Search again button on each row, and a tick box to search again for not-found rows only. Hint text states that a row needs artist and track title. |
 | 38 | Link Finder remembers which SoundCloud profile belongs to a name, from a track of theirs found there or a link you set, and uses it wherever a profile would otherwise be picked by name alone. Saved name-only answers are corrected without a new search. |
 | 37 | Link Finder: rows still waiting are tinted while a lookup runs, and the row being searched pulses. Brackets that only describe format or availability, such as "(Digital Download)", are ignored when matching titles; earlier misses are searched again once. |
 | 36 | Default list order swaps Release and Released: Artist, Track, Duration, Year, Release, Posted, Released, Label, Site. Link Finder export puts year before the link. |

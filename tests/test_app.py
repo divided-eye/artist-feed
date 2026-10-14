@@ -484,8 +484,8 @@ def test_tracklist_lookup(client):
     assert all(row["steps"] for row in got["rows"])       # every row says what was tried
 
     lines = client.get(f"/api/lookup/{got['id']}.csv").content.decode("utf-8-sig").splitlines()
-    assert lines[0] == "#,artist,title,year,link,site,release,result,found as,note,steps"
-    assert lines[2].startswith("2,Masot,Especies Endémicas,2023,https://masot.bandcamp.com/album/flora,Bandcamp,Flora,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
+    assert lines[0] == "#,artist,title,year,link,needs review,site,release,result,found as,note,steps"
+    assert lines[2].startswith("2,Masot,Especies Endémicas,2023,https://masot.bandcamp.com/album/flora,,Bandcamp,Flora,Bandcamp release,Masot — Especies Endémicas,Bandcamp search,")
 
     count = len(searched)
     again = run(listing)                                  # remembered: no new searches
@@ -1150,3 +1150,44 @@ def test_profile_learned_from_a_found_track_is_reused(client):
     # a link you set by hand settles it too, and outweighs the rest
     client.put("/api/lookup/link", json={"artist": "Nobody Known", "title": "Whatever", "url": "https://soundcloud.com/the-real-nobody/whatever"})
     assert lookup.known_profile(["nobody known"]) == "https://soundcloud.com/the-real-nobody"
+
+
+def test_saved_search_answers_review_flags_and_searching_one_row_again(client):
+    from app import lookup
+
+    def finish(j):
+        for _ in range(200):
+            time.sleep(0.05)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                return got
+        raise AssertionError("lookup never finished")
+
+    def run(text, query=""):
+        return finish(client.post("/api/lookup" + query, content=("Artist\tTitle\n" + text).encode()).json())
+
+    lookup.db.kv_set("soundcloud_profiles", "{}")
+    job = run("River\tUnheard Of Tune", "?fresh=true")
+    row = job["rows"][0]
+    # picked by name alone: flagged for review, on screen and in the export
+    assert "name alone" in row["review"] or "name alone" in lookup.review_reason(dict(row, **(row.get("options") or {}).get("soundcloud", {})))
+    asked = len(searched)
+    # the saved answer thrown away (as a new version does): searched again, but from Bandcamp's saved
+    # search answers - nothing new is asked of its search
+    lookup.db.execute("DELETE FROM lookup_cache WHERE key=?", (lookup._cache_key("River", "Unheard Of Tune"),))
+    run("River\tUnheard Of Tune")
+    assert len(searched) == asked
+    run("River\tUnheard Of Tune", "?retry=missing")              # asked for: Bandcamp is searched anew
+    assert len(searched) > asked
+    asked = len(searched)
+    again = client.post(f"/api/lookup/{job['id']}/retry", json={"n": 1})
+    assert again.status_code == 200 and again.json()["finished"] is False and again.json()["rows"][0]["status"] == "pending"
+    with pytest.raises(ValueError):                                # not while a lookup is still running
+        lookup.retry_row({"finished": False, "rows": [{"n": 1, "artist": "a", "title": "b"}], "done": 0}, 1)
+    assert client.post(f"/api/lookup/{job['id']}/retry", json={"n": 99}).status_code == 409
+    done = finish(job)
+    assert done["rows"][0]["status"] != "pending" and len(searched) > asked and done["done"] == done["total"]
+    # a partial Bandcamp match is flagged too; a link you set is not
+    assert lookup.review_reason({"status": "bandcamp_check"}) and not lookup.review_reason({"status": "manual"})
+    csv_text = client.get(f"/api/lookup/{job['id']}.csv").content.decode("utf-8-sig")
+    assert "needs review" in csv_text.splitlines()[0]

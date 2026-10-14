@@ -16,7 +16,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "38"   # shown beside the title, so you can tell which version is running
+VERSION = "39"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -431,8 +431,9 @@ async def set_link(body: LinkIn):
 
 
 @app.post("/api/lookup", status_code=201)
-async def start_lookup(request: Request, fresh: bool = False):
-    """Body: the tracklist itself - an .xlsx or CSV file's bytes, or pasted text."""
+async def start_lookup(request: Request, fresh: bool = False, retry: str = ""):
+    """Body: the tracklist itself - an .xlsx or CSV file's bytes, or pasted text.
+    fresh=true searches everything again; retry=missing only the rows saved as not found."""
     data = await request.body()
     if len(data) > 5_000_000:
         raise HTTPException(413, "That file is too large (5 MB limit).")
@@ -440,7 +441,7 @@ async def start_lookup(request: Request, fresh: bool = False):
         tracks = lookup.pick_tracks(lookup.read_table(data))
     except lookup.TracklistError as e:
         raise HTTPException(400, str(e))
-    return lookup.start(tracks, fresh)
+    return lookup.view(lookup.start(tracks, fresh, retry == "missing"))
 
 
 class LookupSettings(BaseModel):
@@ -469,7 +470,22 @@ def lookup_csv(job_id: str):
 
 @app.get("/api/lookup/{job_id}")
 def lookup_status(job_id: str):
-    return dict(_job(job_id), paused=pace.paused_seconds())
+    return dict(lookup.view(_job(job_id)), paused=pace.paused_seconds())
+
+
+class RetryIn(BaseModel):
+    n: int
+
+
+@app.post("/api/lookup/{job_id}/retry")
+async def retry_lookup_row(job_id: str, body: RetryIn):
+    """Search again for one row, ignoring its saved answer and Bandcamp's saved search answers."""
+    job = _job(job_id)
+    try:
+        lookup.retry_row(job, body.n)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return dict(lookup.view(job), paused=pace.paused_seconds())
 
 
 @app.post("/api/refresh")
