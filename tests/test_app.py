@@ -1112,3 +1112,14 @@ def test_unreadable_releases_do_not_hold_up_a_back_catalogue(client):
     assert {u.rsplit("/", 1)[1] for u in known} == {"r3", "r4", "r5"}, (known, warnings)   # 2 per round in the tests
     assert "2 release page(s) could not be read" in warnings[-1] and "still to load" not in warnings[-1]
     assert "still to load" in warnings[0]
+
+
+def test_brackets_that_only_describe_the_format_are_not_part_of_a_title():
+    """Bare Dubs sells "Voyage (Digital Download)" by Deapoh; a tracklist just says "Voyage"."""
+    from app import lookup
+    page = {"url": "https://baredubs.bandcamp.com/track/deapoh-voyage-digital-download", "title": "Voyage (Digital Download)",
+            "artist": "Deapoh", "tracks": [{"title": "Voyage (Digital Download)", "artist": ""}]}
+    assert lookup.match_in_release("Deapoh", "Voyage", page)[0] == "bandcamp"
+    assert lookup.norm("Voyage [FREE DL]") == lookup.norm("Voyage (Out Now)") == "voyage"
+    assert lookup.norm("Voyage (Part 2)") == "voyage part 2" and lookup.norm("Voyage (Night)") == "voyage night"
+    assert lookup.norm("(Intro)") == "intro"                      # a title that is all bracket stays

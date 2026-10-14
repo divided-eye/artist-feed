@@ -4,7 +4,7 @@ Oct 11, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 36. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 37. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -168,7 +168,7 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | Link you set | You entered this link yourself. |
 | Error | The search could not finish. Run the list again to retry. |
 
-The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found.
+The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…".
 
 ### Options in the panel
 
@@ -244,7 +244,7 @@ The search pass tries these in order and stops at the first confident match:
 - A match needs both the title and the artist. Short or common titles such as "Air" or "02" never match on title alone.
 - The artist counts as matching when named in the track's credit, an "Artist - Title" track name, the release title, or the page address. Labels often credit a release to themselves and name the artist only there.
 - Track names written as a numbered list in a release's description count as tracks of that release.
-- When the same track is on a release you own and on another, the one you own is returned. Numbers in a title must agree exactly, so "Hybrid Kit 6" does not match "Hybrid Kit 2". A WIP marker ("Title WIP", "Title (WIP)") is a status, not part of the title, and is ignored. A track page is swapped for the album it belongs to.
+- When the same track is on a release you own and on another, the one you own is returned. Numbers in a title must agree exactly, so "Hybrid Kit 6" does not match "Hybrid Kit 2". A WIP marker ("Title WIP", "Title (WIP)") is a status, not part of the title, and is ignored. So is a bracket that only says how a track is sold or presented, such as "(Digital Download)", "(Free DL)" or "(Out Now)". A track page is swapped for the album it belongs to.
 
 ## What to personalise
 
@@ -413,10 +413,11 @@ These are the questions that came up while the app was being built.
 
 ## Version log
 
-Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 36 from 11 October 2026.
+Versions 1 and 2 were delivered before the app showed a version number; the numbers are given here for reference. Versions 1 to 9 date from 9 October 2026, versions 10 to 33 from 10 October 2026, versions 34 to 37 from 11 October 2026.
 
 | Version | What changed |
 | --- | --- |
+| 37 | Link Finder: rows still waiting are tinted while a lookup runs, and the row being searched pulses. Brackets that only describe format or availability, such as "(Digital Download)", are ignored when matching titles; earlier misses are searched again once. |
 | 36 | Default list order swaps Release and Released: Artist, Track, Duration, Year, Release, Posted, Released, Label, Site. Link Finder export puts year before the link. |
 | 35 | Tracked Artists table: resizable columns, and the Artist column always fits the full name. Back catalogues load faster: catch-up visits every 10 minutes, and unreadable release pages no longer block the rest. |
 | 34 | List columns can be dragged to reorder and shown or hidden from a Columns menu; new default order Artist, Track, Duration, Year, Released, Posted, Release, Label, Site. Date filter (last N days or a date range, by posted or release date). Show-first-N limit on results and export. WIP markers ignored when matching titles. Guide included in the zip under docs. |

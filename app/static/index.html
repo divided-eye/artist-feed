@@ -188,6 +188,13 @@
   #lookupText:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .res td { padding: 7px 10px; border-right: 0; vertical-align: top; font-size: 14px; }
   .res td.n { color: var(--muted); text-align: right; width: 1%; }
+  /* rows a running lookup hasn't answered yet: a soft blue wash; the one being searched breathes */
+  .res tr.waiting td { background: rgba(125, 200, 255, .07); }
+  .res tr.waiting td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, .45); }
+  .res tr.waiting.now td { background: rgba(125, 200, 255, .16); animation: row-wait 2.4s ease-in-out infinite; animation-delay: var(--phase, 0ms); }
+  .res tr.waiting.now td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, 1); }
+  @keyframes row-wait { 0%, 100% { background: rgba(125, 200, 255, .10); } 50% { background: rgba(125, 200, 255, .22); } }
+  @media (prefers-reduced-motion: reduce) { .res tr.waiting.now td { animation: none; } }
   .res td.link a { color: var(--accent); word-break: break-all; }
   .res td.link a:hover { text-decoration: underline; }
   .res td small { display: block; color: var(--muted); font-size: 12px; }
@@ -1159,7 +1166,9 @@ function renderLookup(job) {
   $("lookupBody").replaceChildren(...job.rows.map(r => {
     const [cls, label] = LOOKUP_TAGS[r.status] || ["wait", r.status];
     const url = safeUrl(r.url);
-    return el("tr", {},
+    const waiting = !job.finished && r.status === "pending";
+    // rows are redrawn on every poll: tying the animation to the clock keeps the pulse unbroken
+    return el("tr", { class: waiting ? (job.current === r.n ? "waiting now" : "waiting") : "", style: waiting ? `--phase:-${Date.now() % 2400}ms` : null },
       el("td", { class: "n", text: String(r.n) }), el("td", { text: r.artist }), el("td", { text: r.title }),
       el("td", { class: "link" }, ...(editingRow === r.n ? [linkEditor(r)] : [
         url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
@@ -1167,7 +1176,7 @@ function renderLookup(job) {
           title: "Set the correct link for this track; it is saved for future lookups", onclick: () => { editingRow = r.n; renderLookup(job); } }))])),
       el("td", {}, r.found || "", r.release ? el("small", { text: "on " + r.release }) : null),
       el("td", { text: r.year || "" }),
-      el("td", {}, el("span", { class: "tag " + cls, text: label }), r.note ? el("small", { text: r.note }) : null,
+      el("td", {}, el("span", { class: "tag " + cls, text: waiting && job.current === r.n ? "Searching now…" : label }), r.note ? el("small", { text: r.note }) : null,
         (r.steps || []).length ? el("details", {}, el("summary", { text: "What was tried" }), el("ol", {}, ...r.steps.map(t => el("li", { text: t })))) : null));
   }));
 }

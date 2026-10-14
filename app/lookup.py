@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 11             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 12             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -156,6 +156,21 @@ _GENERIC = set("""original extended radio club instrumental vocal dub vip album 
     halftime breaks breakbeat techno house drill grime footwork juke trap amapiano riddim hardcore rave
     ambient acid electro bassline speed slow sped slowed reverb pitched festival tool dj edit refix flip
     bootleg remix rework mix version unofficial steppers stepper roller rollers sound system soundsystem""".split())
+# Words that say how a track is sold or presented. A bracket holding only these (and the words
+# above) is not part of the title: "Voyage (Digital Download)" is "Voyage".
+_FORMAT = set("""digital download downloads dl wav wave mp3 flac aiff 16bit 24bit bit hq hd master mastered premaster
+    preorder pre order out now forthcoming soon premiere preview clip clips snippet teaser promo limited edition
+    repress press pressing lp ep 7 10 12 inch only bandcamp soundcloud release released track audio stream
+    streaming name your price nyp buy purchase link in bio description""".split())
+_BRACKET = re.compile(r"[\(\[]([^\)\]]*)[\)\]]")
+
+
+def _drop_describing(text: str) -> str:
+    """Remove brackets that hold nothing but describing words; anything else is left alone."""
+    def keep(m):
+        words = re.sub(r"[^a-z0-9]+", " ", m.group(1)).split()
+        return " " if words and all(w in _GENERIC or w in _FORMAT for w in words) else m.group(0)
+    return _BRACKET.sub(keep, text)
 
 
 def _fold(text: str) -> str:
@@ -168,6 +183,7 @@ def norm(text: str) -> str:
     such as "(Original Mix)" and "(IOWLA Flip)" (who made a version is checked separately)."""
     text = _WIP.sub(" ", _fold(text))            # "work in progress" is a status, not part of the title
     text = _ANY_TAG.sub(" ", text)
+    text = _drop_describing(text) if re.sub(r"[^a-z0-9]+", "", _drop_describing(text)) else text
     text = re.sub(r"\b(feat|ft|featuring)\b.*$", " ", text)
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
@@ -1685,6 +1701,7 @@ async def _run(job, fresh):
                 pass
         # 3. everything not answered yet
         for n, row in enumerate(todo, 1):
+            job["current"] = row.get("n")           # the row being searched right now
             job["phase"] = (f"Searching Bandcamp for \u201c{row['title']}\u201d by {row['artist']} "
                             f"({n} of {len(todo)} not already saved)")
             try:
@@ -1699,6 +1716,7 @@ async def _run(job, fresh):
             if state["warning"]:
                 job["warning"] = state["warning"]
     job["phase"] = ""
+    job["current"] = None
     job["finished"] = True
 
 
