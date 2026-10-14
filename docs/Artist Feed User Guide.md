@@ -194,7 +194,7 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 ### Saved results
 
-The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, have no link to the track itself (only an artist page, a profile or a search), have the track found on Bandcamp or SoundCloud, have a link you set, are in your list, or have no spelling on file. Export downloads whatever the search and filter show.
+The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, have no link to the track itself (only an artist page, a profile or a search), have the track found on Bandcamp or SoundCloud, have a link you set, are in your list, or have no spelling on file. Click a column heading to sort the whole table by it, again to reverse the order, and a third time to return to newest first. Rows with nothing in that column go last. Export downloads whatever the search and filter show, in the order shown.
 
 Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column.
 
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 46 | Saved results: click a column heading to sort by it. The sort covers the whole table, not only the rows loaded, and the export follows it. |
 | 45 | Link Finder: a remix, edit, flip or bootleg typed without brackets is read as one when the title as typed finds no track, so it falls back to the remixer's SoundCloud profile and matches your list's bracketed spelling. For any remix with no link of its own, the remixer's SoundCloud profile is used even when Bandcamp is the preferred artist link. |
 | 44 | Saved results: the "Not found" filter no longer includes tracks found on SoundCloud and is renamed "Track not found (artist page only)". Remix answers saved before version 40 whose SoundCloud title repeats the artist are also moved to the remix's own entry. |
 | 43 | Saved results: fixed Edit and Looks right doing nothing on VIP and remix tracks saved before version 40; those answers are moved to their version's own entry at start-up, so they also pick up the title spelling from your list. Your spelling is now two columns, artist and title. |

@@ -111,6 +111,10 @@
   .list th .thb { all: unset; cursor: pointer; display: block; padding: 9px 14px 9px 10px; width: 100%; box-sizing: border-box; }
   .list th .thb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list th .thb:disabled { cursor: default; }
+  .sortbtn { all: unset; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; }
+  .sortbtn:hover, th[aria-sort] .sortbtn { color: var(--text); }
+  .sortbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .sortbtn .arrow { font-size: .7em; }
   .list th .thb:hover, .list th[aria-sort] .thb { color: var(--text); }
   .list th .thb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .list td { padding: 7px 10px; border-right: 0; vertical-align: middle; }
@@ -1323,7 +1327,23 @@ async function loadFan(fill) {
 // ---- Link Finder: everything saved so far ----
 const SAVED_PAGE = 200, SAVED_FILTERS = [["", "All"], ["review", "Needs review"], ["missing", "Track not found (artist page only)"], ["found", "Track found"],
   ["manual", "Links you set"], ["list", "In your list"], ["nospelling", "No spelling on file"], ["unsearched", "In your list, not looked up yet"]];
-let savedState = { q: "", filter: "", rows: [], total: 0 };
+let savedState = { q: "", filter: "", rows: [], total: 0, sort: "", dir: "asc" };
+const SAVED_COLUMNS = [["artist", "Artist (tidied)"], ["title", "Title (tidied)"], ["list_artist", "Artist (your spelling)"],
+  ["list_title", "Title (your spelling)"], ["link", "Link"], ["year", "Year"], ["result", "Result"], ["saved", "Saved"]];
+const savedParams = () => {
+  const x = new URLSearchParams();
+  if (savedState.q.trim()) x.set("q", savedState.q.trim());
+  if (savedState.filter) x.set("filter", savedState.filter);
+  if (savedState.sort) { x.set("sort", savedState.sort); x.set("dir", savedState.dir); }
+  return x;
+};
+// Click a heading to sort by it; again to reverse; a third time to go back to newest first.
+function sortSaved(key) {
+  if (savedState.sort !== key) Object.assign(savedState, { sort: key, dir: key === "saved" || key === "year" ? "desc" : "asc" });
+  else if (savedState.dir === (key === "saved" || key === "year" ? "desc" : "asc")) savedState.dir = savedState.dir === "asc" ? "desc" : "asc";
+  else Object.assign(savedState, { sort: "", dir: "asc" });
+  loadSaved(true).catch(x => { $("savedError").textContent = x.message; });
+}
 
 function lookupTab(which) {
   const saved = which === "saved";
@@ -1334,9 +1354,7 @@ function lookupTab(which) {
 
 async function loadSaved(reset) {
   if (reset) savedState.rows = [];
-  const q = new URLSearchParams({ limit: SAVED_PAGE, offset: savedState.rows.length });
-  if (savedState.q.trim()) q.set("q", savedState.q.trim());
-  if (savedState.filter) q.set("filter", savedState.filter);
+  const q = savedParams(); q.set("limit", SAVED_PAGE); q.set("offset", savedState.rows.length);
   const data = await api("/api/saved?" + q);
   savedState.rows.push(...data.rows); savedState.total = data.total;
   const keep = $("savedFilter").value;
@@ -1346,7 +1364,7 @@ async function loadSaved(reset) {
   $("knownInfo").textContent = data.known_tracks || data.known_artists
     ? `Your list: ${data.known_tracks.toLocaleString()} tracks, ${data.known_artists.toLocaleString()} artist spellings.` : "No list imported yet.";
   $("knownClear").hidden = !(data.known_tracks || data.known_artists);
-  const x = new URLSearchParams(); if (savedState.q.trim()) x.set("q", savedState.q.trim()); if (savedState.filter) x.set("filter", savedState.filter);
+  const x = savedParams();
   $("savedExport").href = "/api/saved.csv" + (String(x) ? "?" + x : "");
   $("savedMore").hidden = savedState.rows.length >= savedState.total;
   renderSaved();
@@ -1357,7 +1375,12 @@ const oldTitle = r => !r.version ? r.tidy_title : /^vip\b/.test(r.version) ? `${
 const savedNames = r => ({ artist: r.artist || r.list_artist || r.tidy_artist, title: r.title || r.list_title || oldTitle(r) });
 
 function renderSaved() {
-  $("savedHead").replaceChildren(el("tr", {}, ...["Artist (tidied)", "Title (tidied)", "Artist (your spelling)", "Title (your spelling)", "Link", "Year", "Result", "Saved"].map(t => el("th", { text: t }))));
+  $("savedHead").replaceChildren(el("tr", {}, ...SAVED_COLUMNS.map(([key, label]) => {
+    const on = savedState.sort === key;
+    return el("th", { "aria-sort": on ? (savedState.dir === "asc" ? "ascending" : "descending") : null },
+      el("button", { class: "sortbtn", type: "button", title: on ? "Sorted by this column; click to change" : "Sort by this column",
+        onclick: () => sortSaved(key) }, label, el("span", { class: "arrow", "aria-hidden": "true", text: on ? (savedState.dir === "asc" ? " \u25B2" : " \u25BC") : "" })));
+  })));
   $("savedBody").replaceChildren(...savedState.rows.map(r => {
     const [cls, label] = LOOKUP_TAGS[r.status] || ["wait", r.result];
     const url = safeUrl(r.url), names = savedNames(r);

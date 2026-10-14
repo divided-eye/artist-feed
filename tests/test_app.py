@@ -1375,3 +1375,24 @@ def test_remix_typed_without_brackets_falls_back_to_the_remixers_soundcloud(clie
     finally:
         db.kv_set("lookup_fallback", "soundcloud")
         client.delete("/api/known")
+
+
+def test_saved_results_can_be_sorted(client):
+    from app import db
+    put = lambda key, at, **r: db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)", (key, json.dumps(r), at))
+    put("v2|sortb|zebra", "2026-01-03T00:00:00+00:00", status="bandcamp", url="https://b.bandcamp.com/track/zebra", year="2021", artist="SortB", title="Zebra")
+    put("v2|sorta|mango", "2026-01-01T00:00:00+00:00", status="soundcloud", url="https://soundcloud.com/a", year="", artist="SortA", title="Mango")
+    put("v2|sortc|apple", "2026-01-02T00:00:00+00:00", status="bandcamp", url="https://a.bandcamp.com/track/apple", year="2024", artist="SortC", title="Apple")
+    def order(extra=""):
+        return [r["tidy_title"] for r in client.get("/api/saved?q=sort&limit=50" + extra).json()["rows"]]
+    assert order() == ["zebra", "apple", "mango"]                                  # newest first, as before
+    assert order("&sort=artist") == ["mango", "zebra", "apple"]
+    assert order("&sort=title&dir=desc") == ["zebra", "mango", "apple"]
+    assert order("&sort=year&dir=desc") == ["apple", "zebra", "mango"]             # no year: last either way
+    assert order("&sort=year") == ["zebra", "apple", "mango"]
+    assert order("&sort=link") == ["apple", "zebra", "mango"]
+    assert order("&sort=saved") == ["mango", "apple", "zebra"]
+    lines = client.get("/api/saved.csv?q=sort&sort=artist").content.decode("utf-8-sig").splitlines()
+    assert [l.split(",")[0] for l in lines[1:]] == ["sorta", "sortb", "sortc"]
+    for k in ("sortb|zebra", "sorta|mango", "sortc|apple"):
+        client.delete("/api/saved", params={"key": k})

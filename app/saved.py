@@ -78,7 +78,28 @@ def _keep(row, which: str) -> bool:
             "unsearched": not row["searched"]}.get(which, True)
 
 
-def listing(q="", which="", limit=200, offset=0) -> dict:
+SORTS = {"artist": lambda r: (r["tidy_artist"], r["tidy_title"], r["version"]),
+         "title": lambda r: (r["tidy_title"], r["version"], r["tidy_artist"]),
+         "list_artist": lambda r: lookup._fold(r["list_artist"]),
+         "list_title": lambda r: lookup._fold(r["list_title"]),
+         "link": lambda r: r["url"].split("://")[-1].removeprefix("www.").casefold(),
+         "year": lambda r: r["year"],
+         "result": lambda r: (not r["review"], r["result"].casefold()),      # rows to review lead
+         "saved": lambda r: r["at"] if r["searched"] else ""}
+
+
+def _sorted(rows, sort, direction):
+    """Rows in the order asked for. Rows with nothing in that column go last either way, and rows
+    that tie keep the usual order (newest first)."""
+    key = SORTS.get(sort)
+    if not key:
+        return rows
+    blank = lambda r: key(r) in ("", (True, ""), (False, ""))
+    filled = sorted((r for r in rows if not blank(r)), key=key, reverse=direction == "desc")
+    return filled + [r for r in rows if blank(r)]
+
+
+def listing(q="", which="", limit=200, offset=0, sort="", direction="asc") -> dict:
     rows = all_rows()
     counts = {name: sum(1 for r in rows if _keep(r, name)) for name in FILTERS}
     words = [w for w in lookup._fold(q or "").split() if w]
@@ -87,17 +108,17 @@ def listing(q="", which="", limit=200, offset=0) -> dict:
             return lookup._fold(" ".join(str(r[k]) for k in ("tidy_artist", "tidy_title", "version", "artist", "title", "list_artist",
                                                              "list_title", "url", "note", "list_note", "found", "release")))
         rows = [r for r in rows if all(w in text(r) for w in words)]
-    rows = [r for r in rows if _keep(r, which)]
+    rows = _sorted([r for r in rows if _keep(r, which)], sort, direction)
     return {"total": len(rows), "counts": counts, "rows": rows[offset:offset + limit] if limit else rows, **lookup.known_counts()}
 
 
-def to_csv(q="", which="") -> bytes:
+def to_csv(q="", which="", sort="", direction="asc") -> bytes:
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(["artist (tidied)", "title (tidied)", "version", "artist (as typed)", "title (as typed)",
                      "artist (your spelling)", "title (your spelling)", "year", "link", "needs review", "link note",
                      "your list's link", "site", "release", "result", "found as", "note", "saved"])
-    for r in listing(q, which, limit=0)["rows"]:
+    for r in listing(q, which, limit=0, sort=sort, direction=direction)["rows"]:
         writer.writerow([r["tidy_artist"], r["tidy_title"], r["version"], r["artist"], r["title"], r["list_artist"], r["list_title"],
                          r["year"], r["url"], ("REVIEW: " + r["review"]) if r["review"] else "", r["list_note"], r["list_link"],
                          r["site"], r["release"], r["result"], r["found"], r["note"], r["at"]])

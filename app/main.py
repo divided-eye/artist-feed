@@ -16,7 +16,7 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "45"   # shown beside the title, so you can tell which version is running
+VERSION = "46"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -449,13 +449,14 @@ async def start_lookup(request: Request, fresh: bool = False, retry: str = ""):
 # --- everything Link Finder has saved, and your own list of spellings and links ---
 
 @app.get("/api/saved")
-def saved_results(q: str = "", filter: str = "", limit: int = 200, offset: int = 0):
-    return saved.listing(q, filter if filter in saved.FILTERS else "", max(1, min(limit, 1000)), max(0, offset))
+def saved_results(q: str = "", filter: str = "", limit: int = 200, offset: int = 0, sort: str = "", dir: str = "asc"):
+    return saved.listing(q, filter if filter in saved.FILTERS else "", max(1, min(limit, 1000)), max(0, offset),
+                         sort, "desc" if dir == "desc" else "asc")
 
 
 @app.get("/api/saved.csv")
-def saved_csv(q: str = "", filter: str = ""):
-    return Response(saved.to_csv(q, filter if filter in saved.FILTERS else ""), media_type="text/csv", headers={
+def saved_csv(q: str = "", filter: str = "", sort: str = "", dir: str = "asc"):
+    return Response(saved.to_csv(q, filter if filter in saved.FILTERS else "", sort, "desc" if dir == "desc" else "asc"), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="link-finder-saved.csv"'})
 
 
