@@ -294,11 +294,57 @@ def base_title(title: str) -> str:
     return _REMIX_TAG.sub(" ", title or "").strip()
 
 
+def split_names(text: str) -> list:
+    """The names in a Tracked Artists name cell: the artist's name, then any others they go by,
+    separated by commas. A name that has a comma of its own goes in double quotes."""
+    try:
+        names = next(csv.reader([text or ""], skipinitialspace=True), [])
+    except csv.Error:
+        names = (text or "").split(",")
+    out = {}
+    for n in names:
+        n = " ".join(n.split())
+        if n and (norm(n) or n) not in out:
+            out[norm(n) or n] = n
+    return list(out.values())
+
+
+def join_names(names) -> str:
+    return ", ".join(f'"{n}"' if "," in n else n for n in names if n)
+
+
+_alias_cache = {}
+
+
+def forget_aliases():
+    """Call when the tracked artists change."""
+    _alias_cache.clear()
+    for cached in (remixer_names,):
+        cached.cache_clear()
+
+
+def also_known_as() -> dict:
+    """{tidied name: every tidied name of that tracked artist}, for artists given more than one."""
+    if "map" not in _alias_cache:
+        groups = {}
+        for r in db.query("SELECT name, aliases FROM artists WHERE aliases != ''"):
+            names = list(dict.fromkeys(n for n in (norm(x) for x in [r["name"]] + split_names(r["aliases"])) if n))
+            for n in names:
+                groups[n] = list(dict.fromkeys(groups.get(n, []) + names))
+        _alias_cache["map"] = groups
+    return _alias_cache["map"]
+
+
 def artist_parts(text: str) -> list:
-    """Normalised names in an artist credit: the whole thing, then each artist in it."""
+    """Normalised names in an artist credit: the whole thing, then each artist in it, then any
+    other names a tracked artist among them goes by (so either name matches the other)."""
     pieces = re.split(r"\s*(?:,|&|\+|/|\bx\b|\bvs\.?\b|\band\b|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bwith\b)\s*",
                       text or "", flags=re.I)
-    return list(dict.fromkeys(p for p in (norm(x) for x in [text] + pieces) if p))
+    parts = list(dict.fromkeys(p for p in (norm(x) for x in [text] + pieces) if p))
+    aka = also_known_as()
+    if aka:
+        parts = list(dict.fromkeys(parts + [n for p in parts for n in aka.get(p, [])]))
+    return parts
 
 
 def ratio(a: str, b: str) -> float:
@@ -1428,7 +1474,7 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
     whose = "Remixer's profile" if credits else ""
     for acc in db.query("SELECT a.url, a.display_name, ar.name FROM accounts a JOIN artists ar "
                         "ON ar.id=a.artist_id WHERE a.source='soundcloud'"):
-        if {norm(acc["name"]), norm(acc["display_name"] or "")} & set(every):
+        if set(artist_parts(acc["name"]) + [norm(acc["display_name"] or "")]) & set(every):
             return {"status": "soundcloud", "site": "SoundCloud", "url": acc["url"],
                     "found": acc["display_name"] or acc["name"], "note": "A page you track"}
     try:
@@ -1657,7 +1703,7 @@ def bare_remix_readings(title: str) -> list:
     if not m or remix_credits(title) or _BRACKET.search(title):
         return []
     words, kind = m.group(1).split(), m.group(2)
-    known = set(_known()[1]) | set(_profiles()) | {norm(r["name"]) for r in db.query("SELECT name FROM artists")}
+    known = set(_known()[1]) | set(_profiles()) | {norm(n) for r in db.query("SELECT name, aliases FROM artists") for n in [r["name"]] + split_names(r["aliases"])}
     out = []
     for n in (4, 3, 2, 1):
         name = " ".join(words[-n:])
@@ -1790,12 +1836,26 @@ async def _find_as_typed(net, lib, artist, title, state):
             steps.append(f'no page found for "{credits[0]}"; falling back to the artist')
     if not (options["track"] or options["bandcamp"] or options["soundcloud"]):
         artist_only = [p for p in pages if p not in maker_pages]
-        if artist_only:
+        mine = tracked_page("bandcamp", artist_parts(artist))
+        if mine:                                        # a page you track for this artist, under any of their names
+            options["bandcamp"] = dict(page_option(mine, "Artist's"), note="A page you track; the track isn't on any release there now")
+            steps.append(f"Bandcamp: {mine[0]} is a page you track for this artist")
+        elif artist_only:
             options["bandcamp"] = page_option(artist_only[0], "Artist's")
         sc = await from_soundcloud(net, artist, steps, title)
         if sc:
             options[{"soundcloud_track": "track", "soundcloud": "soundcloud"}.get(sc["status"], "search")] = sc
     return done(dict(pick_fallback(options), options=options))
+
+
+def tracked_page(source: str, names):
+    """(url, name) of a page you track on this site for an artist with one of these tidied names."""
+    names = set(names)
+    for acc in db.query("SELECT a.url, a.display_name, ar.name FROM accounts a JOIN artists ar "
+                        "ON ar.id=a.artist_id WHERE a.source=? ORDER BY a.id", (source,)):
+        if set(artist_parts(acc["name"])) & names:
+            return acc["url"], acc["display_name"] or acc["name"]
+    return None
 
 
 FALLBACK_STATUSES = ("soundcloud_track", "bandcamp_artist", "soundcloud", "soundcloud_search", "none")

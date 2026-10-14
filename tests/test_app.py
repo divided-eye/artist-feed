@@ -1413,3 +1413,37 @@ def test_symbols_written_into_a_name_are_kept():
     assert lookup.rekey_known() == 2 and lookup.rekey_known() == 0
     assert lookup.known_for("∑1", "wake up lisa")["title"] == "Wake Up Lisa" and lookup.known_for("1", "wake up lisa")["title"] == ""
     db.execute("DELETE FROM known_tracks"); db.execute("DELETE FROM known_artists"); lookup._known_cache.clear()
+
+
+def test_tracked_artist_with_other_names(client):
+    from app import lookup
+    assert lookup.split_names('Zed Alias One, "Zed, With Comma", ZAO, zao ,') == ["Zed Alias One", "Zed, With Comma", "ZAO"]
+    assert lookup.join_names(["A", "B, C"]) == 'A, "B, C"'
+    before = client.get("/api/table").json()
+    keep = [{"id": r["id"], "name": r["name"], "cells": r["cells"]} for r in before]
+    made = client.put("/api/table", json={"rows": keep + [
+        {"name": 'Zed Alias One, "Zed, With Comma", ZAO', "cells": {"soundcloud": "zed-alias-one"}}]})
+    assert made.status_code == 200, made.text
+    try:
+        row = next(r for r in made.json()["rows"] if r["name"].startswith("Zed Alias One"))
+        assert row["name"] == 'Zed Alias One, "Zed, With Comma", ZAO'
+        listed = next(a for a in client.get("/api/artists").json() if a["name"] == "Zed Alias One")     # the feed shows the first name
+        assert listed["aliases"] == '"Zed, With Comma", ZAO'
+        assert "zed alias one" in lookup.artist_parts("ZAO") and "zao" in lookup.artist_parts("Zed Alias One & Somebody")
+        assert lookup.artist_parts("Unrelated Person") == ["unrelated person"]
+        assert lookup.tracked_page("soundcloud", lookup.artist_parts("zed with comma"))[0] == "https://soundcloud.com/zed-alias-one"
+        assert lookup.score("ZAO", "Some Tune", {"name": "Some Tune", "artists": ["Zed Alias One"]})[1] == 1.0
+        j = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nZAO\tUnfindable Qqq Www".encode()).json()
+        for _ in range(200):
+            time.sleep(0.05)
+            now = client.get(f"/api/lookup/{j['id']}").json()
+            if now["finished"]:
+                break
+        found = now["rows"][0]
+        assert (found["url"], found["note"]) == ("https://soundcloud.com/zed-alias-one", "A page you track"), found
+        # taking a name away again stops it matching
+        again = client.put("/api/table", json={"rows": keep + [{"id": row["id"], "name": "Zed Alias One", "cells": row["cells"]}]})
+        assert again.status_code == 200 and lookup.artist_parts("ZAO") == ["zao"]
+    finally:
+        client.put("/api/table", json={"rows": keep})
+        client.delete("/api/saved", params={"key": "zao|unfindable qqq www"})

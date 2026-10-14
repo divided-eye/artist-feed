@@ -112,7 +112,7 @@ The **Tracked Artists** button opens a table with one row per artist or label an
 
 - A cell takes a short name (`artistname`) or a full page address. Leave it empty if the artist is not on that site.
 - For several pages on one site, separate them with commas in the same cell.
-- Leave the artist name empty and it is filled in from the page.
+- Leave the artist name empty and it is filled in from the page. If an artist goes by other names, add them after the first, separated by commas: "Night Ferry, NF, Nightferry". The first name is the one shown in the feed. Link Finder treats all of them as the same artist, so a track listed under any of the names matches their releases and falls back to their pages. Put a name that contains a comma in double quotes. Type other names in the table itself; in the paste box, commas separate the name from the links.
 - Copy rows from Excel or Google Sheets and paste them into any cell. They fill the table from that cell onward, in the order name, Bandcamp, SoundCloud.
 - Nothing changes until you press **Save changes**. If any row has a problem, nothing is saved and that row shows the reason.
 - Deleting a row and saving stops tracking that artist and removes their posts. It asks you to confirm.
@@ -129,7 +129,7 @@ The box under the table takes a pasted list, one artist or label per line. A lin
 
 ### Find missing links
 
-**Find missing links** goes through every row that has an empty cell and looks for what is missing: the Bandcamp page, the SoundCloud profile, or the name when only a link was given. It works one row at a time at Bandcamp's pace, and the button reads Stop while it runs.
+**Find missing links** goes through every row that has an empty cell and looks for what is missing: the Bandcamp page, the SoundCloud profile, or the name when only a link was given. It works one row at a time at Bandcamp's pace, and the button reads Stop while it runs. As in a Link Finder lookup, the panel glows while it works, rows still to be searched have a blue tint, and the row being searched pulses.
 
 - Filled cells are highlighted in light blue italics. They are guesses matched on the name, so check them, especially for common names.
 - When a row already has one site's link, a page with the same address on the other site is preferred.
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 48 | Tracked Artists: an artist can have other names, typed after the first and separated by commas; Link Finder matches any of them and falls back to that artist's tracked Bandcamp page or SoundCloud profile. Find missing links shows the same glow and row highlighting as a Link Finder lookup. |
 | 47 | Names: a symbol written into a word is kept when a name is tidied ("∑1" was becoming "1", and "Myca$h" "myca h"). Punctuation and symbols standing alone are still dropped. An imported list is re-filed under the new tidied names at start-up, so it does not need importing again. |
 | 46 | Saved results: click a column heading to sort by it. The sort covers the whole table, not only the rows loaded, and the export follows it. |
 | 45 | Link Finder: a remix, edit, flip or bootleg typed without brackets is read as one when the title as typed finds no track, so it falls back to the remixer's SoundCloud profile and matches your list's bracketed spelling. For any remix with no link of its own, the remixer's SoundCloud profile is used even when Bandcamp is the preferred artist link. |

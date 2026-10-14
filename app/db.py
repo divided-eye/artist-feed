@@ -14,7 +14,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS artists(
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  aliases TEXT NOT NULL DEFAULT ''     -- other names the same artist goes by, as typed after the first
 );
 CREATE TABLE IF NOT EXISTS accounts(
   id INTEGER PRIMARY KEY,
@@ -123,6 +124,9 @@ def migrate(c):
     for name, kind in ADDED_POST_COLUMNS.items():
         if name not in have:
             c.execute(f"ALTER TABLE posts ADD COLUMN {name} {kind}")
+    cols = {r[1] for r in c.execute("PRAGMA table_info(artists)")}
+    if cols and "aliases" not in cols:
+        c.execute("ALTER TABLE artists ADD COLUMN aliases TEXT NOT NULL DEFAULT ''")
     c.commit()
 
 
@@ -207,9 +211,9 @@ def apply_table(keep_ids, remove_account_ids, renames, new_accounts, new_artists
 
     keep_ids: artist ids that stay (every other artist is removed)
     remove_account_ids: pages to stop tracking
-    renames: [(artist_id, name)]
+    renames: [(artist_id, name, aliases)]
     new_accounts: [(artist_id, source, handle, url)]
-    new_artists: [(name, [(source, handle, url), ...])]
+    new_artists: [(name, aliases, [(source, handle, url), ...])]
     Returns the ids of the pages that were added.
     """
     added = []
@@ -220,14 +224,14 @@ def apply_table(keep_ids, remove_account_ids, renames, new_accounts, new_artists
             c.execute(f"DELETE FROM artists WHERE id NOT IN ({marks})", list(keep_ids))
             for account_id in remove_account_ids:
                 c.execute("DELETE FROM accounts WHERE id=?", (account_id,))
-            for artist_id, name in renames:
-                c.execute("UPDATE artists SET name=? WHERE id=?", (name, artist_id))
+            for artist_id, name, aliases in renames:
+                c.execute("UPDATE artists SET name=?, aliases=? WHERE id=?", (name, aliases, artist_id))
             insert = "INSERT INTO accounts(artist_id, source, handle, url) VALUES(?,?,?,?)"
             for artist_id, source, handle, url in new_accounts:
                 added.append(c.execute(insert, (artist_id, source, handle, url)).lastrowid)
-            for name, pages in new_artists:
-                artist_id = c.execute("INSERT INTO artists(name, created_at) VALUES(?,?)",
-                                      (name, now())).lastrowid
+            for name, aliases, pages in new_artists:
+                artist_id = c.execute("INSERT INTO artists(name, aliases, created_at) VALUES(?,?,?)",
+                                      (name, aliases, now())).lastrowid
                 for source, handle, url in pages:
                     added.append(c.execute(insert, (artist_id, source, handle, url)).lastrowid)
             c.commit()

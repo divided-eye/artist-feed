@@ -150,7 +150,12 @@
   /* steady when idle or finished; pulses only while a lookup is running */
   #lookup { border-left-color: rgba(125, 200, 255, .45); box-shadow: 0 0 28px 4px rgba(125, 200, 255, .35), -1px 0 0 rgba(125, 200, 255, .6); }
   #lookup.busy { animation: lookup-glow 5s ease-in-out infinite; }
-  @media (prefers-reduced-motion: reduce) { #lookup.busy { animation: none; } }
+  /* Tracked Artists glows the same way, but only while it is looking for missing links */
+  #drawer.busy { border-left-color: rgba(125, 200, 255, .45); animation: lookup-glow 5s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    #lookup.busy { animation: none; }
+    #drawer.busy { animation: none; box-shadow: 0 0 28px 4px rgba(125, 200, 255, .35), -1px 0 0 rgba(125, 200, 255, .6); }
+  }
   aside { position: fixed; top: 0; right: 0; bottom: 0; width: min(1000px, 100%); z-index: 10;
     background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
   aside header { position: static; background: none; display: flex; align-items: center; padding: 14px 16px; }
@@ -213,12 +218,12 @@
   .res td.link .rowbtns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .res td.link .rowbtns .btn { margin-top: 0; }
   /* rows a running lookup hasn't answered yet: a soft blue wash; the one being searched breathes */
-  .res tr.waiting td { background: rgba(125, 200, 255, .07); }
-  .res tr.waiting td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, .45); }
-  .res tr.waiting.now td { background: rgba(125, 200, 255, .16); animation: row-wait 2.4s ease-in-out infinite; animation-delay: var(--phase, 0ms); }
-  .res tr.waiting.now td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, 1); }
+  .res tr.waiting td, #artistTable tr.waiting td { background: rgba(125, 200, 255, .07); }
+  .res tr.waiting td:first-child, #artistTable tr.waiting td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, .45); }
+  .res tr.waiting.now td, #artistTable tr.waiting.now td { background: rgba(125, 200, 255, .16); animation: row-wait 2.4s ease-in-out infinite; animation-delay: var(--phase, 0ms); }
+  .res tr.waiting.now td:first-child, #artistTable tr.waiting.now td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, 1); }
   @keyframes row-wait { 0%, 100% { background: rgba(125, 200, 255, .10); } 50% { background: rgba(125, 200, 255, .22); } }
-  @media (prefers-reduced-motion: reduce) { .res tr.waiting.now td { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .res tr.waiting.now td, #artistTable tr.waiting.now td { animation: none; } }
   .res td.link a { color: var(--accent); word-break: break-all; }
   .res td.link a:hover { text-decoration: underline; }
   .res td small { display: block; color: var(--muted); font-size: 12px; }
@@ -359,7 +364,7 @@
     <button class="btn" id="revertBtn" hidden>Discard</button>
     <button class="btn primary" id="saveBtn">Save changes</button>
   </div>
-  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. <b>Find missing links</b> fills empty cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
+  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). <b>Find missing links</b> fills empty cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
   <div class="table-wrap" id="artistWrap"><table id="artistTable"><colgroup id="artistCols"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
   <div class="bulk">
     <label for="bulkText">Paste a list to add: one artist or label per line. A name, a Bandcamp or SoundCloud link, or name, Bandcamp, SoundCloud separated by tabs or commas.</label>
@@ -1014,19 +1019,36 @@ function renderTable() {
     el("th", {}, "Status", tgrip("state", "Status")), el("th", {})));
   $("tbody").replaceChildren(...table.map(rowEl));
   applyTableCols();
+  paintFill();
 }
 
 // Fill in whatever each row is missing (the other site's page, or the name), one row at a time.
 let filling = false;
+// While missing links are looked for: the rows still to search carry a blue wash, the one being
+// searched breathes, and the panel glows - the same signals as a Link Finder lookup.
+const fillWait = { rows: new Set(), now: null, since: 0 };
+function paintFill() {
+  $("drawer").classList.toggle("busy", filling);
+  [...$("tbody").children].forEach((tr, i) => {
+    const row = table[i], waiting = filling && fillWait.rows.has(row);
+    tr.classList.toggle("waiting", waiting);
+    tr.classList.toggle("now", waiting && fillWait.now === row);
+    if (waiting && fillWait.now === row) tr.style.setProperty("--phase", `-${(Date.now() - fillWait.since) % 2400}ms`);
+    else tr.style.removeProperty("--phase");
+  });
+}
+
 async function fillMissing() {
   if (filling) { filling = false; return; }           // the button reads "Stop" while running
   const open = r => columns().filter(c => !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
   const todo = table.filter(r => !isBlank(r) && open(r).length);
   if (!todo.length) { $("fillStatus").textContent = "Nothing to look for. Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
   filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
+  Object.assign(fillWait, { rows: new Set(todo), now: null, since: Date.now() });
   let filled = 0, n = 0;
   for (const row of todo) {
     if (!filling || $("drawer").hidden) break;
+    fillWait.now = row; paintFill();
     $("fillStatus").textContent = `Looking for missing links: ${++n} of ${todo.length} (${row.name || Object.values(row.cells).find(Boolean) || ""})…`;
     try {
       const r = await fetch("/api/table/suggest", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -1044,11 +1066,13 @@ async function fillMissing() {
         row.skip = row.skip.filter(c => c !== col);
       }
       row.rescan = false;
-      if (changed || had) { if (changed) setDirty(true); $("tbody").children[at].replaceWith(rowEl(row)); applyTableCols(); }
+      if (changed || had) { if (changed) setDirty(true); $("tbody").children[at].replaceWith(rowEl(row)); applyTableCols(); paintFill(); }
     } catch (x) { $("tableError").textContent = x.message; break; }
+    finally { fillWait.rows.delete(row); }
   }
   const stopped = !filling;
   filling = false; $("fillBtn").textContent = "Find missing links";
+  fillWait.rows.clear(); fillWait.now = null; paintFill();
   $("fillStatus").textContent = (stopped ? "Stopped. " : "") + (filled ? `Filled ${filled} cell${filled > 1 ? "s" : ""}. Check the highlighted ones, then Save.` : "Nothing new found.");
 }
 

@@ -16,7 +16,7 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "47"   # shown beside the title, so you can tell which version is running
+VERSION = "48"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -149,7 +149,8 @@ def _table_rows():
             elif not acc["last_checked"]:
                 problems.append(f"{source.label} {short}: checking…")
         note = remembered.get(lookup.norm(a["name"])) or {}
-        rows.append({"id": a["id"], "name": a["name"], "post_count": a["post_count"],
+        shown = lookup.join_names([a["name"]] + lookup.split_names(a.get("aliases") or ""))
+        rows.append({"id": a["id"], "name": shown, "post_count": a["post_count"],
                      "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
                      "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
                      "rejected": note.get("rejected") or {}})
@@ -183,7 +184,11 @@ class SuggestIn(BaseModel):
 async def suggest_row(body: SuggestIn):
     """Guesses for the pages one row is missing. Nothing is saved."""
     try:
-        return await lookup.suggest_pages(body.name, body.cells, body.skip, body.avoid)
+        first = (lookup.split_names(body.name) or [""])[0]          # other names in the cell are aliases
+        found = await lookup.suggest_pages(first, body.cells, body.skip, body.avoid)
+        if body.name.strip():
+            found["name"] = ""                                      # never write over names already typed
+        return found
     except lookup.Blocked:
         raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")
     except SourceError as e:
@@ -215,10 +220,11 @@ async def save_table(body: TableIn):
                 if (key, handle) not in claimed:
                     claimed[(key, handle)] = index
                     pages.append((key, handle, url))
-        name = row.name.strip()
+        names = lookup.split_names(row.name)       # the artist's name, then other names they go by
+        name, aliases = (names[0] if names else ""), lookup.join_names(names[1:])
         if not name and not pages:
             continue  # a blank row; for an existing artist this removes them
-        plan.append((row.id if row.id in existing else None, name or pages[0][1], pages))
+        plan.append((row.id if row.id in existing else None, name or pages[0][1], pages, aliases))
         filled = {key for key, _, _ in pages}
         note = {"skip": [k for k in row.skip if k in SOURCES and k not in filled],
                 "rejected": {k: list(dict.fromkeys(v))[:20] for k, v in row.rejected.items() if k in SOURCES and v}}
@@ -229,20 +235,21 @@ async def save_table(body: TableIn):
                              "errors": errors}, status_code=400)
 
     keep, drop_accounts, renames, new_accounts, new_artists = [], [], [], [], []
-    for artist_id, name, pages in plan:
+    for artist_id, name, pages, aliases in plan:
         if artist_id is None or artist_id in keep:
-            new_artists.append((name, pages))
+            new_artists.append((name, aliases, pages))
             continue
         keep.append(artist_id)
         current = existing[artist_id]
-        if name != current["name"]:
-            renames.append((artist_id, name))
+        if name != current["name"] or aliases != (current.get("aliases") or ""):
+            renames.append((artist_id, name, aliases))
         have = {(a["source"], a["handle"]): a["id"] for a in current["accounts"]}
         wanted = {(s, h) for s, h, _ in pages}
         drop_accounts += [acc_id for key, acc_id in have.items() if key not in wanted]
         new_accounts += [(artist_id, s, h, u) for s, h, u in pages if (s, h) not in have]
     added = db.apply_table(keep, drop_accounts, renames, new_accounts, new_artists)
     db.kv_set("table_left_empty", json.dumps(remember))
+    lookup.forget_aliases()
     if added:
         refresh.refresh_in_background(added)
     return {"rows": _table_rows(), "added": len(added)}
