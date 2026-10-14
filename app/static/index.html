@@ -167,6 +167,14 @@
   td input[type=text] { width: 100%; border: 0; border-radius: 0; background: transparent; padding: 9px 10px; }
   td input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg); }
   tr.has-error td { background: rgba(255,107,107,.07); }
+  .bulk { border-top: 1px solid var(--line); padding: 10px 16px 14px; }
+  .bulk label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+  .bulk-row { display: flex; gap: 8px; align-items: flex-end; }
+  .bulk textarea { flex: 1; height: 84px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 13px; }
+  /* a cell filled in by "Find missing links": check it, then Save */
+  td input[type=text].auto { background: rgba(125, 200, 255, .16); box-shadow: inset 3px 0 0 rgba(125, 200, 255, .9); font-style: italic; }
+  .legend { display: inline-block; padding: 0 6px; background: rgba(125, 200, 255, .16); box-shadow: inset 3px 0 0 rgba(125, 200, 255, .9); font-style: italic; }
   .error { color: var(--danger); font-size: 13px; }
   #lookupText { display: block; width: calc(100% - 32px); margin: 0 16px 12px; height: 96px; resize: vertical;
     background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
@@ -262,15 +270,24 @@
   <div class="tools">
     <button class="btn" id="addRowBtn">Add row</button>
     <button class="btn" id="importBtn">Import CSV</button>
+    <button class="btn" id="fillBtn" title="Look for the Bandcamp page or SoundCloud profile that a row is missing">Find missing links</button>
     <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
     <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+    <button class="btn" id="clearAllBtn" title="Empty the whole table (nothing is removed until you save)">Clear All</button>
     <div class="spacer"></div>
     <span class="unsaved" id="unsaved" hidden>Unsaved changes</span>
     <button class="btn" id="revertBtn" hidden>Discard</button>
     <button class="btn primary" id="saveBtn">Save changes</button>
   </div>
-  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. <span class="error" id="tableError"></span></div>
+  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. <b>Find missing links</b> fills empty cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
   <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+  <div class="bulk">
+    <label for="bulkText">Paste a list to add: one artist or label per line. A name, a Bandcamp or SoundCloud link, or name, Bandcamp, SoundCloud separated by tabs or commas.</label>
+    <div class="bulk-row">
+      <textarea id="bulkText" spellcheck="false" placeholder="Night Ferry&#10;https://somelabel.bandcamp.com&#10;Another Artist, anotherartist, another-artist"></textarea>
+      <button class="btn" id="bulkBtn">Add to table</button>
+    </div>
+  </div>
 </aside>
 
 <aside id="lookup" hidden aria-label="Link finder">
@@ -655,8 +672,11 @@ function rowEl(row) {
     const input = el("input", { type: "text", value: getCell(row, col), spellcheck: "false", autocomplete: "off",
       "aria-label": col === "name" ? "Artist name" : src(col).label,
       placeholder: col === "name" ? "Artist name" : "" });
+    if (row.auto && row.auto.has(col)) { input.classList.add("auto"); input.title = "Filled in automatically. Check it, then Save."; }
     input.addEventListener("input", () => {
       setCell(row, col, input.value); setDirty(true);
+      if (row.auto) row.auto.delete(col);
+      input.classList.remove("auto"); input.removeAttribute("title");
       if (table[table.length - 1] === row) { table.push(blankRow()); $("tbody").append(rowEl(table[table.length - 1])); }
     });
     input.addEventListener("paste", e => {
@@ -686,6 +706,38 @@ function renderTable() {
   $("tbody").replaceChildren(...table.map(rowEl));
 }
 
+// Fill in whatever each row is missing (the other site's page, or the name), one row at a time.
+let filling = false;
+async function fillMissing() {
+  if (filling) { filling = false; return; }           // the button reads "Stop" while running
+  const todo = table.filter(r => !isBlank(r) && columns().some(c => !getCell(r, c).trim()));
+  if (!todo.length) { $("fillStatus").textContent = "No row has an empty cell."; return; }
+  filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
+  let filled = 0, n = 0;
+  for (const row of todo) {
+    if (!filling || $("drawer").hidden) break;
+    $("fillStatus").textContent = `Looking for missing links: ${++n} of ${todo.length} (${row.name || Object.values(row.cells).find(Boolean) || ""})…`;
+    try {
+      const r = await fetch("/api/table/suggest", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: row.name, cells: row.cells }) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { $("tableError").textContent = typeof data.detail === "string" ? data.detail : "Couldn't look that up."; break; }
+      const found = { ...(data.cells || {}), ...(data.name ? { name: data.name } : {}) };
+      const at = table.indexOf(row);
+      if (at < 0) continue;                             // row deleted meanwhile
+      let changed = false;
+      for (const [col, value] of Object.entries(found)) {
+        if (!value || getCell(row, col).trim()) continue;   // never over something typed meanwhile
+        setCell(row, col, value); (row.auto = row.auto || new Set()).add(col); changed = true; filled++;
+      }
+      if (changed) { setDirty(true); $("tbody").children[at].replaceWith(rowEl(row)); }
+    } catch (x) { $("tableError").textContent = x.message; break; }
+  }
+  const stopped = !filling;
+  filling = false; $("fillBtn").textContent = "Find missing links";
+  $("fillStatus").textContent = (stopped ? "Stopped. " : "") + (filled ? `Filled ${filled} cell${filled > 1 ? "s" : ""}. Check the highlighted ones, then Save.` : "Nothing new found.");
+}
+
 function pasteGrid(grid, startRow, startCol) {
   const cols = columns();
   if (startCol === 0 && grid.length && grid[0][0].trim().toLowerCase() === "name") grid = grid.slice(1);
@@ -694,6 +746,29 @@ function pasteGrid(grid, startRow, startCol) {
     cells.forEach((v, c) => { if (startCol + c < cols.length) setCell(table[startRow + r], cols[startCol + c], v.trim()); });
   });
   setDirty(true); renderTable();
+}
+
+// The box under the table: one artist or label per line.
+function addPasted(text) {
+  const lines = text.replace(/\r/g, "").split("\n").map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return 0;
+  const cols = columns(), siteOf = v => /bandcamp\.com/i.test(v) ? "bandcamp" : /soundcloud\.com/i.test(v) ? "soundcloud" : null;
+  while (table.length && isBlank(table[table.length - 1])) table.pop();
+  let added = 0;
+  lines.forEach((line, n) => {
+    const parts = (line.includes("\t") ? line.split("\t") : line.split(",")).map(p => p.trim());
+    if (n === 0 && ["name", "artist"].includes(parts[0].toLowerCase())) return;       // a header row
+    const row = blankRow(), loose = [];
+    parts.forEach(v => {                    // links go to their own site's column wherever they sit in the line
+      const site = v && siteOf(v);
+      if (site && cols.includes(site)) row.cells[site] = row.cells[site] ? row.cells[site] + ", " + v : v;
+      else loose.push(v);
+    });
+    cols.forEach((c, i) => { const v = loose[i]; if (v && !getCell(row, c)) setCell(row, c, v); });
+    if (!isBlank(row)) { table.push(row); added++; }
+  });
+  if (added) { setDirty(true); renderTable(); $("tbody").lastElementChild.scrollIntoView({ block: "nearest" }); }
+  return added;
 }
 
 function parseCsv(text) {
@@ -737,11 +812,12 @@ async function loadTable() {
   const rows = await api("/api/table");
   table = rows.map(r => ({ ...r, errors: [] }));
   savedIds = rows.map(r => r.id);
-  $("tableError").textContent = "";
+  $("tableError").textContent = ""; $("fillStatus").textContent = "";
   setDirty(false); renderTable();
 }
 
 async function saveTable() {
+  filling = false;
   while (table.length && isBlank(table[table.length - 1])) table.pop();
   const staying = new Set(table.filter(r => !isBlank(r)).map(r => r.id));
   const removed = savedIds.filter(id => !staying.has(id)).length;
@@ -759,6 +835,7 @@ async function saveTable() {
   }
   table = data.rows.map(row => ({ ...row, errors: [] }));
   savedIds = data.rows.map(row => row.id);
+  $("fillStatus").textContent = "";                  // saved as they stand: the highlights go
   setDirty(false); renderTable();
   artists = await api("/api/artists"); renderArtists(); await loadFacets(); await loadFeed();
   if (data.added) { wasRefreshing = true; setTimeout(pollStatus, 800); }
@@ -926,6 +1003,19 @@ $("lookupGo").onclick = () => $("lookupText").value.trim() ? startLookup($("look
 $("lookupText").addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "\t"); } });
 window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
 $("addRowBtn").onclick = () => { if (!isBlank(table[table.length - 1])) table.push(blankRow()); renderTable(); $("tbody").lastElementChild.querySelector("input").focus(); };
+$("fillBtn").onclick = () => fillMissing();
+$("clearAllBtn").onclick = () => {
+  const n = table.filter(r => !isBlank(r)).length;
+  if (!n) return;
+  if (!confirm(`Are you sure? This empties all ${n} row${n > 1 ? "s" : ""} of the table. Nothing is removed from the feed until you press Save changes, and Discard brings the rows back.`)) return;
+  filling = false; table = []; $("fillStatus").textContent = "";
+  setDirty(true); renderTable();
+};
+$("bulkBtn").onclick = () => {
+  const n = addPasted($("bulkText").value);
+  if (n) $("bulkText").value = "";
+  $("fillStatus").textContent = n ? `Added ${n} row${n > 1 ? "s" : ""}. Use Find missing links to fill the empty cells, then Save.` : "Nothing to add.";
+};
 $("saveBtn").onclick = () => saveTable().catch(x => { $("tableError").textContent = x.message; });
 $("revertBtn").onclick = () => { if (confirm("Discard unsaved changes?")) loadTable(); };
 $("importBtn").onclick = () => $("csvFile").click();

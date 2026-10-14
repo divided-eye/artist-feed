@@ -1128,6 +1128,93 @@ async def scan_step(net, artist, title, pages, steps):
     return check
 
 
+# ---------- Tracked Artists: filling in the page an artist's row is missing ----------
+
+async def suggest_pages(name: str, cells: dict) -> dict:
+    """Best guesses for whatever a Tracked Artists row leaves blank: the Bandcamp page, the
+    SoundCloud profile, and the name when only a link was given. Guesses, to be reviewed."""
+    name = (name or "").strip()
+    have = {k: (cells.get(k) or "").split(",")[0].strip() for k in ("bandcamp", "soundcloud")}
+    out, notes = {"name": "", "cells": {}}, []
+    bc, sc = SOURCES["bandcamp"], SOURCES["soundcloud"]
+
+    def squash(text):
+        return re.sub(r"[^a-z0-9]", "", _fold(text))
+
+    async with refresh.make_client() as client:
+        net = Net(client)
+        with pace.foreground():
+            if not name:                               # only a link: the name its page gives itself
+                try:
+                    if have["bandcamp"]:
+                        grid = await get_grid(net, bc.normalize(have["bandcamp"])[1])
+                        name = (grid or {}).get("name") or ""
+                    if not name and have["soundcloud"]:
+                        user = await sc._api(net.client, "/resolve", {"url": sc.normalize(have["soundcloud"])[1]})
+                        name = user.get("username") or ""
+                except Blocked:
+                    raise
+                except Exception:
+                    pass
+                name = name.strip() or bc.short(have["bandcamp"]) or have["soundcloud"]
+                if name:
+                    out["name"] = name
+            if not name:
+                return out
+            want = norm(name)
+            hints = {squash(bc.short(bc.normalize(have["bandcamp"])[0])) if have["bandcamp"] else "",
+                     squash(sc.normalize(have["soundcloud"])[0]) if have["soundcloud"] else ""} - {""}
+
+            if not have["bandcamp"]:
+                found = []                             # (address matches the other site's, name fit, -order, url)
+                try:
+                    for n, c in enumerate(await bandcamp_search(net, name, "b")):
+                        fit = name_sim(want, norm(c["name"]))
+                        sub = squash(urlparse(c["url"]).netloc.split(".")[0])
+                        if c["type"] in ("artist", "label", "") and (fit >= 0.85 or sub in hints):
+                            found.append((sub in hints, round(fit, 2), -n, root_of(c["url"])))
+                except Blocked:
+                    raise
+                except Exception:
+                    notes.append("Bandcamp search didn't answer")
+                if not found:                          # an obvious address that search didn't offer
+                    for guess in dict.fromkeys([squash(name)] + sorted(hints)):
+                        if len(guess) < 2:
+                            continue
+                        try:
+                            grid = await get_grid(net, f"https://{guess}.bandcamp.com")
+                        except Blocked:
+                            raise
+                        except Exception:
+                            grid = None
+                        if grid and name_sim(want, norm(grid["name"])) >= 0.85:
+                            found.append((guess in hints, 1.0, 0, f"https://{guess}.bandcamp.com"))
+                            break
+                if found:
+                    out["cells"]["bandcamp"] = bc.short(bc.normalize(max(found)[3])[0])
+                else:
+                    notes.append("no Bandcamp page found")
+
+            if not have["soundcloud"]:
+                found = []
+                try:
+                    data = await sc._api(net.client, "/search/users", {"q": name, "limit": 20})
+                    for u in data.get("collection") or []:
+                        handle = squash(u.get("permalink") or (u.get("permalink_url") or "").rstrip("/").split("/")[-1])
+                        fit = _is_profile_of(dict(u, permalink=handle), [want])
+                        if handle and (fit[0] or handle in hints):
+                            found.append((handle in hints, fit[1], u.get("followers_count") or 0,
+                                          (u.get("permalink_url") or "").rstrip("/").split("/")[-1].lower()))
+                except Exception:
+                    notes.append("SoundCloud search didn't answer")
+                if found:
+                    out["cells"]["soundcloud"] = max(found)[3]
+                elif "SoundCloud search didn't answer" not in notes:
+                    notes.append("no SoundCloud profile found")
+    out["note"] = "; ".join(notes)
+    return out
+
+
 # ---------- SoundCloud ----------
 
 def _is_profile_of(user, names) -> tuple:

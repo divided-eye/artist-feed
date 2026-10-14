@@ -1000,3 +1000,21 @@ def test_vip_is_not_the_original(client):
     finally:
         db.execute("DELETE FROM collection_items WHERE key='a997'")
         db.execute("DELETE FROM collection_tracks WHERE item_key='a997'")
+
+
+def test_missing_pages_are_suggested(client):
+    def ask(name="", **cells):
+        r = client.post("/api/table/suggest", json={"name": name, "cells": cells})
+        assert r.status_code == 200, r.text
+        return r.json()
+    got = ask("Nightmare")
+    assert got["cells"].get("bandcamp") == "nightmare" and got["name"] == ""
+    got = ask("Solo Guy")
+    assert got["cells"].get("soundcloud") == "sologuy-official" and "no Bandcamp page found" in got["note"]
+    # two profiles share the name: the one whose address matches the Bandcamp page given
+    assert ask("River", bandcamp="riverirvine")["cells"] == {"soundcloud": "riverirvine"}
+    assert ask("River")["cells"].get("soundcloud") == "river"            # nothing to go on: the bigger one
+    # only a link: the name comes from the page; cells already filled are left alone
+    got = ask("", bandcamp="nightferry")
+    assert got["name"] == "Night Ferry" and "bandcamp" not in got["cells"]
+    assert ask("Nightmare", bandcamp="x", soundcloud="y")["cells"] == {}

@@ -15,7 +15,7 @@ from . import db, lookup, pace, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "30"   # shown beside the title, so you can tell which version is running
+VERSION = "31"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -154,6 +154,22 @@ def export_csv():
         writer.writerow([row["name"]] + [row["cells"][k] for k in SOURCES])
     return Response(out.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="artists.csv"'})
+
+
+class SuggestIn(BaseModel):
+    name: str = ""
+    cells: dict[str, str] = {}
+
+
+@app.post("/api/table/suggest")
+async def suggest_row(body: SuggestIn):
+    """Guesses for the pages one row is missing. Nothing is saved."""
+    try:
+        return await lookup.suggest_pages(body.name, body.cells)
+    except lookup.Blocked:
+        raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")
+    except SourceError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.put("/api/table")
