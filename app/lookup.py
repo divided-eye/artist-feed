@@ -45,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 9             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 10             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -256,6 +256,22 @@ def ratio(a: str, b: str) -> float:
     return m.ratio()
 
 
+def _same_numbers(a: str, b: str) -> bool:
+    """The same numbers in both, allowing for "0538"/"538" and "10,000"/"10000"."""
+    groups = lambda t: sorted(int(n) for n in re.findall(r"\d+", t))
+    run = lambda t: "".join(re.findall(r"\d+", t)).lstrip("0")
+    return groups(a) == groups(b) or run(a) == run(b)
+
+
+def title_sim(want: str, have: str) -> float:
+    """How alike two normalised titles are. Numbers must agree exactly: "Hybrid Kit 6" is not
+    "Hybrid Kit 2" or "Hybrid Kit", however close the spelling."""
+    r = ratio(want, have)
+    if r and not _same_numbers(want, have):
+        r = min(r, 0.7)
+    return r
+
+
 def name_sim(a: str, b: str) -> float:
     """How alike two normalised names are; one being the other plus extra words counts as close
     ("somah" / "somah uk", "delimar" / "sasa delimar")."""
@@ -288,7 +304,7 @@ def score(artist: str, title: str, cand: dict) -> tuple:
     want_title, wanted = norm(title), artist_parts(artist)
     name = cand.get("name") or ""
     prefix, _, rest = name.partition(" - ")            # label pages often title tracks "Artist - Title"
-    t = max(ratio(want_title, norm(name)), ratio(want_title, norm(rest)) if rest else 0.0)
+    t = max(title_sim(want_title, norm(name)), title_sim(want_title, norm(rest)) if rest else 0.0)
     have = [p for n in cand.get("artists") or [] for p in artist_parts(n or "")]
     if rest:
         have += artist_parts(prefix)
@@ -967,7 +983,7 @@ async def owned_step(net, lib, artist, title, steps):
     for item in owned:
         if versioned(title):        # the release is named after the track, but is this version on it? open it
             break
-        if ratio(norm(title), norm(item["title"])) >= 0.88 or ratio(norm(title), norm(item["title"].partition(" - ")[2])) >= 0.88:
+        if title_sim(norm(title), norm(item["title"])) >= 0.88 or title_sim(norm(title), norm(item["title"].partition(" - ")[2])) >= 0.88:
             rel = await _safe_release(net, item["url"])
             steps.append(f'purchases: you own "{item["title"]}" by {item["band"]}')
             return {"status": "bandcamp", "site": "Bandcamp", "url": album_of(rel, item["url"]),
@@ -1284,7 +1300,7 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
                     user, name = tr.get("user") or {}, tr.get("title") or ""
                     if not user.get("permalink_url") or not tr.get("permalink_url"):
                         continue
-                    same = max(ratio(norm(title), norm(name)), ratio(norm(title), norm(name.partition(" - ")[2])))
+                    same = max(title_sim(norm(title), norm(name)), title_sim(norm(title), norm(name.partition(" - ")[2])))
                     if same < 0.85:
                         continue
                     if not same_vip(title, name):
@@ -1576,7 +1592,7 @@ def find_local(lib, artist, title):
                             f'purchases: track "{cand["name"]}" on "{cand["item"]["title"]}"')
     owned = lib.owned_for(artist, title)
     for item in owned:
-        if not versioned(title) and max(ratio(norm(title), norm(item["title"])), ratio(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
+        if not versioned(title) and max(title_sim(norm(title), norm(item["title"])), title_sim(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
             return owned_result(item, item["title"], f'purchases: you own "{item["title"]}" by {item["band"]}')
     known = page_index().get(norm(title), [])
     verdict, hit = best_candidate(artist, title, [c for c in known if lib.owns(c["rel"])])
@@ -1612,7 +1628,8 @@ async def _run(job, fresh):
             manual = _cached(_manual_key(row["artist"], row["title"]))   # your own link always wins
             saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
             if saved and not manual and saved.get("engine", 0) < ENGINE and (
-                    saved.get("status") != "bandcamp" or vip_words(row["title"]) is not None):
+                    saved.get("status") != "bandcamp" or vip_words(row["title"]) is not None
+                    or re.search(r"\d", norm(row["title"]))):
                 saved = None                               # a miss from an older version: try again
             if saved and not manual:
                 saved = with_current_fallback(saved)

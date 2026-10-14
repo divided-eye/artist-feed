@@ -1036,3 +1036,18 @@ def test_cleared_cells_and_rejected_guesses_are_remembered(client):
     assert next(r for r in client.get("/api/table").json() if r["name"] == "Solo Guy")["skip"] == ["bandcamp"]
     client.put("/api/table", json={"rows": rows})
     assert all(r["name"] != "Solo Guy" and not r["skip"] for r in client.get("/api/table").json())
+
+
+def test_numbers_in_titles_must_agree():
+    """Allen Mock's "Hybrid Kit 6" is on Epoch Remixes; Epoch only has Hybrid Kit, 2 and 3."""
+    from app import lookup
+    page = lambda *names: {"url": "https://allenmock.bandcamp.com/album/x", "title": "X", "artist": "Allen Mock",
+                           "tracks": [{"title": n, "artist": ""} for n in names]}
+    epoch = page("Vim", "Hybrid Kit", "Hybrid Kit 2", "Hybrid Kit 3", "Beat 0538", "10,000h")
+    remixes = page("Hybrid Kit 4", "Hybrid Kit 5", "Hybrid Kit 6", "Hybrid Kit (Cumulus Frisbee Remix)")
+    for asked in ("Hybrid Kit 6", "Hybid Kit 6"):                      # the second as mistyped in a list
+        assert lookup.match_in_release("Allen Mock", asked, epoch)[0] == ""
+        assert lookup.match_in_release("Allen Mock", asked, remixes) == ("bandcamp", "Hybrid Kit 6")
+    assert lookup.match_in_release("Allen Mock", "Hybrid Kit", epoch) == ("bandcamp", "Hybrid Kit")
+    assert lookup.match_in_release("Allen Mock", "Beat 538", epoch)[0] == "bandcamp"
+    assert lookup.match_in_release("Allen Mock", "10000h", epoch)[0] == "bandcamp"
