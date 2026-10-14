@@ -139,6 +139,7 @@ calls = {"expired_once": False}
 
 def handler(request: httpx.Request) -> httpx.Response:
     host, path = request.url.host, request.url.path
+    calls["requests"] = calls.get("requests", 0) + 1
     if host == "nightferry.bandcamp.com":
         pages = {"/music": GRID,
                  "/album/first": FIRST,
@@ -464,6 +465,15 @@ def test_lookup_uses_purchases_and_artist_pages(client):
     hit = client.get(f"/api/lookup/{j['id']}").json()["rows"][0]
     assert (hit["status"], hit["url"], hit["note"]) == ("bandcamp", "https://ccc.bandcamp.com/album/conduit", "On a page read earlier")
     assert len(searched) == asked
+
+    # Tracks answerable from purchases or pages already read cost no requests at all, even when
+    # asked to search again, and are filled in before anything slow starts.
+    made = calls["requests"]
+    j = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nMasot\t02\nBlocklab\tGargantua\nMasot\tEspecies Endémicas".encode()).json()
+    time.sleep(0.4)
+    quick = client.get(f"/api/lookup/{j['id']}").json()
+    assert quick["finished"] and [x["status"] for x in quick["rows"]] == ["bandcamp"] * 3
+    assert [x["year"] for x in quick["rows"]] == ["2026", "2025", "2026"] and calls["requests"] == made
 
     before = len(searched)                              # pages read once are not fetched again
     client.post("/api/lookup?fresh=true", content="Artist\tTitle\nSomah\tRailroads".encode())

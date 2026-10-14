@@ -925,38 +925,123 @@ async def find(net, lib, artist, title, state):
     return done(result or {"status": "none", "note": "No artist name to search for"})
 
 
+def find_local(lib, artist, title):
+    """Answer from what is already saved - feed, purchases, pages read earlier - with no request
+    to any site. Returns a result, or None when the track needs searching for."""
+    def owned_result(item, name, how):
+        rel = cache_get("release", item["url"], 180) or {}
+        return {"status": "bandcamp", "site": "Bandcamp", "url": item["url"], "release": item["title"],
+                "year": rel.get("year", ""), "note": "In your purchases", "steps": [how],
+                "found": f'{item["band"]} \u2014 {name}'}
+
+    verdict, hit = best_candidate(artist, title, lib.feed.get(norm(title), []))
+    if verdict == "bandcamp":
+        return {"status": "bandcamp", "site": "Bandcamp", "url": hit["url"], "release": hit["release"],
+                "year": (hit["published_at"] or "")[:4], "note": "In your feed",
+                "found": f"{hit['artist']} \u2014 {hit['name']}",
+                "steps": ["feed: already collected from a page you track"]}
+    if not title:
+        return None
+    verdict, cand = best_candidate(artist, title, lib.owned_tracks.get(norm(title), []))
+    if verdict == "bandcamp":
+        return owned_result(cand["item"], cand["name"],
+                            f'purchases: track "{cand["name"]}" on "{cand["item"]["title"]}"')
+    owned = lib.owned_by(artist)
+    for item in owned:
+        if max(ratio(norm(title), norm(item["title"])), ratio(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
+            return owned_result(item, item["title"], f'purchases: you own "{item["title"]}" by {item["band"]}')
+    known = page_index().get(norm(title), [])
+    address = lambda c: c["rel"].get("release_url") or c["rel"].get("url")
+    verdict, hit = best_candidate(artist, title, [c for c in known if address(c) in lib.owned_urls])
+    mine = verdict == "bandcamp"
+    if not mine:
+        verdict, hit = best_candidate(artist, title, known)
+    if verdict == "bandcamp" and (mine or not owned):
+        rel = hit["rel"]
+        out = release_result(rel, verdict, f'{rel.get("artist") or artist} \u2014 {hit["name"]}',
+                             "In your purchases" if mine else "On a page read earlier")
+        out["steps"] = [f'pages read earlier: "{hit["name"]}" on "{rel.get("title")}"']
+        return out
+    return None
+
+
+def _fill(row, result):
+    row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": []})
+    row.update(result)
+
+
 async def _run(job, fresh):
+    """Three passes, quickest first, so everything already known shows up straight away:
+       1. saved answers, your feed, your purchases and pages read earlier - no requests at all
+       2. release years for those answers - one request each, only where the page isn't saved
+       3. searching Bandcamp and artist pages for whatever is left - the slow part"""
+    state = {"bandcamp_ok": True, "search_ok": True, "warning": ""}
+    todo = []
+
+    def quick_pass(rows, lib):
+        left = []
+        for row in rows:
+            manual = _cached(_manual_key(row["artist"], row["title"]))   # your own link always wins
+            saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
+            if saved and not manual:
+                saved = dict(saved, steps=(saved.get("steps") or []) + ["(saved result from an earlier lookup)"])
+            result = saved or find_local(lib, row["artist"], row["title"])
+            if result:
+                _fill(row, result)
+                job["done"] += 1
+            else:
+                left.append(row)
+        return left
+
+    job["phase"] = "Checking what is already saved\u2026"
+    await asyncio.sleep(0)
+    lib = Library()
+    todo = quick_pass(job["rows"], lib)
+
     if collection_fan() and collection_is_stale():
-        job["phase"] = "Reading your Bandcamp purchases…"
+        job["phase"] = "Reading your Bandcamp purchases\u2026"
+        before = len(lib.owned_items)
         await sync_collection(on_progress=lambda text: job.update(phase=text))
         if collection_state["error"]:
-            job["warning"] = collection_state["error"] + " Continuing without your purchases."
-    job["phase"] = ""
-    lib = Library()
-    state = {"bandcamp_ok": True, "search_ok": True, "warning": ""}
+            job["warning"] = collection_state["error"] + " Carrying on with the purchases already saved."
+        lib = Library()
+        if len(lib.owned_items) != before:                 # new purchases: check the rest against them
+            todo = quick_pass(todo, lib)
+
     async with refresh.make_client() as client:
-        net = Net(client, on_wait=lambda text: job.update(phase=text))
-        for row in job["rows"]:
-            key = _cache_key(row["artist"], row["title"])
-            manual = _cached(_manual_key(row["artist"], row["title"]))
-            result = manual or (None if fresh else _cached(key))
-            if manual:
-                pass                                   # your own link always wins, even when searching again
-            elif result is None:
-                try:
-                    result, keep = await find(net, lib, row["artist"], row["title"], state)
-                except Exception as e:
-                    result, keep = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]], "note":
-                                    f"Couldn't complete the search ({type(e).__name__}); run it again to retry"}, False
-                if keep and result.get("note") != "In your feed":
-                    _remember(key, result)
-            else:
-                result = dict(result, steps=(result.get("steps") or []) + ["(saved result from an earlier lookup)"])
-            row.update({"site": "", "url": "", "year": "", "release": "", "found": "", "note": "", "steps": []})
-            row.update(result)
+        net = Net(client)
+        # 2. years for answers found in your purchases whose page hasn't been read yet
+        need_year = [r for r in job["rows"] if r["status"] == "bandcamp" and not r["year"]
+                     and r["site"] == "Bandcamp" and r["note"] == "In your purchases"]
+        for n, row in enumerate(need_year, 1):
+            if not state["bandcamp_ok"]:
+                break
+            job["phase"] = f"Found {job['done']} of {job['total']}; reading release years ({n} of {len(need_year)})"
+            try:
+                rel = await get_release(net, row["url"])
+                if rel and rel.get("year"):
+                    row["year"] = rel["year"]
+            except Blocked as e:
+                state["bandcamp_ok"] = False
+                job["warning"] = f"{e}, even after waiting. Run the lookup again later for the rest."
+            except Exception:
+                pass
+        # 3. everything not answered yet
+        for n, row in enumerate(todo, 1):
+            job["phase"] = (f"Searching Bandcamp for \u201c{row['title']}\u201d by {row['artist']} "
+                            f"({n} of {len(todo)} not already saved)")
+            try:
+                result, keep = await find(net, lib, row["artist"], row["title"], state)
+            except Exception as e:
+                result, keep = {"status": "error", "steps": [f"{type(e).__name__}: {e}"[:200]], "note":
+                                f"Couldn't complete the search ({type(e).__name__}); run it again to retry"}, False
+            if keep and result.get("note") != "In your feed":
+                _remember(_cache_key(row["artist"], row["title"]), result)
+            _fill(row, result)
             job["done"] += 1
             if state["warning"]:
                 job["warning"] = state["warning"]
+    job["phase"] = ""
     job["finished"] = True
 
 
