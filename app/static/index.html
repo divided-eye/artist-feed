@@ -256,13 +256,13 @@
     <div class="spacer"></div>
     <label class="opt" for="fallbackPref">If a track isn't found, link to the artist's</label>
     <select id="fallbackPref" aria-label="Artist link to use when a track isn't found">
-      <option value="bandcamp">Bandcamp page, else SoundCloud</option>
       <option value="soundcloud">SoundCloud profile, else Bandcamp</option>
+      <option value="bandcamp">Bandcamp page, else SoundCloud</option>
     </select>
     <button class="btn small" id="fanDeep" hidden title="Open each purchased release and save its whole track list, so tracks you own are found instantly">Read full track lists</button>
     <span class="status" id="fanStatus"></span>
   </div>
-  <div class="hint">Upload an Excel (.xlsx) or CSV file, or paste rows copied from your spreadsheet below. Include the header row: the Artist column and the first Title column are used. Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's Bandcamp page or SoundCloud page instead. Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
+  <div class="hint">Upload an Excel (.xlsx) or CSV file, or paste rows copied from your spreadsheet below. Headers not needed, simply Artist TrackTitle format is fine. Each track is looked for in your feed, your Bandcamp purchases, Bandcamp search and the artist's own Bandcamp page; if it isn't on Bandcamp you get the artist's SoundCloud profile or Bandcamp page instead (the remixer's, for an edit, remix, bootleg or flip). Hard-to-find tracks can take up to a minute each. <span class="error" id="lookupError"></span></div>
   <textarea id="lookupText" spellcheck="false" aria-label="Pasted tracklist" placeholder="Track #&#9;Artist&#9;Title&#9;…&#10;1&#9;Masot&#9;Especies Endémicas&#9;…"></textarea>
   <div class="table-wrap"><table class="res"><thead id="lookupHead"></thead><tbody id="lookupBody"></tbody></table></div>
 </aside>

@@ -108,12 +108,19 @@ otherwise their SoundCloud page.
   real tracks only as a numbered list in the description. Those written-out
   names are read too, so a track that exists only there is still matched to
   the release.
-- When a track isn't found, the link falls back to the artist. The menu "If
-  a track isn't found, link to the artist's…" in the panel chooses which is
-  preferred: their Bandcamp page (the default) or their SoundCloud profile.
-  The other is used when the preferred one doesn't exist. Changing it
-  re-points results already on screen and saved ones; nothing is searched
-  again.
+- When a track isn't found, the link falls back to the artist. By default that
+  is their SoundCloud profile, with their Bandcamp page used when they have no
+  profile; the menu "If a track isn't found, link to the artist's…" in the
+  panel swaps the order. Changing it re-points results already on screen and
+  saved ones; nothing is searched again.
+- An edit, remix, bootleg, flip, refix or rework belongs to whoever made it.
+  For "Temperature (River Dub Edit)" by Sean Paul, the lookup also searches as
+  River Dub, scans River Dub's Bandcamp page, and falls back to River Dub's
+  profile rather than Sean Paul's. The original artist is only used when
+  nothing is found for the remixer. The plain original is never returned for
+  a request that names a remixer, and a remix is only a "check" match for a
+  request that doesn't. Tags that only describe a version, such as "(Original
+  Mix)", "(VIP)" or "(Instrumental)", are ignored.
 - **What was tried** under each result lists every step and what it found.
   It is also in the export, in the "steps" column.
 - **Edit** under any link lets you replace it with the correct one (and set
@@ -140,7 +147,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v20. Labels, track lists and durations for Bandcamp
+is v21. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (6 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

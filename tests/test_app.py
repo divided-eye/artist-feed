@@ -18,6 +18,7 @@ os.environ["BANDCAMP_PAUSE_SECONDS"] = "0"
 os.environ["BANDCAMP_MAX_NEW"] = "2"
 os.environ["BANDCAMP_GAP_SECONDS"] = "0"
 os.environ["DISABLE_DEEP_READ"] = "1"
+os.environ["LOOKUP_FALLBACK"] = "bandcamp"     # the older tests were written with this preference
 os.environ["DEEP_READ_EXTRA_SECONDS"] = "0"
 os.environ["BANDCAMP_BACKOFF_SECONDS"] = "0"
 
@@ -90,6 +91,7 @@ SEARCHES.update({
                                         "from Open The Door LP by DNO Records")
                                  + result("Trigger Activation", "https://other.bandcamp.com/track/trigger-activation",
                                           "from Something Else by Other Label"),
+    ("b", "nightmare"): result("Nightmare", "https://nightmare.bandcamp.com", "", "", "ARTIST"),
     ("b", "bbbb cccc"): result("Cccc", "https://ccc.bandcamp.com", "", "", "ARTIST"),
 })
 
@@ -140,6 +142,11 @@ PAGES = {
     ("quantumsoul.bandcamp.com", "/album/evolution-part-1"): album("Evolution Part 1", "Quantum Soul", "Evolution Part 1 - Mini Mix").replace(
         "</body>", '<ul><li class="buyItem digital"><h3>Digital Album</h3><div class="bd">Includes unlimited streaming via the free Bandcamp app.'
                    '<br><br>1. Serpentine<br>2. High Priest<br>3. The Message<br>4. Otherside<br>6. Dema Dub<br>7. Raw Signal (5:41)<br>8. Unite The Tribes</div></li></ul></body>'),
+    # remixes and bootlegs: the original artist's page, and a remixer's page carrying the bootleg
+    ("seanpaul.bandcamp.com", "/music"): grid("Sean Paul", ("hits", "Hits")),
+    ("seanpaul.bandcamp.com", "/album/hits"): album("Hits", "Sean Paul", "Temperature", "Get Busy"),
+    ("nightmare.bandcamp.com", "/music"): grid("Nightmare", ("bootlegs", "Bootlegs Vol. 1")),
+    ("nightmare.bandcamp.com", "/album/bootlegs"): album("Bootlegs Vol. 1", "Nightmare", "Nas - You Owe Me (Nightmare & Oni 140 Bootleg)", "Other"),
     ("somahuk.bandcamp.com", "/music"): grid("Somah UK", ("older", "Older Thing"), ("gnosis-railroads", "Gnosis / Railroads")),
     ("somahuk.bandcamp.com", "/album/older"): album("Older Thing", "Somah", "Aaa", "Bbb"),
     ("somahuk.bandcamp.com", "/album/gnosis-railroads"): album("Gnosis / Railroads", "Somah", "Gnosis", "Railroads"),
@@ -183,7 +190,10 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=release("Especies Endémicas", "02 May 2023 00:00:00 GMT", "MusicRecording", {
             "byArtist": {"name": "Masot"}, "inAlbum": {"name": "Flora", "@id": "https://masot.bandcamp.com/album/flora"}}))
     if host == "api-v2.soundcloud.com" and path == "/search/users" and request.url.params.get("client_id") == CID:
-        users = {"Anecho": [{"username": "ANECHO", "permalink": "anechoicchamber", "permalink_url": "https://soundcloud.com/anechoicchamber"}],
+        users = {"River Dub": [{"username": "River Dub", "permalink": "riverdub", "permalink_url": "https://soundcloud.com/riverdub"}],
+                 "Omega Nebula": [{"username": "Omega Nebula", "permalink": "omeganebula", "permalink_url": "https://soundcloud.com/omeganebula"}],
+                 "Sean Paul": [{"username": "Sean Paul", "permalink": "seanpaul", "permalink_url": "https://soundcloud.com/seanpaul"}],
+                 "Anecho": [{"username": "ANECHO", "permalink": "anechoicchamber", "permalink_url": "https://soundcloud.com/anechoicchamber"}],
                  "Nobody Known": [{"username": "nobody known fan", "permalink_url": "https://soundcloud.com/fan", "followers_count": 9000},
                                   {"username": "Nobody Known", "permalink_url": "https://soundcloud.com/nobodyknown", "followers_count": 12}]}
         return httpx.Response(200, json={"collection": users.get(request.url.params["q"], [])})
@@ -735,3 +745,72 @@ def test_table(client):
     assert [r["name"] for r in client.get("/api/table").json()] == ["NF"]
     assert client.put("/api/table", json={"rows": []}).json()["rows"] == []
     assert client.get("/api/feed").json() == []
+
+
+def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
+    from app import lookup
+    credits = lookup.remix_credits
+    assert credits("Temperature (River Dub Edit)") == ("River Dub", "River")
+    assert credits("Exotermic Reaction (Jah Beer Dub Refix)") == ("Jah Beer Dub", "Jah Beer")
+    assert credits("You Owe Me (Nightmare & Oni 140 Bootleg)") == ("Nightmare & Oni",)
+    assert credits("Outside The Box [IOWLA flip]") == ("IOWLA",)
+    for plain_version in ("State I (Original Mix)", "Blur (VIP)", "Endgame (Blame)", "X (Extended Dub Mix)", "Y (Instrumental)", "Z"):
+        assert credits(plain_version) == ()
+    assert lookup.remixer_names("You Owe Me (Nightmare & Oni 140 Bootleg)") == ("nightmare oni", "nightmare", "oni")
+
+    edit = "Temperature (River Dub Edit)"
+    verdict = lambda artist, title, cand: lookup.judge(*lookup.score(artist, title, cand))
+    assert verdict("Sean Paul", edit, {"name": "Temperature", "artists": ["Sean Paul"]}) == ""              # the original isn't the edit
+    assert verdict("Sean Paul", edit, {"name": "Temperature (Someone Else Remix)", "artists": ["Sean Paul"]}) == ""
+    assert verdict("Sean Paul", edit, {"name": "Temperature (River Dub Edit)", "artists": ["River Dub"]}) == "bandcamp"
+    assert verdict("Sean Paul", edit, {"name": "Sean Paul - Temperature [River Dub edit]", "artists": ["Some Label"]}) == "bandcamp"
+    assert verdict("Dayzero", "Blur", {"name": "Blur (Someone Remix)", "artists": ["Dayzero"]}) == "bandcamp_check"
+    assert verdict("Dayzero", "Blur", {"name": "Blur (Original Mix)", "artists": ["Dayzero"]}) == "bandcamp"
+
+    def run(rows):
+        text = "Artist\tTitle\n" + "\n".join(f"{a}\t{t}" for a, t in rows)
+        j = client.post("/api/lookup?fresh=true", content=text.encode()).json()
+        for _ in range(300):
+            time.sleep(0.02)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                return {(r["artist"], r["title"]): r for r in got["rows"]}
+        raise AssertionError("lookup never finished")
+
+    rows = [("Sean Paul", "Temperature (River Dub Edit)"), ("Nas", "You Owe Me (Nightmare & Oni 140 Bootleg)"),
+            ("Omega Nebula", "Outside The Box (IOWLA Flip)"), ("Masot", "02 (Somebody Edit)")]
+    client.put("/api/lookup/settings", json={"fallback": "soundcloud"})
+    try:
+        r = run(rows)
+        # not on Bandcamp: the remixer's profile, not Sean Paul's page (which exists, and has the original)
+        sean = r[rows[0]]
+        assert (sean["status"], sean["url"], sean["note"]) == ("soundcloud", "https://soundcloud.com/riverdub", "Remixer's profile")
+        # found on the remixer's own Bandcamp page, where it is listed under the original artist's name
+        nas = r[rows[1]]
+        assert (nas["status"], nas["url"]) == ("bandcamp", "https://nightmare.bandcamp.com/album/bootlegs")
+        # nothing anywhere for the remixer: falls back to the artist
+        omega = r[rows[2]]
+        assert (omega["status"], omega["url"]) == ("soundcloud", "https://soundcloud.com/omeganebula")
+        assert any('no page found for "IOWLA"' in s for s in omega["steps"])
+        # you own the original "02", but that is not Somebody's edit of it
+        assert r[rows[3]]["status"] not in ("bandcamp", "bandcamp_check")
+
+        # Preferring Bandcamp pages: the remixer still comes before the artist, on whichever site they are on.
+        client.put("/api/lookup/settings", json={"fallback": "bandcamp"})
+        assert client.get("/api/lookup/settings").json() == {"fallback": "bandcamp"}
+        again = run(rows[:1])[rows[0]]
+        assert (again["status"], again["url"]) == ("soundcloud", "https://soundcloud.com/riverdub")
+    finally:
+        client.put("/api/lookup/settings", json={"fallback": "bandcamp"})
+
+
+def test_soundcloud_is_the_default_fallback():
+    from app import db, lookup
+    saved, env = db.kv_get("lookup_fallback"), os.environ.pop("LOOKUP_FALLBACK")
+    try:
+        db.execute("DELETE FROM kv WHERE key='lookup_fallback'")
+        assert lookup.fallback_pref() == "soundcloud"
+    finally:
+        os.environ["LOOKUP_FALLBACK"] = env
+        if saved:
+            db.kv_set("lookup_fallback", saved)

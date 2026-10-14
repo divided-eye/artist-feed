@@ -27,6 +27,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
+from functools import lru_cache
 from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
@@ -44,7 +45,7 @@ SEARCH_URL = "https://bandcamp.com/search"
 SEARCH_API = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
 COLLECTION_API = "https://bandcamp.com/api/fancollection/1/collection_items"
 CACHE_VERSION = "v2"   # bump to forget results saved by an older, weaker lookup
-ENGINE = 4             # raise when the lookup gets better at finding things: saved answers that were
+ENGINE = 5             # raise when the lookup gets better at finding things: saved answers that were
                        # NOT a Bandcamp release are then searched for again instead of being reused
 
 jobs = {}          # id -> {"rows": [...], "done": int, "total": int, "finished": bool, ...}
@@ -140,12 +141,68 @@ def pick_tracks(rows: list) -> list:
 
 # ---------- matching ----------
 
-def norm(text: str) -> str:
+# Words that mark a bracketed tag as "someone's version of this track".
+_REMIX_WORD = (r"remix|rmx|re-?mix|edit|re-?edit|bootleg|boot|flip|refix|re-?fix|rework|re-?work|re-?rub|"
+               r"remake|re-?lick|mash-?up|redo|re-?twist|re-?fit|cover|treatment|version|mix|dub|vip")
+_REMIX_TAG = re.compile(r"[\(\[]\s*([^\)\]]*?)\s*\b(?:%s)\b\s*[\)\]]" % _REMIX_WORD, re.I)
+_ANY_TAG = re.compile(r"[\(\[][^\)\]]*(?:mix|edit|version|remaster|bonus|free|dub|\b(?:%s)\b)[^\)\]]*[\)\]]" % _REMIX_WORD)
+# Words in such a tag that describe the version rather than name a person.
+_GENERIC = set("""original extended radio club instrumental vocal dub vip album single full short long clean
+    dirty explicit main alternate alt demo live final new old digital vinyl bonus free download unreleased
+    dubplate special mini intro outro acapella remastered remaster mono stereo official unofficial exclusive
+    the a an his her their own self dubstep garage jungle dnb bass uk us deep dark heavy 140 2step""".split())
+
+
+def _fold(text: str) -> str:
     text = unicodedata.normalize("NFKD", text or "")
-    text = "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
-    text = re.sub(r"[\(\[][^\)\]]*(mix|edit|version|remaster|bonus|free|dub)[^\)\]]*[\)\]]", " ", text)
+    return "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
+
+
+def norm(text: str) -> str:
+    """For comparing titles and names: no accents, case, punctuation, "feat. X", or version tags
+    such as "(Original Mix)" and "(IOWLA Flip)" (who made a version is checked separately)."""
+    text = _ANY_TAG.sub(" ", _fold(text))
     text = re.sub(r"\b(feat|ft|featuring)\b.*$", " ", text)
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def plain(text: str) -> str:
+    """Like norm, but keeps everything, including version tags."""
+    return re.sub(r"[^a-z0-9]+", " ", _fold(text)).strip()
+
+
+@lru_cache(maxsize=8192)
+def remix_credits(title: str) -> tuple:
+    """Who made this version, as written: "Temperature (River Dub Edit)" -> ("River Dub", "River").
+
+    The second form drops describing words from the ends ("Jah Beer Dub Refix" -> "Jah Beer"), since
+    it can't be known whether "Dub" is part of the name. Empty for "(Original Mix)", "(VIP)" etc.
+    """
+    out = []
+    for inner in _REMIX_TAG.findall(title or ""):
+        words = [w for w in inner.replace("&", " & ").split() if not w.strip(".,'").isdigit()]
+        trimmed = list(words)
+        while trimmed and (plain(trimmed[-1]) in _GENERIC or not plain(trimmed[-1])):
+            trimmed.pop()
+        while trimmed and (plain(trimmed[0]) in _GENERIC or not plain(trimmed[0])):
+            trimmed.pop(0)
+        if not trimmed:
+            continue                                    # nothing but describing words
+        for form in (words, trimmed):
+            text = " ".join(form).strip(" -&,")
+            if text and text not in out:
+                out.append(text)
+    return tuple(out)
+
+
+@lru_cache(maxsize=8192)
+def remixer_names(title: str) -> tuple:
+    """Normalised names of the people in remix_credits, each form and each person."""
+    return tuple(dict.fromkeys(p for credit in remix_credits(title) for p in artist_parts(credit)))
+
+
+def base_title(title: str) -> str:
+    return _REMIX_TAG.sub(" ", title or "").strip()
 
 
 def artist_parts(text: str) -> list:
@@ -209,6 +266,19 @@ def score(artist: str, title: str, cand: dict) -> tuple:
             a = 0.9
     if not wanted:
         a = 0.6                                        # no artist given: the title alone is a weak match
+    # Versions. Asked for someone's edit/remix/bootleg: the candidate must name that person, and
+    # being theirs is as good as being the original artist's. Asked for the plain track: someone
+    # else's version of it is only a "check" match.
+    makers = remixer_names(title)
+    if makers:
+        told = " " + " ".join(plain(x) for x in [name] + list(cand.get("artists") or [])
+                              + list(cand.get("context") or []) if x) + " "
+        if any(f" {m} " in told for m in makers):
+            a = max(a, 0.9)
+        else:
+            t = min(t, 0.7)
+    elif remixer_names(name):
+        t = min(t, 0.8)
     return t, a
 
 
@@ -431,6 +501,8 @@ async def search_step(net, artist, title, steps):
     """Bandcamp search, several ways. Returns a result or None."""
     parts = artist_parts(artist)
     queries = [("t", f"{artist} {title}".strip())]
+    if remix_credits(title):                                          # as the remixer's own upload
+        queries.append(("t", f"{remix_credits(title)[0]} {base_title(title)}"))
     if len(parts) > 1:
         queries += [("t", f"{p} {title}") for p in parts[1:3]]       # each named artist on their own
     if len(norm(title)) >= 4:
@@ -740,6 +812,14 @@ class Library:
         """Is this saved page (or the album it belongs to) one of your purchases?"""
         return any(rel.get(k) in self.owned_urls for k in ("asked", "url", "release_url") if rel.get(k))
 
+    def owned_for(self, artist, title):
+        """Purchases credited to the artist, or to whoever made this version of the track."""
+        out = {i["key"]: i for i in self.owned_by(artist)}
+        for credit in remix_credits(title):
+            for i in self.owned_by(credit):
+                out.setdefault(i["key"], i)
+        return list(out.values())
+
     def owned_by(self, artist):
         """Purchases credited to this artist (or titled "Artist - ...")."""
         if artist in self._by_artist:
@@ -785,7 +865,7 @@ async def owned_step(net, lib, artist, title, steps):
                 steps.append(f'purchases: "{name}" on "{rel["title"]}", artist confirmed on its page')
                 return release_result(rel, v, f'{rel["artist"]} — {name}', "In your purchases"), None
     # b. releases you own by this artist: a purchase named after the track, or open them and read the track lists
-    owned = lib.owned_by(artist)
+    owned = lib.owned_for(artist, title)
     for item in owned:
         if ratio(norm(title), norm(item["title"])) >= 0.88 or ratio(norm(title), norm(item["title"].partition(" - ")[2])) >= 0.88:
             rel = await _safe_release(net, item["url"])
@@ -978,7 +1058,7 @@ def _remember(key, result):
 async def find(net, lib, artist, title, state):
     """All the steps for one track. Returns (result, keep) - keep is False when a site refused
     requests part-way, so the answer may be incomplete and should not be remembered."""
-    steps, keep, check, pages = [], True, None, []
+    steps, keep, check, pages, maker_pages = [], True, None, [], []
 
     def done(result):
         result["steps"] = steps
@@ -1006,7 +1086,7 @@ async def find(net, lib, artist, title, state):
                      + ("" if verdict == "bandcamp" else " (artist only partly matches)"))
         earlier = release_result(rel, verdict, f'{rel.get("artist") or artist} \u2014 {hit["name"]}',
                                  "In your purchases" if owned else "On a page read earlier")
-        if verdict == "bandcamp" and (owned or not lib.owned_by(artist)):
+        if verdict == "bandcamp" and (owned or not lib.owned_for(artist, title)):
             return done(earlier)
     if state["bandcamp_ok"] and title:
         try:
@@ -1028,7 +1108,12 @@ async def find(net, lib, artist, title, state):
                 return done(result)
             check = check or result
             # 4. the artist's own page
-            pages = await artist_pages(net, lib, artist, steps, state["search_ok"])
+            for credit in remix_credits(title):       # an edit, remix or bootleg: its maker's page first
+                maker_pages = await artist_pages(net, lib, credit, steps, state["search_ok"])
+                if maker_pages:
+                    break
+            pages = maker_pages + [p for p in await artist_pages(net, lib, artist, steps, state["search_ok"])
+                                   if p not in maker_pages]
             result = await scan_step(net, artist, title, pages, steps) if pages else None
             if result and result["status"] == "bandcamp":
                 return done(result)
@@ -1054,13 +1139,30 @@ async def find(net, lib, artist, title, state):
     # Both possible artist links are worked out and kept, so the preference can change later
     # without searching again.
     options = {"bandcamp": None, "soundcloud": None, "search": None}
-    if pages:
-        options["bandcamp"] = {"status": "bandcamp_artist", "site": "Bandcamp", "url": pages[0][0],
-                               "found": pages[0][1], "release": "", "year": "",
-                               "note": "Artist's page; the track isn't on any release there now"}
-    sc = await from_soundcloud(net, artist, steps)
-    if sc:
-        options["soundcloud" if sc["status"] == "soundcloud" else "search"] = sc
+
+    def page_option(page, whose):
+        return {"status": "bandcamp_artist", "site": "Bandcamp", "url": page[0], "found": page[1],
+                "release": "", "year": "", "note": f"{whose} page; the track isn't on any release there now"}
+
+    # An edit, remix, bootleg or flip belongs to whoever made it: link to them, not the original artist.
+    credits = remix_credits(title)
+    if credits:
+        if maker_pages:
+            options["bandcamp"] = page_option(maker_pages[0], "Remixer's")
+        for credit in credits:
+            sc = await from_soundcloud(net, credit, steps)
+            if sc and sc["status"] == "soundcloud":
+                options["soundcloud"] = dict(sc, note="Remixer's profile")
+                break
+        if not (options["bandcamp"] or options["soundcloud"]):
+            steps.append(f'no page found for "{credits[0]}"; falling back to the artist')
+    if not (options["bandcamp"] or options["soundcloud"]):
+        artist_only = [p for p in pages if p not in maker_pages]
+        if artist_only:
+            options["bandcamp"] = page_option(artist_only[0], "Artist's")
+        sc = await from_soundcloud(net, artist, steps)
+        if sc:
+            options["soundcloud" if sc["status"] == "soundcloud" else "search"] = sc
     return done(dict(pick_fallback(options), options=options))
 
 
@@ -1069,8 +1171,8 @@ FALLBACK_STATUSES = ("bandcamp_artist", "soundcloud", "soundcloud_search", "none
 
 def fallback_pref() -> str:
     """Which artist link to give when the track itself isn't found: "bandcamp" or "soundcloud"."""
-    value = (db.kv_get("lookup_fallback") or os.environ.get("LOOKUP_FALLBACK") or "bandcamp").strip().lower()
-    return value if value in ("bandcamp", "soundcloud") else "bandcamp"
+    value = (db.kv_get("lookup_fallback") or os.environ.get("LOOKUP_FALLBACK") or "soundcloud").strip().lower()
+    return value if value in ("bandcamp", "soundcloud") else "soundcloud"
 
 
 def pick_fallback(options: dict) -> dict:
@@ -1128,7 +1230,7 @@ def find_local(lib, artist, title):
     if verdict == "bandcamp":
         return owned_result(cand["item"], cand["name"],
                             f'purchases: track "{cand["name"]}" on "{cand["item"]["title"]}"')
-    owned = lib.owned_by(artist)
+    owned = lib.owned_for(artist, title)
     for item in owned:
         if max(ratio(norm(title), norm(item["title"])), ratio(norm(title), norm(item["title"].partition(" - ")[2]))) >= 0.88:
             return owned_result(item, item["title"], f'purchases: you own "{item["title"]}" by {item["band"]}')
