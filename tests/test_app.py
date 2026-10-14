@@ -1694,3 +1694,22 @@ def test_a_saved_miss_only_gets_youtube_added_when_youtube_is_switched_on(client
     assert row["status"] == "youtube" and len(searched) == before, row     # Bandcamp wasn't searched again
     assert "youtube" in lookup._saved_for("Tube Band", "Hidden Lake")["sites"]
     client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"]})
+
+
+def test_hiding_one_track_from_the_list_leaves_the_rest_of_the_release(client):
+    from app import db
+    rows = client.get("/api/tracks?limit=1000").json()
+    multi = next(r for r in rows if sum(1 for x in rows if x["post_id"] == r["post_id"]) > 1)
+    pid, key = multi["post_id"], multi["track_key"]
+    siblings = [r["track_key"] for r in rows if r["post_id"] == pid]
+    before = client.get("/api/facets").json()["hidden"]
+    r = client.post(f"/api/posts/{pid}/hidden", json={"hidden": True, "track": key})
+    assert r.status_code == 200 and r.json()["hidden"] == before + 1
+    left = [x["track_key"] for x in client.get("/api/tracks?limit=1000").json() if x["post_id"] == pid]
+    assert key not in left and set(left) == set(siblings) - {key}
+    assert any(p["id"] == pid for p in client.get("/api/feed?limit=200").json())        # the release stays in the grid
+    shown = [x for x in client.get("/api/tracks?limit=1000&hidden=1").json() if x["post_id"] == pid and x["track_key"] == key]
+    assert shown and shown[0]["hidden"] and shown[0]["track_hidden"] and not shown[0]["release_hidden"]
+    client.post(f"/api/posts/{pid}/hidden", json={"hidden": False, "track": key})
+    assert len([x for x in client.get("/api/tracks?limit=1000").json() if x["post_id"] == pid]) == len(siblings)
+    assert db.query("SELECT COUNT(*) n FROM hidden_tracks")[0]["n"] == 0

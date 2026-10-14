@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "56"   # shown beside the title, so you can tell which version is running
+VERSION = "57"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -345,6 +345,7 @@ def more_filters(year: Optional[str] = None, label: Optional[str] = None,
 
 class HiddenIn(BaseModel):
     hidden: bool = True
+    track: Optional[str] = None     # one track of the release (from the list); none: the whole release
 
 
 class PlayedIn(BaseModel):
@@ -354,8 +355,9 @@ class PlayedIn(BaseModel):
 
 @app.post("/api/posts/{post_id}/hidden")
 def hide_post(post_id: int, body: HiddenIn):
-    """Hide a release from the feed, or put it back."""
-    if not db.set_hidden(post_id, body.hidden):
+    """Hide a release from the feed, or one of its tracks from the list, or put it back."""
+    done = db.set_track_hidden(post_id, body.track, body.hidden) if body.track is not None else db.set_hidden(post_id, body.hidden)
+    if not done:
         raise HTTPException(404, "That item is no longer in the feed.")
     return {"hidden": db.facets()["hidden"]}
 

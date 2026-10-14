@@ -101,8 +101,8 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 
 ### Hiding and listened-to
 
-- The ✕ on a card (shown when you point at it) or at the end of a list row hides that release. Hiding a row hides the whole release it belongs to.
-- Hidden releases stay hidden through refreshes. Tick **Show hidden** and use ↺ to bring one back.
+- The ✕ on a card (shown when you point at it) hides that whole release. The ✕ in the list's Hide column hides just that track; the rest of the release stays, in the list and as a card. A release of a single track is hidden whole either way.
+- Hidden releases and tracks stay hidden through refreshes. Tick **Show hidden** and use ↺ to bring one back. In the list, ↺ on a track of a release hidden from the grid brings back the whole release.
 - Anything you press play on is dimmed afterwards. Playing a card marks the whole release. Playing a list row marks that track.
 - There is no button to mark something as unheard.
 
@@ -472,6 +472,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 57 | List view: the hide column is titled Hide, and its ✕ hides only that track instead of the whole release. Cards still hide whole releases. |
 | 56 | Tracked Artists: Filter rows box, a menu of row types (Needs attention, Still being checked, No posts yet, New, Ticked for YouTube search) with counts, and sortable columns. |
 | 55 | YouTube as a third site: channels in the feed and player, a YouTube button at the top, a YouTube column and a YouTube search column in Tracked Artists. A new Settings button switches sites off completely and chooses which sites Link Finder searches (Bandcamp, then SoundCloud, then YouTube; YouTube off by default). Saved results has a "Searched in the last lookup" filter. |
 | 54 | Feed search: only the newest search is shown when answers arrive out of order, Enter searches at once, and a failed load is reported instead of silently leaving the old list. |

@@ -111,6 +111,7 @@
   .list th .thb { all: unset; cursor: pointer; display: block; padding: 9px 14px 9px 10px; width: 100%; box-sizing: border-box; }
   .list th .thb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list th .thb:disabled { cursor: default; }
+  .list th.hidehead .thb { cursor: default; padding: 9px 4px; text-align: center; }
   .res td.spellform input { width: 100%; min-width: 9em; background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 5px 7px; font: inherit; }
   .res td small.guess { color: #e6b450; }
@@ -553,12 +554,13 @@ function play(it, node) {
 }
 
 // Hide a release from the feed (or put it back). nodes: what to take off the screen.
-async function setHidden(postId, hidden, nodes) {
-  const r = await api(`/api/posts/${postId}/hidden`, { method: "POST", body: { hidden } });
+// track: one track of the release, hidden from the list on its own (undefined: the whole release).
+async function setHidden(postId, hidden, nodes, track) {
+  const r = await api(`/api/posts/${postId}/hidden`, { method: "POST", body: track === undefined ? { hidden } : { hidden, track } });
   $("hiddenCount").textContent = r.hidden;
   if (filter.hidden) return loadFeed();                 // showing hidden items: redraw with the new state
   nodes.forEach(n => n.remove());
-  listRows = listRows.filter(x => x.post_id !== postId);
+  listRows = listRows.filter(x => !(x.post_id === postId && (track === undefined || x.track_key === track)));
   offset = Math.max(0, offset - (view === "list" ? nodes.length : 1));
   if (!$("grid").children.length && !$("listBody").children.length) loadFeed();
 }
@@ -694,7 +696,7 @@ function moveCol(key, toIndex) {
 }
 
 // Column widths (px) in the list. Drag the edge of a heading to resize; widths are remembered in this browser.
-const COL_DEFAULTS = { go: 48, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 124, posted: 124, site: 130, hide: 40 };
+const COL_DEFAULTS = { go: 48, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 124, posted: 124, site: 130, hide: 52 };
 const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "released", "posted", "site", "hide"];
 const COL_MIN = 48;
 let colW = { ...COL_DEFAULTS };
@@ -795,7 +797,7 @@ function listHead() {
   };
   const shown = shownCols();
   $("listCols").replaceChildren(...shown.map(() => el("col")));
-  $("listHead").replaceChildren(el("tr", {}, ...shown.map(k => k === "go" || k === "hide" ? el("th", {}) : th(k))));
+  $("listHead").replaceChildren(el("tr", {}, ...shown.map(k => k === "go" ? el("th", {}) : k === "hide" ? el("th", { class: "hidehead", title: "Hide a track from the list (or put it back)" }, el("span", { class: "thb", text: "Hide" })) : th(k))));
   applyColumns();
 }
 let dragCol = null;
@@ -854,10 +856,13 @@ function listRow(r) {
       site: () => el("td", { class: "site" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", title: `Open on ${s.label}` },
         el("span", { class: "dot", style: `background:${s.color}` }), s.label)),
     })[k]()),
+    // Hides this track only. A release hidden whole (from the grid) is put back whole.
     el("td", { class: "hide" }, el("button", { class: "rowhide", text: r.hidden ? "↺" : "✕",
-      title: r.hidden ? "Put this release back in the feed" : "Hide this release from the feed",
-      "aria-label": (r.hidden ? "Put back in the feed: " : "Hide from the feed: ") + (r.release || name),
-      onclick: () => setHidden(r.post_id, !r.hidden, [...$("listBody").querySelectorAll(`tr[data-post="${r.post_id}"]`)]) })));
+      title: r.release_hidden ? "Put this release back in the feed (it was hidden whole)" : r.hidden ? "Put this track back in the list" : "Hide this track from the list",
+      "aria-label": (r.hidden ? "Put back: " : "Hide: ") + name,
+      onclick: () => r.release_hidden
+        ? setHidden(r.post_id, false, [...$("listBody").querySelectorAll(`tr[data-post="${r.post_id}"]`)])
+        : setHidden(r.post_id, !r.hidden, [tr], r.track_key || "") })));
   return tr;
 }
 

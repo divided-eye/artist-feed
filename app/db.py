@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
 -- What you have listened to: track '' means the release as a whole (played from its card).
 CREATE TABLE IF NOT EXISTS played(post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   track TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, PRIMARY KEY(post_id, track));
+CREATE TABLE IF NOT EXISTS hidden_tracks(post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  track TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(post_id, track));
 CREATE TABLE IF NOT EXISTS lookup_cache(key TEXT PRIMARY KEY, result TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS web_cache(kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, at TEXT NOT NULL,
   PRIMARY KEY(kind, key));
@@ -303,6 +305,7 @@ T_ARTIST = "COALESCE(NULLIF(t.artist,''), NULLIF(p.author,''), ar.name)"
 T_LABEL = "COALESCE(p.label,'')"
 T_RELEASE = "COALESCE(NULLIF(p.release,''), CASE WHEN p.kind='album' THEN p.title ELSE '' END)"
 T_TRACK = "COALESCE(t.title, CASE WHEN p.kind='album' THEN '' ELSE p.title END)"
+TRACK_KEY = "COALESCE(t.ext_id, t.title, '')"             # how a track is told apart within its release
 TRACK_SORTS = {"artist": T_ARTIST, "label": T_LABEL, "release": T_RELEASE, "track": T_TRACK}
 
 
@@ -328,6 +331,8 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
     args += on
     if not more.get("hidden"):                 # hidden items only appear when asked for
         where.append("p.hidden=0")
+        if per_track:                          # a track hidden on its own, in the list
+            where.append(f"NOT EXISTS(SELECT 1 FROM hidden_tracks h WHERE h.post_id=p.id AND h.track={TRACK_KEY})")
     # The same release can reach the feed through two tracked pages (an artist's
     # and their label's, say). Show it once: the copy with the most detail.
     same = ("SELECT p2.id FROM posts p2 JOIN accounts a2 ON a2.id=p2.account_id "
@@ -391,8 +396,30 @@ def facets():
     labels = [r["label"] for r in query(
         "SELECT DISTINCT label FROM posts WHERE COALESCE(label,'')<>'' "
         "ORDER BY label COLLATE NOCASE")]
-    hidden = query("SELECT COUNT(DISTINCT COALESCE(embed, url)) AS n FROM posts WHERE hidden=1")[0]["n"]
+    hidden = query("SELECT COUNT(DISTINCT COALESCE(embed, url)) AS n FROM posts WHERE hidden=1")[0]["n"] + query(
+        "SELECT COUNT(DISTINCT COALESCE(p.embed, p.url) || '|' || h.track) AS n FROM hidden_tracks h "
+        "JOIN posts p ON p.id=h.post_id WHERE p.hidden=0")[0]["n"]
     return {"years": years, "labels": labels, "hidden": hidden}
+
+
+def set_track_hidden(post_id, track, hidden):
+    """Hide one track of a release from the list (or put it back); the rest of the release stays.
+    A release of a single track is hidden whole. Copies of the release on other tracked pages follow."""
+    rows = query("SELECT p.url, p.embed, a.source, (SELECT COUNT(*) FROM tracks WHERE post_id=p.id) AS n "
+                 "FROM posts p JOIN accounts a ON a.id=p.account_id WHERE p.id=?", (post_id,))
+    if not rows:
+        return False
+    r = rows[0]
+    if r["n"] <= 1 or not track:
+        return set_hidden(post_id, hidden)
+    copies = [c["id"] for c in query("SELECT p.id FROM posts p JOIN accounts a ON a.id=p.account_id WHERE a.source=? "
+                                     "AND (p.url=? OR (p.embed IS NOT NULL AND p.embed=?))", (r["source"], r["url"], r["embed"]))]
+    for pid in copies or [post_id]:
+        if hidden:
+            execute("INSERT OR IGNORE INTO hidden_tracks(post_id, track, at) VALUES(?,?,?)", (pid, track, now()))
+        else:
+            execute("DELETE FROM hidden_tracks WHERE post_id=? AND track=?", (pid, track))
+    return True
 
 
 def set_hidden(post_id, hidden):
@@ -459,7 +486,9 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
         f"SELECT p.id AS post_id, t.id AS track_id, {T_ARTIST} AS artist, {T_LABEL} AS label,"
         f" {T_RELEASE} AS release, {T_TRACK} AS track, t.duration, t.position,"
         f" t.ext_id AS track_ext_id, {WHEN} AS released, p.published_at, {POSTED} AS posted,"
-        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind, p.hidden,"
+        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind, p.hidden AS release_hidden,"
+        f" EXISTS(SELECT 1 FROM hidden_tracks h WHERE h.post_id=p.id AND h.track={TRACK_KEY}) AS track_hidden,"
+        f" (p.hidden OR EXISTS(SELECT 1 FROM hidden_tracks h WHERE h.post_id=p.id AND h.track={TRACK_KEY})) AS hidden,"
         " COALESCE(t.ext_id, t.title, '') AS track_key,"
         " EXISTS(SELECT 1 FROM played pl WHERE pl.post_id=p.id"
         "        AND pl.track IN ('', COALESCE(t.ext_id, t.title, ''))) AS played,"
