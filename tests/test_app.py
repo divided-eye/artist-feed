@@ -1259,3 +1259,54 @@ def test_your_list_spellings_links_and_notes(client):
     assert client.delete("/api/saved", params={"key": "masot|especies endemicas"}).json()["removed"] >= 1
     assert "masot|especies endemicas" in {r["key"] for r in client.get("/api/saved?limit=1000&filter=unsearched").json()["rows"]}
     assert client.delete("/api/known").json() == {"known_tracks": 0, "known_artists": 0}
+
+
+def test_your_list_years_repeated_rows_versions_and_stray_columns(client):
+    from app import lookup
+    sheet = "\n".join([
+        "Artist,Track,Year,Link,,,,",
+        "ØZ,AK-47,2022,https://soundcloud.com/ozdub,,,,",                              # the same track three times:
+        "ØZ,AK-47,2022,https://ozdub.bandcamp.com/album/d-blk002,,,,",                   # the release link wins
+        "Øz,AK-47,,,,,,",
+        "baron,Eski,2021,https://baron.bandcamp.com/album/spear,,,,https://elsewhere.example.com/not-this-row",
+        "baron,Eski [alternate version],2024,https://widdfam.bandcamp.com/album/cosmic (limited time),,,,",
+        "Töki,Zimmy (forth. DoD),2026,forthcoming https://soundcloud.com/toki/zimmy,,,,",
+        "Darkai,011 Dub,2024,Label Patreon exclusive (eventually available at https://www.patreon.com/label/shop),,,,",
+        "Somebody,Gone Tune,2019,sold out USB001; no link yet,,,,",
+        "Hippoflip,???,2020,https://soundcloud.com/hippoflip,,,,"])
+    got = client.post("/api/known", content=sheet.encode("cp1252")).json()         # as Excel saves a plain CSV
+    assert (got["tracks"], got["with_link"], got["release_links"], got["skipped"]) == (6, 5, 3, 1), got
+    assert (got["link_clashes"], got["spelling_clashes"]) == (1, 2), got
+    oz = lookup.known_for("oz", "ak 47")                                           # typed without the special letter
+    assert (oz["artist"], oz["title"], oz["year"], oz["url"]) == ("ØZ", "AK-47", "2022", "https://ozdub.bandcamp.com/album/d-blk002")
+    plain_one, other = lookup.known_for("Baron", "Eski"), lookup.known_for("Baron", "eski (alternate version)")
+    assert (plain_one["url"], plain_one["others"], plain_one["year"]) == ("https://baron.bandcamp.com/album/spear", "", "2021")
+    assert (other["title"], other["url"], other["note"], other["year"]) == ("Eski [alternate version]", "https://widdfam.bandcamp.com/album/cosmic", "limited time", "2024")
+    zimmy = lookup.known_for("Toki", "Zimmy")
+    assert (zimmy["title"], zimmy["url"], zimmy["note"]) == ("Zimmy (forth. DoD)", "https://soundcloud.com/toki/zimmy", "forthcoming")
+    assert lookup.known_for("darkai", "011 dub")["note"] == "Label Patreon exclusive; eventually available at"
+    gone = lookup.known_for("somebody", "gone tune")
+    assert (gone["url"], gone["note"]) == ("", "sold out USB001; no link yet")
+    j = client.post("/api/lookup", content="Artist\tTitle\noz\tak-47\nbaron\teski [alternate version]".encode()).json()
+    for _ in range(200):
+        time.sleep(0.05)
+        now = client.get(f"/api/lookup/{j['id']}").json()
+        if now["finished"]:
+            break
+    first, second = now["rows"]
+    assert (first["status"], first["year"], first["list_artist"]) == ("imported", "2022", "ØZ")
+    assert (second["url"], second["year"]) == ("https://widdfam.bandcamp.com/album/cosmic", "2024")
+    assert ",2022,https://ozdub.bandcamp.com/album/d-blk002," in client.get(f"/api/lookup/{j['id']}.csv").content.decode("utf-8-sig")
+    rows = client.get("/api/saved?q=baron eski&limit=50").json()["rows"]
+    assert sorted(r["list_title"] for r in rows) == ["Eski", "Eski [alternate version]"]
+    assert client.delete("/api/known").json() == {"known_tracks": 0, "known_artists": 0}
+
+
+def test_letters_like_o_with_a_stroke_and_answers_saved_under_the_old_tidying():
+    from app import db, lookup
+    assert lookup.norm("Nøcase") == "nocase" and lookup.norm("KØDE-1") == "kode 1" and lookup.norm("Łódź") == "lodz"
+    db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)",
+               ("manual|n case|old tune", json.dumps({"status": "manual", "url": "https://x.bandcamp.com/track/old-tune"}), db.now()))
+    assert lookup._manual_for("Nøcase", "Old Tune")["url"] == "https://x.bandcamp.com/track/old-tune"
+    assert lookup._manual_for("Nocase", "Old Tune") is None
+    db.execute("DELETE FROM lookup_cache WHERE key=?", ("manual|n case|old tune",))

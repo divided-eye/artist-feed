@@ -147,7 +147,7 @@ _REMIX_WORD = (r"remix|rmx|re-?mix|edit|re-?edit|bootleg|boot|flip|refix|re-?fix
                r"remake|re-?lick|mash-?up|redo|re-?twist|re-?fit|cover|treatment|version|mix|dub|vip")
 _REMIX_TAG = re.compile(r"[\(\[]\s*([^\)\]]*?)\s*\b(%s)\b\s*[\)\]]" % _REMIX_WORD, re.I)
 _VIP_TAG = re.compile(r"[\(\[]([^\)\]]*)\bvip\b([^\)\]]*)[\)\]]", re.I)
-_WIP = re.compile(r"[\(\[]\s*(?:wip|w\.i\.p\.?|work in progress)[^\)\]]*[\)\]]|(?<=\S)\s+[-–]?\s*\b(?:wip|w\.i\.p\.?)(?=\s*(?:$|[\(\[]))", re.I)
+_WIP = re.compile(r"[\(\[]\s*(?:wip|w\.i\.p\.?|work in progress|forthcoming|forth\.?(?=\s))[^\)\]]*[\)\]]|(?<=\S)\s+[-–]?\s*\b(?:wip|w\.i\.p\.?)(?=\s*(?:$|[\(\[]))", re.I)
 _ANY_TAG = re.compile(r"[\(\[][^\)\]]*(?:mix|edit|version|remaster|bonus|free|dub|\b(?:%s)\b)[^\)\]]*[\)\]]" % _REMIX_WORD)
 # Words in such a tag that describe the version rather than name a person.
 _GENERIC = set("""original extended radio club instrumental vocal dub vip album single full short long clean
@@ -174,9 +174,24 @@ def _drop_describing(text: str) -> str:
     return _BRACKET.sub(keep, text)
 
 
-def _fold(text: str) -> str:
+# Letters that are not "a letter plus an accent", so stripping accents leaves them alone.
+_LETTERS = str.maketrans({"ø": "o", "Ø": "O", "đ": "d", "Đ": "D", "ł": "l", "Ł": "L", "æ": "ae", "Æ": "AE",
+                          "œ": "oe", "Œ": "OE", "ð": "d", "Ð": "D", "þ": "th", "Þ": "TH", "ı": "i", "ħ": "h"})
+
+
+def _fold_old(text: str) -> str:
     text = unicodedata.normalize("NFKD", text or "")
     return "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
+
+
+def _fold(text: str) -> str:
+    return _fold_old((text or "").translate(_LETTERS))
+
+
+def _old_spelling(text: str) -> str:
+    """The text as it was tidied before "ø" and similar letters were understood ("Nøcase" became
+    "n case"): used only to find answers saved back then."""
+    return "".join(" " if ord(ch) in _LETTERS else ch for ch in text or "")
 
 
 def norm(text: str) -> str:
@@ -1493,6 +1508,13 @@ def _cache_key(artist, title):
     return f"{CACHE_VERSION}|{track_key(artist, title)}"
 
 
+def _saved_for(artist, title):
+    found = _cached(_cache_key(artist, title))
+    if found is None and _old_spelling(artist + title) != artist + title:
+        found = _cached(_cache_key(_old_spelling(artist), _old_spelling(title)))
+    return found
+
+
 def _manual_key(artist, title):
     # No version in this key: a link you set yourself outlives changes to the lookup.
     return f"manual|{track_key(artist, title)}"
@@ -1502,6 +1524,8 @@ def _manual_for(artist, title):
     """The link you set for this track. Links set before versions had keys of their own were
     stored under the plain title, and are still honoured for the version they were set on."""
     found = _cached(_manual_key(artist, title))
+    if found is None and _old_spelling(artist + title) != artist + title:
+        found = _cached(_manual_key(_old_spelling(artist), _old_spelling(title)))
     if found is None and "#" in title_key(title):
         old = _cached(f"manual|{norm(artist)}|{norm(title)}")
         if old is not None and "title" not in old:
@@ -1778,7 +1802,7 @@ async def _run(job, fresh, retry_missing=False):
         left = []
         for row in rows:
             manual = _manual_for(row["artist"], row["title"])            # your own link always wins
-            saved = manual or (None if fresh else _cached(_cache_key(row["artist"], row["title"])))
+            saved = manual or (None if fresh else _saved_for(row["artist"], row["title"]))
             if saved and not manual and retry_missing and saved.get("status") in FALLBACK_STATUSES:
                 saved = None                               # asked to look again for whatever wasn't found
             if saved and not manual and saved.get("engine", 0) < ENGINE and (
@@ -1919,23 +1943,39 @@ def split_link_cell(text: str) -> tuple:
         if link not in links:
             links.append(link)
     rest = _URL.sub(" ", text or "")
-    notes = [n.strip(" -\u2013\u2014|,;:") for n in re.split(r"[\(\)\[\]]", rest)]
+    notes = [n.strip(" -–—|,;:") for n in re.split(r"[\(\)\[\]]", rest)]
     return links, "; ".join(dict.fromkeys(n for n in notes if n))
 
 
+def _link_rank(url: str) -> int:
+    """How much a link says about where a track is: a Bandcamp release, the track on SoundCloud,
+    a page for it on another shop, a Bandcamp front page, somebody's SoundCloud profile."""
+    if not url:
+        return 9
+    parts = urlparse(url)
+    host, path = parts.netloc.lower(), [p for p in parts.path.split("/") if p]
+    if "bandcamp.com" in host:
+        return 0 if path[:1] in (["album"], ["track"]) else 3
+    if "soundcloud.com" in host:
+        return 1 if len(path) >= 2 else 4
+    return 2
+
+
 def _best_link(links: list) -> str:
-    """The link to use from several: a Bandcamp release, then any Bandcamp page, then SoundCloud."""
-    rank = lambda u: (0 if re.search(r"bandcamp\.com/(album|track)/", u) else 1 if "bandcamp.com" in u
-                      else 2 if "soundcloud.com" in u else 3)
-    return min(links, key=lambda u: (rank(u), links.index(u))) if links else ""
+    return min(links, key=lambda u: (_link_rank(u), links.index(u))) if links else ""
+
+
+YEAR_HEADERS = ("year", "released", "release year", "release date", "date")
 
 
 def read_known(rows: list) -> list:
-    """[{artist, title, url, others, note}] from your list. Needs an artist and/or a title per row;
-    links and the notes written beside them are found wherever they are."""
+    """[{artist, title, year, url, others, note}] from your list. Needs an artist and/or a title per row.
+    With a header row, links are read from the columns headed as links and columns with no heading
+    are left alone (scratch columns beside a list are common); without one, links are found
+    wherever they are. Anything else written in a link's cell becomes the note."""
     rows = [r for r in rows if any(c for c in r)]
-    artist_col = title_col = None
-    link_cols, note_cols, start = [], [], 0
+    artist_col = title_col = year_col = None
+    link_cols, note_cols, blank_cols, start = [], [], set(), 0
     for i, row in enumerate(rows[:15]):
         heads = [c.casefold().strip(" :#") for c in row]
         if "artist" in heads or "artists" in heads:
@@ -1947,18 +1987,27 @@ def read_known(rows: list) -> list:
                     break
             link_cols = [j for j, h in enumerate(heads) if h in LINK_HEADERS]
             note_cols = [j for j, h in enumerate(heads) if h in NOTE_HEADERS]
+            years = [j for j, h in enumerate(heads) if h in YEAR_HEADERS and j not in (artist_col, title_col)]
+            year_col = years[0] if years else None
+            blank_cols = {j for j, h in enumerate(heads) if not h}
             start = i + 1
             break
+    width = max((len(r) for r in rows), default=0)
+    if artist_col is not None:
+        blank_cols |= set(range(len(rows[start - 1]), width))
     out = []
     for row in rows[start:]:
         cell = lambda j: row[j].strip() if j is not None and j < len(row) else ""
         if artist_col is not None:
-            artist, title, used = cell(artist_col), cell(title_col), {artist_col, title_col}
+            artist, title, used = cell(artist_col), cell(title_col), {artist_col, title_col, year_col} | blank_cols
+            year = cell(year_col)
         else:
             first = 1 if len(row) >= 3 and re.fullmatch(r"\d+[.)]?", row[0].strip() or "x") else 0
             artist, title, used = cell(first), cell(first + 1), {first, first + 1} | ({0} if first else set())
             if _URL.search(title):                          # artist, link: no title column at all
                 title, used = "", {first} | ({0} if first else set())
+            year = next((c.strip() for j, c in enumerate(row) if j not in used and re.fullmatch(r"(19|20)\d\d", c.strip())), "")
+        found_year = re.search(r"\b(19|20)\d\d\b", year)
         links, notes = [], []
         for j, text in enumerate(row):
             if j in used or not text.strip():
@@ -1972,46 +2021,81 @@ def read_known(rows: list) -> list:
                     notes.append(rest)
         if artist or title:
             best = _best_link(links)
-            out.append({"artist": artist, "title": title, "url": best,
+            out.append({"artist": artist, "title": title, "year": found_year.group(0) if found_year else "", "url": best,
                         "others": " ".join(u for u in links if u != best), "note": "; ".join(dict.fromkeys(notes))})
     if not out:
         raise TracklistError("Nothing to import. The list needs an artist column and, for tracks, a title column.")
     return out
 
 
+def _commonest(values) -> str:
+    """The value given most often; the first of them when it's a tie."""
+    counts = {}
+    for v in values:
+        counts[v] = counts.get(v, 0) + 1
+    return max(counts, key=lambda v: counts[v]) if counts else ""      # max() keeps the first of equals
+
+
 def import_known(entries: list) -> dict:
-    """Store your list. The first spelling given for a track or artist is kept; a later, different
-    one is reported. Importing again updates links and notes for tracks already there."""
-    now, tracks, artists, clashes = db.now(), {}, {}, []
+    """Store your list. Rows for the same track are merged: the spelling used most often is kept,
+    and the link that says most (a release before a profile), then the one given most often.
+    "Eski" and "Eski [alternate version]" are tidied to the same title but kept as separate entries,
+    each with its own spelling, link and note. Importing again updates what is already there."""
+    now, groups, names = db.now(), {}, {}
+    skipped = spelling_clashes = link_clashes = 0
+    examples = []
     for e in entries:
         a_key = norm(e["artist"])
         if a_key:
-            if a_key in artists and artists[a_key] != e["artist"]:
-                clashes.append({"kept": artists[a_key], "ignored": e["artist"], "what": "artist"})
-            artists.setdefault(a_key, e["artist"])
+            names.setdefault(a_key, []).append(e["artist"])
         if not e["title"]:
             continue
-        key = track_key(e["artist"], e["title"])
-        if key in tracks:
-            kept = tracks[key]
-            if (kept["artist"], kept["title"]) != (e["artist"], e["title"]):
-                clashes.append({"kept": f'{kept["artist"]} - {kept["title"]}', "ignored": f'{e["artist"]} - {e["title"]}', "what": "track"})
-            if not kept["url"] and e["url"]:                # a later row may still supply the link
-                kept.update(url=e["url"], others=e["others"], note=e["note"] or kept["note"])
+        if not norm(e["title"]) or not a_key:               # "???", or a title in letters that were lost
+            skipped += 1
             continue
-        tracks[key] = dict(e)
-    db.executemany("INSERT INTO known_tracks(key, artist, title, url, others, note, at) VALUES(?,?,?,?,?,?,?) "
-                   "ON CONFLICT(key) DO UPDATE SET artist=excluded.artist, title=excluded.title, url=excluded.url,"
-                   " others=excluded.others, note=excluded.note, at=excluded.at",
-                   [(k, t["artist"], t["title"], t["url"], t["others"], t["note"], now) for k, t in tracks.items()])
+        groups.setdefault((track_key(e["artist"], e["title"]), plain(e["title"])), []).append(e)
+    artists = {k: _commonest(v) for k, v in names.items()}
+    for k, v in names.items():
+        if len(set(v)) > 1:
+            spelling_clashes += 1
+            examples.append({"what": "artist", "kept": artists[k], "ignored": ", ".join(sorted(set(v) - {artists[k]}))})
+    tracks = []
+    for (key, variant), group in groups.items():
+        spelling = _commonest((e["artist"], e["title"]) for e in group)
+        if len({(e["artist"], e["title"]) for e in group}) > 1:
+            spelling_clashes += 1
+            examples.append({"what": "track", "kept": " - ".join(spelling),
+                             "ignored": ", ".join(sorted({" - ".join((e["artist"], e["title"])) for e in group} - {" - ".join(spelling)}))})
+        linked = [e for e in group if e["url"]]
+        url = ""
+        if linked:
+            top = min(_link_rank(e["url"]) for e in linked)
+            url = _commonest(e["url"] for e in linked if _link_rank(e["url"]) == top)
+            if len({e["url"] for e in linked}) > 1:
+                link_clashes += 1
+                examples.append({"what": "link", "kept": f'{" - ".join(spelling)}: {url}',
+                                 "ignored": ", ".join(sorted({e["url"] for e in linked} - {url}))})
+        chosen = [e for e in group if e["url"] == url]      # the note and year that go with that link
+        tracks.append({"key": key, "variant": variant, "artist": spelling[0], "title": spelling[1], "url": url,
+                       "year": _commonest(e["year"] for e in chosen if e["year"]) or _commonest(e["year"] for e in group if e["year"]),
+                       "others": _commonest(e["others"] for e in chosen if e["others"]),
+                       "note": _commonest(e["note"] for e in chosen if e["note"])})
+    db.executemany("INSERT INTO known_tracks(key, variant, artist, title, year, url, others, note, at) VALUES(?,?,?,?,?,?,?,?,?) "
+                   "ON CONFLICT(key, variant) DO UPDATE SET artist=excluded.artist, title=excluded.title, year=excluded.year,"
+                   " url=excluded.url, others=excluded.others, note=excluded.note, at=excluded.at",
+                   [(t["key"], t["variant"], t["artist"], t["title"], t["year"], t["url"], t["others"], t["note"], now) for t in tracks])
     db.executemany("INSERT INTO known_artists(key, name, at) VALUES(?,?,?) "
                    "ON CONFLICT(key) DO UPDATE SET name=excluded.name, at=excluded.at",
                    [(k, name, now) for k, name in artists.items()])
     _known_cache.clear()
-    return {"rows": len(entries), "tracks": len(tracks), "artists": len(artists),
-            "with_link": sum(1 for t in tracks.values() if t["url"]),
-            "with_note": sum(1 for t in tracks.values() if t["note"]),
-            "clashes": len(clashes), "clash_examples": clashes[:25], **known_counts()}
+    order = {"link": 0, "track": 1, "artist": 2}
+    return {"rows": len(entries), "tracks": len(tracks), "artists": len(artists), "skipped": skipped,
+            "with_link": sum(1 for t in tracks if t["url"]),
+            "release_links": sum(1 for t in tracks if _link_rank(t["url"]) == 0),
+            "with_note": sum(1 for t in tracks if t["note"]),
+            "spelling_clashes": spelling_clashes, "link_clashes": link_clashes,
+            "clashes": spelling_clashes + link_clashes,
+            "clash_examples": sorted(examples, key=lambda x: order[x["what"]])[:40], **known_counts()}
 
 
 def known_counts() -> dict:
@@ -2023,26 +2107,38 @@ _known_cache = {}
 
 
 def _known() -> tuple:
-    """(tracks by key, artist spellings by key), loaded once and dropped when the list changes."""
+    """(your list's entries by key, artist spellings by key), loaded once and dropped when the list
+    changes. A key usually has one entry; versions that tidy to the same title each have their own,
+    the plainest first."""
     if not _known_cache:
-        _known_cache["tracks"] = {r["key"]: r for r in db.query("SELECT * FROM known_tracks")}
+        tracks = {}
+        for r in db.query("SELECT * FROM known_tracks ORDER BY key, LENGTH(variant), variant"):
+            tracks.setdefault(r["key"], []).append(r)
+        _known_cache["tracks"] = tracks
         _known_cache["artists"] = {r["key"]: r["name"] for r in db.query("SELECT * FROM known_artists")}
     return _known_cache["tracks"], _known_cache["artists"]
 
 
+def known_entry(artist, title):
+    """Your list's entry for this track: the one written the same way, else the plainest version."""
+    entries = _known()[0].get(track_key(artist, title))
+    if not entries:
+        return None
+    return next((t for t in entries if t["variant"] == plain(title)), entries[0])
+
+
 def known_for(artist, title) -> dict:
-    """What your list says about a track: {artist, title, url, others, note}, blank where it says nothing."""
-    tracks, artists = _known()
-    t = tracks.get(track_key(artist, title)) or {}
-    return {"artist": t.get("artist") or artists.get(norm(artist), ""), "title": t.get("title", ""),
-            "url": t.get("url", ""), "others": t.get("others", ""), "note": t.get("note", "")}
+    """What your list says about a track: {artist, title, year, url, others, note}, blank where it says nothing."""
+    t = known_entry(artist, title) or {}
+    return {"artist": t.get("artist") or _known()[1].get(norm(artist), ""), "title": t.get("title", ""),
+            "year": t.get("year", ""), "url": t.get("url", ""), "others": t.get("others", ""), "note": t.get("note", "")}
 
 
 STRONG = ("manual", "bandcamp", "soundcloud_track")      # answers that outrank a link from your list
 
 
 def from_list(known: dict) -> dict:
-    return {"status": "imported", "site": site_of(known["url"]), "url": known["url"], "year": "", "release": "",
+    return {"status": "imported", "site": site_of(known["url"]), "url": known["url"], "year": known.get("year", ""), "release": "",
             "found": "", "note": known["note"],
             "steps": ["link taken from the list you imported"]}
 
@@ -2075,7 +2171,8 @@ def view(job) -> dict:
     rows = []
     for r in job["rows"]:
         known = known_for(r["artist"], r["title"])
-        rows.append(dict(r, review=review_reason(r), list_artist=known["artist"], list_title=known["title"],
+        year = r.get("year") or (known["year"] if r.get("status") else "")     # your list's year, where the lookup has none
+        rows.append(dict(r, year=year, review=review_reason(r), list_artist=known["artist"], list_title=known["title"],
                          list_link=known["url"], list_note=known["note"]))
     return dict(job, rows=rows)
 
@@ -2120,7 +2217,7 @@ def to_csv(job) -> bytes:
                      "title (your spelling)", "link note", "site", "release", "result", "found as", "note", "steps"])
     for r in job["rows"]:
         doubt, known = review_reason(r), known_for(r["artist"], r["title"])
-        writer.writerow([r["n"], r["artist"], r["title"], r["year"], r["url"], ("REVIEW: " + doubt) if doubt else "",
+        writer.writerow([r["n"], r["artist"], r["title"], r["year"] or known["year"], r["url"], ("REVIEW: " + doubt) if doubt else "",
                          known["artist"], known["title"], known["note"], r["site"], r["release"],
                          STATUS_TEXT.get(r["status"], r["status"]), r["found"], r["note"],
                          " | ".join(r.get("steps") or [])])

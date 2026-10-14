@@ -73,8 +73,10 @@ CREATE TABLE IF NOT EXISTS collection_items(key TEXT PRIMARY KEY, fan TEXT NOT N
 CREATE TABLE IF NOT EXISTS collection_tracks(item_key TEXT NOT NULL, position INTEGER, title TEXT NOT NULL, artist TEXT);
 CREATE INDEX IF NOT EXISTS collection_tracks_item ON collection_tracks(item_key);
 -- Your own list of tracks: how each artist and title should be written, and optionally a link.
-CREATE TABLE IF NOT EXISTS known_tracks(key TEXT PRIMARY KEY, artist TEXT NOT NULL, title TEXT NOT NULL,
-  url TEXT NOT NULL DEFAULT '', others TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL);
+-- "variant" tells apart versions that tidy to the same title ("Eski", "Eski [alternate version]").
+CREATE TABLE IF NOT EXISTS known_tracks(key TEXT NOT NULL, variant TEXT NOT NULL DEFAULT '', artist TEXT NOT NULL,
+  title TEXT NOT NULL, year TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', others TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, PRIMARY KEY(key, variant));
 CREATE TABLE IF NOT EXISTS known_artists(key TEXT PRIMARY KEY, name TEXT NOT NULL, at TEXT NOT NULL);
 """
 
@@ -94,6 +96,9 @@ def conn() -> sqlite3.Connection:
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA foreign_keys=ON")
             _conn.execute("PRAGMA journal_mode=WAL")
+            cols = [r[1] for r in _conn.execute("PRAGMA table_info(known_tracks)")]
+            if cols and "variant" not in cols:              # an earlier layout of the imported list
+                _conn.execute("DROP TABLE known_tracks")
             _conn.executescript(SCHEMA)
             migrate(_conn)
             _conn.execute("CREATE INDEX IF NOT EXISTS posts_embed ON posts(embed)")

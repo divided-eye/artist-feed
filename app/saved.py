@@ -35,22 +35,31 @@ def all_rows() -> list:
         row = out[rest] = _entry(rest)
         row.update({k: saved.get(k) or "" for k in ("artist", "title", "status", "url", "site", "year", "release", "found", "note")})
         row.update(at=r["at"], searched=True)
-    for key, t in tracks.items():
-        row = out.get(key)
-        if row is None:                                     # in your list, never looked up
-            row = out[key] = _entry(key)
+    for key, entries in tracks.items():
+        row, shown = out.get(key), None
+        if row is not None:                                 # looked up: the entry written the way it was typed
+            shown = (lookup.known_entry(row["artist"], row["title"]) if row["title"] else None) or entries[0]
+            if shown["url"] and row["status"] not in lookup.STRONG:
+                row.update({k: v for k, v in lookup.from_list(shown).items() if k != "steps"})
+            _from_list(row, shown)
+        for t in entries:                                   # in your list, never looked up
+            if t is shown:
+                continue
+            extra = out[key if key not in out else f"{key}~{t['variant']}"] = _entry(key)
             if t["url"]:
-                row.update(lookup.from_list(t), at=t["at"])
-                row.pop("steps", None)
-        elif t["url"] and row["status"] not in lookup.STRONG:
-            row.update({k: v for k, v in lookup.from_list(t).items() if k != "steps"})
-        row.update(list_artist=t["artist"], list_title=t["title"], list_link=t["url"], list_note=t["note"])
+                extra.update({k: v for k, v in lookup.from_list(t).items() if k != "steps"}, at=t["at"])
+            _from_list(extra, t)
     for row in out.values():
         if not row["list_artist"]:
             row["list_artist"] = artists.get(row["tidy_artist"], "")
         row["review"] = lookup.review_reason(row)
         row["result"] = lookup.STATUS_TEXT.get(row["status"], row["status"]) if row["status"] else "Not looked up yet"
     return sorted(out.values(), key=lambda r: (not r["searched"], -_stamp(r["at"]), r["tidy_artist"], r["tidy_title"]))
+
+
+def _from_list(row, t):
+    row.update(list_artist=t["artist"], list_title=t["title"], list_link=t["url"], list_note=t["note"],
+               year=row["year"] or t["year"])
 
 
 def _stamp(at: str) -> int:

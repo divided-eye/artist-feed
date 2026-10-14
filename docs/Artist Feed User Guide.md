@@ -196,17 +196,17 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, were not found, were found, have a link you set, are in your list, or have no spelling on file. Export downloads whatever the search and filter show.
 
-Each track is listed under the tidied form of its name: lower case, no accents or punctuation, and no describing tags. That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form.
+Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form.
 
 Each row has Edit, Search again and Forget, plus Looks right on rows marked for review. Forget removes the saved answer, so the track is searched for next time.
 
 ### Your list of spellings and links
 
-**Import your list** takes a spreadsheet or CSV of how artists and titles should be written. It needs an Artist column and, for tracks, a Title column. A row with only an artist gives that artist's spelling for all their tracks.
+**Import your list** takes a spreadsheet or CSV of how artists and titles should be written. It needs an Artist column and, for tracks, a Title column. A row with only an artist gives that artist's spelling for all their tracks. Upload the .xlsx file itself, or save as "CSV UTF-8": a plain CSV saved from Excel loses letters outside Western European alphabets, which arrive as question marks.
 
 - Your spelling is shown beside the tidied form here, under the names in lookup results, and as its own columns in both exports. The tidied form is kept.
-- The list may include links, in columns named Link, URL, Bandcamp or SoundCloud, or anywhere a web address appears. Text written beside a link, such as "(limited time only)" or "(Patreon)", is kept separately as a note and shown and exported in its own column.
-- When a name appears twice with different spellings, the first is kept and the import reports the others.
+- The list may include links, in columns named Link, URL, Bandcamp or SoundCloud, or Buy. When the list has a header row, columns without a heading are ignored. Without a header row, links are read wherever a web address appears. Text written beside a link, such as "(limited time only)" or "(Patreon)", is kept separately as a note and shown and exported in its own column.
+- A list may repeat tracks: rows for the same track are merged. The spelling used most often is kept. When rows give different links, a Bandcamp release or SoundCloud track link is preferred over a shop page, a label's front page or a profile, then the link given most often. The import reports how many tracks had either difference. Versions that tidy to the same title, such as "Eski" and "Eski [alternate version]", stay separate entries, each with its own spelling, link and note. A Year column is kept and used when the lookup has no year of its own. Rows whose title has no letters or digits, such as "???", are left out.
 - Importing again updates the list. Remove my list deletes it; saved results and links you set are kept.
 
 A link from your list is used only when the lookup has nothing better:
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 41 | Your list: a Year column is read and used when the lookup has no year. Repeated rows for a track are merged (commonest spelling; best link, then commonest). Versions that tidy to the same title are kept as separate entries. Columns without a heading are ignored. Names: ø, æ, ł and similar letters are now read as o, ae, l, so "Nocase" matches "Nøcase"; "(forth. Label)" and "(forthcoming)" are treated like WIP. |
 | 40 | Link Finder: Saved results tab listing every track looked up, with search, filters, row actions and export. Import your own list of artist and title spellings, with optional links and link notes; spellings appear as separate columns and list links are used when the lookup has nothing better. Each version of a title (a remix, a VIP) now has its own saved answer instead of sharing the plain title's. |
 | 39 | Link Finder: uncertain links are marked Needs review with a red tint that stays until confirmed (Looks right) or corrected, and the export has a "needs review" column. Bandcamp search answers are saved for 7 days, so repeat searches after an update are nearly free. Search again button on each row, and a tick box to search again for not-found rows only. Hint text states that a row needs artist and track title. |
 | 38 | Link Finder remembers which SoundCloud profile belongs to a name, from a track of theirs found there or a link you set, and uses it wherever a profile would otherwise be picked by name alone. Saved name-only answers are corrected without a new search. |

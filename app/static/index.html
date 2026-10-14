@@ -1401,8 +1401,13 @@ async function importKnown(file) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) { $("savedError").textContent = typeof data.detail === "string" ? data.detail : "Couldn't read that list."; await loadSaved(true); return; }
   await loadSaved(true);
-  const clash = data.clashes ? ` ${data.clashes} later spelling${data.clashes === 1 ? "" : "s"} of a name already in the list ${data.clashes === 1 ? "was" : "were"} left out (the first is kept), e.g. "${data.clash_examples[0].ignored}" vs "${data.clash_examples[0].kept}".` : "";
-  $("knownInfo").textContent = `Imported ${data.rows.toLocaleString()} rows: ${data.tracks.toLocaleString()} tracks (${data.with_link.toLocaleString()} with a link, ${data.with_note.toLocaleString()} with a note) and ${data.artists.toLocaleString()} artist spellings.` + clash;
+  const n = x => (x || 0).toLocaleString(), parts = [];
+  if (data.link_clashes) parts.push(`${n(data.link_clashes)} track${data.link_clashes === 1 ? " has" : "s have"} different links on different rows (a release link is preferred, then the one given most often)`);
+  if (data.spelling_clashes) parts.push(`${n(data.spelling_clashes)} name${data.spelling_clashes === 1 ? " is" : "s are"} written more than one way (the commonest is kept)`);
+  if (data.skipped) parts.push(`${n(data.skipped)} row${data.skipped === 1 ? "" : "s"} with no readable title left out`);
+  const eg = (data.clash_examples || [])[0];
+  $("knownInfo").textContent = `Imported ${n(data.rows)} rows: ${n(data.tracks)} tracks (${n(data.with_link)} with a link, ${n(data.release_links)} of them Bandcamp releases; ${n(data.with_note)} with a note) and ${n(data.artists)} artist spellings.`
+    + (parts.length ? " " + parts.join("; ") + "." : "") + (eg ? ` For example, kept "${eg.kept}" over "${eg.ignored}".` : "");
 }
 
 function lookupPanel(open) {
