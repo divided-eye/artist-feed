@@ -1,6 +1,6 @@
 # Artist Feed: User Guide
 
-Oct 13, 2026
+Oct 14, 2026
 
 ## About this guide
 
@@ -38,13 +38,33 @@ The app runs in Docker, so the only thing to install is Docker Desktop (free for
 
 ### Updating to a new version
 
-1. Unzip the new version to a **new** folder. Do not unzip over the old one.
+1. (Without Git; with Git, see Keeping it in Git below.) Unzip the new version to a **new** folder. Do not unzip over the old one.
 2. Check that the folder you are in directly contains `docker-compose.yml`. "Extract all" on Windows often adds an extra outer folder.
 3. Copy the `data` folder from the old version's folder into the new one. This carries over your artists, feed, purchases and saved lookups.
 4. Run `docker compose up -d --build` in the new folder.
 5. Reload the page and check the version number beside the title.
 
 If the version number has not changed, the terminal was in a folder with old files. In the build output, the line `COPY app ./app` should not say `CACHED`.
+
+### Keeping it in Git
+
+The app's folder is a Git repository: every version since 3 is saved as a commit, tagged with its number (`v3` … `v58`), with that version's Version log entry as its description. Git keeps a history of the code only. The `data` folder is left out on purpose, so your artists, feed and saved lookups are never committed and never overwritten by an update.
+
+**Setting it up (once).** Install Git for Windows from git-scm.com (the default options are fine). Stop the app, unzip `artist-feed-git.zip` to a new folder, move your `data` folder into it, and start the app from there with `docker compose up -d --build`. After that, updates no longer need a new folder each time.
+
+**Everyday commands**, typed in PowerShell inside the app's folder:
+
+| Command | What it does |
+| --- | --- |
+| `git log --oneline` | Lists every version and what changed in it. |
+| `git status` | Shows the files you have edited since the last commit. |
+| `git diff` | Shows exactly what you changed. |
+| `git add -A` then `git commit -m "what I changed"` | Saves your own edits (a colour, some wording) as a commit. Do this before installing an update. |
+| `git checkout v55` | Switches to an older version, to compare or go back. `git checkout main` returns to the newest. Rebuild with `docker compose up -d --build` after switching. |
+
+**Installing an update.** Commit any edits of your own first. If the repository is on GitHub, run `git pull`; if the update came as a file such as `artist-feed-v59.bundle`, run `git pull artist-feed-v59.bundle main`. Then run `docker compose up -d --build` and check the version number. Git merges your edits with the update. Where both changed the same lines, it says there is a conflict and marks those lines in the file with `<<<<<<<` and `>>>>>>>`: keep the version you want, delete the markers, then `git add -A` and `git commit`.
+
+The file `.gitattributes` keeps line endings as Linux expects them, so files edited on Windows still work inside Docker. Leave it in place.
 
 ### Stopping and starting
 
