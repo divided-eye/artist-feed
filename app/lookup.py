@@ -2338,6 +2338,13 @@ def set_spelling(key: str, artist: str, title: str, variant: str = "", like: tup
     return known_counts()
 
 
+def forget_entry(key: str, variant: str) -> dict:
+    """Take one track out of your imported list."""
+    db.execute("DELETE FROM known_tracks WHERE key=? AND variant=?", (key, variant))
+    _known_cache.clear()
+    return known_counts()
+
+
 def known_counts() -> dict:
     return {"known_tracks": db.query("SELECT COUNT(*) AS n FROM known_tracks")[0]["n"],
             "known_artists": db.query("SELECT COUNT(*) AS n FROM known_artists")[0]["n"]}

@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "51"   # shown beside the title, so you can tell which version is running
+VERSION = "52"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -499,6 +499,14 @@ def set_spelling(body: SpellingIn):
         raise HTTPException(400, "Which track is this for?")
     like = (body.like_key, body.like_variant) if body.like_key else ()
     return lookup.set_spelling(body.key.partition("~")[0], body.artist, body.title, body.variant, like)
+
+
+@app.delete("/api/known/entry")
+def forget_entry(key: str, variant: str = ""):
+    """Take one track out of your imported list; saved answers are kept."""
+    if "|" not in key:
+        raise HTTPException(400, "Which track is this for?")
+    return lookup.forget_entry(key, variant)
 
 
 @app.get("/api/known")

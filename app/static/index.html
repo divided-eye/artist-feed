@@ -1491,9 +1491,16 @@ function renderSaved() {
             lookupTab("lookup"); $("lookupText").value = `${names.artist}\t${names.title}`;
             await startLookup($("lookupText").value, "?fresh=true");
           }, true),
-          r.searched ? act("Forget", "Remove the saved answer for this track; your list is kept", async () => {
-            if (!confirm(`Forget what is saved for ${names.artist} \u2013 ${names.title}?`)) return;
-            await api("/api/saved?key=" + encodeURIComponent(r.key), { method: "DELETE" }); await loadSaved(true);
+          r.searched || (r.list_key && !r.list_guess) ? act("Forget", "Remove this track: its saved answer, and if you choose, its entry in your list", async () => {
+            const inList = r.list_key && !r.list_guess, label = `${names.artist} \u2013 ${names.title}`;
+            let answer = r.searched, entry = inList;
+            if (r.searched && inList) {
+              if (!confirm(`Forget what is saved for ${label}?`)) return;
+              entry = confirm(`Also take ${label} out of your list?\n\nOK removes it from your list too. Cancel keeps it in your list.`);
+            } else if (!confirm(r.searched ? `Forget what is saved for ${label}? Your list is kept.` : `Take ${label} out of your list?`)) return;
+            if (answer) await api("/api/saved?key=" + encodeURIComponent(r.key), { method: "DELETE" });
+            if (entry) await api(`/api/known/entry?key=${encodeURIComponent(r.list_key)}&variant=${encodeURIComponent(r.list_variant || "")}`, { method: "DELETE" });
+            await loadSaved(true);
           }, true) : null)),
       el("td", { text: r.year || "" }),
       el("td", {}, r.review ? el("span", { class: "tag review", text: "Needs review" }) : null,

@@ -1540,3 +1540,15 @@ def test_saved_results_closest_list_entry_and_editing_a_spelling(client):
     for k in ("naz|you owe me nitemare onee 140 bootleg", "shaun pal|warmth", "nobody|unlisted"):
         client.delete("/api/saved", params={"key": k})
     client.delete("/api/known")
+
+
+def test_forgetting_a_track_from_your_list(client):
+    from app import db
+    client.post("/api/known", content=b"Artist,Track,Link\nListOnly,Never Searched,https://soundcloud.com/lo\nListOnly,Other Tune,\n")
+    row = next(r for r in client.get("/api/saved?limit=1000&q=listonly").json()["rows"] if r["list_title"] == "Never Searched")
+    assert not row["searched"] and row["list_key"]
+    client.delete("/api/known/entry", params={"key": row["list_key"], "variant": row["list_variant"]})
+    titles = [r["list_title"] for r in client.get("/api/saved?limit=1000&q=listonly").json()["rows"]]
+    assert titles == ["Other Tune"]
+    assert len(db.query("SELECT * FROM known_tracks WHERE artist='ListOnly'")) == 1
+    client.delete("/api/known")
