@@ -1322,3 +1322,25 @@ def test_titles_in_other_alphabets_are_kept_when_tidied(client):
     assert lookup.known_for("duckem", "сердце темноты")["url"] == "https://soundcloud.com/x/serdtse"
     assert lookup.known_for("duckem", "другая песня")["year"] == "2016"
     assert client.delete("/api/known").json() == {"known_tracks": 0, "known_artists": 0}
+
+
+def test_answers_saved_under_old_keys_are_moved_and_can_be_edited(client):
+    from app import db, lookup
+    put = lambda key, **r: db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)", (key, json.dumps(r), db.now()))
+    put("v2|river|oldaloo vip", status="soundcloud", url="https://soundcloud.com/wrong-river", found="wrong-river")
+    put("v2|emalkay|when i look at old", status="soundcloud_track", url="https://soundcloud.com/kwizma/old",
+        found="Kwizma — When I Look At Old (Kwizma Bootleg)")
+    put("v2|plainman|plain old tune", status="bandcamp", url="https://plainman.bandcamp.com/track/plain-old-tune", found="Plainman — Plain Old Tune")
+    assert lookup.rekey_old_answers() == 2 and lookup.rekey_old_answers() == 0
+    keys = {r["key"] for r in db.query("SELECT key FROM lookup_cache")}
+    assert {"v2|river|oldaloo#vip", "v2|emalkay|when i look at old#kwizma", "v2|plainman|plain old tune"} <= keys
+    assert lookup._saved_for("River", "Oldaloo VIP")["url"] == "https://soundcloud.com/wrong-river"
+    row = client.get("/api/saved?q=river oldaloo").json()["rows"][0]
+    assert (row["key"], row["version"], row["title"]) == ("river|oldaloo#vip", "vip", "")
+    got = client.put("/api/lookup/link", json={"artist": "river", "title": "oldaloo (VIP)", "url": "https://soundcloud.com/riverirvine", "key": row["key"]}).json()
+    assert got["status"] == "manual"
+    rows = client.get("/api/saved?q=river oldaloo").json()["rows"]
+    assert len(rows) == 1 and (rows[0]["status"], rows[0]["url"]) == ("manual", "https://soundcloud.com/riverirvine")
+    assert lookup._manual_for("River", "Oldaloo VIP")["url"] == "https://soundcloud.com/riverirvine"
+    for k in ("river|oldaloo#vip", "emalkay|when i look at old#kwizma", "plainman|plain old tune"):
+        client.delete("/api/saved", params={"key": k})

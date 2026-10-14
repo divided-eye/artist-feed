@@ -1515,6 +1515,38 @@ def _saved_for(artist, title):
     return found
 
 
+def rekey_old_answers() -> int:
+    """Answers saved before versions had keys of their own sit under the bare tidied title
+    ("river|boogaloo vip"), where nothing reads them and an Edit can't reach them. Move each to the
+    key its track has now. What was typed wasn't kept then, so the version is taken from the tidied
+    title (a VIP) or from the title the answer was found under (a remix)."""
+    moved = 0
+    for r in db.query("SELECT key, result FROM lookup_cache"):
+        kind, _, rest = r["key"].partition("|")
+        if kind not in (CACHE_VERSION, "manual") or "#" in rest:
+            continue
+        try:
+            saved = json.loads(r["result"])
+        except ValueError:
+            continue
+        if saved.get("title"):
+            continue                                        # saved since: its key is already right
+        artist, _, title = rest.partition("|")
+        new = title_key(title)
+        found = (saved.get("found") or "").rpartition(" \u2014 ")[2]
+        if "#" not in new and found and norm(found) == title and "#" in title_key(found):
+            new = title_key(found)
+        target = f"{kind}|{artist}|{new}"
+        if target == r["key"]:
+            continue
+        if _cached(target) is None:
+            db.execute("UPDATE lookup_cache SET key=? WHERE key=?", (target, r["key"]))
+        else:
+            db.execute("DELETE FROM lookup_cache WHERE key=?", (r["key"],))
+        moved += 1
+    return moved
+
+
 def _manual_key(artist, title):
     # No version in this key: a link you set yourself outlives changes to the lookup.
     return f"manual|{track_key(artist, title)}"
@@ -1538,7 +1570,7 @@ def site_of(url):
     return "Bandcamp" if "bandcamp" in host else "SoundCloud" if "soundcloud" in host else host.removeprefix("www.")
 
 
-async def set_manual(artist, title, url, year="", release=""):
+async def set_manual(artist, title, url, year="", release="", key=""):
     """Save your own link for a track. It is used from then on, whatever a search would find."""
     result = {"status": "manual", "manual": True, "site": site_of(url), "url": url, "year": year,
               "release": release, "found": "", "note": "", "steps": ["link set by you"]}
@@ -1551,14 +1583,16 @@ async def set_manual(artist, title, url, year="", release=""):
                 result["release"] = release or rel.get("release") or rel.get("title") or ""
         except Exception:
             pass
-    _remember(_manual_key(artist, title), result, artist, title)
+    # "key" names a saved row directly: answers saved before what was typed was kept can't be
+    # found again from their tidied names alone.
+    _remember(f"manual|{key}" if key else _manual_key(artist, title), result, artist, title)
     if _profile_url(url):                    # your link also settles whose profile that name means
         learn_profile(wanted_names(artist, title)[:1], url, weight=100)
     return result
 
 
-def clear_manual(artist, title):
-    db.execute("DELETE FROM lookup_cache WHERE key=?", (_manual_key(artist, title),))
+def clear_manual(artist, title, key=""):
+    db.execute("DELETE FROM lookup_cache WHERE key=?", (f"manual|{key}" if key else _manual_key(artist, title),))
     old = _cached(f"manual|{norm(artist)}|{norm(title)}")
     if old is not None and "title" not in old:
         db.execute("DELETE FROM lookup_cache WHERE key=?", (f"manual|{norm(artist)}|{norm(title)}",))

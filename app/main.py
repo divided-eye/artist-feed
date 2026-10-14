@@ -16,13 +16,14 @@ from . import db, lookup, pace, refresh, saved
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "42"   # shown beside the title, so you can tell which version is running
+VERSION = "43"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
 @asynccontextmanager
 async def lifespan(app):
     db.conn()
+    lookup.rekey_old_answers()
     task = None
     if os.environ.get("DISABLE_SCHEDULER") != "1":
         task = asyncio.create_task(refresh.scheduler())
@@ -406,6 +407,7 @@ class LinkIn(BaseModel):
     url: str = ""
     year: str = ""
     release: str = ""
+    key: str = ""        # a Saved results row, for answers saved without the names as typed
 
 
 @app.put("/api/lookup/link")
@@ -415,7 +417,7 @@ async def set_link(body: LinkIn):
         raise HTTPException(400, "Which track is this for?")
     url = body.url.strip()
     if not url:
-        lookup.clear_manual(body.artist, body.title)
+        lookup.clear_manual(body.artist, body.title, body.key.strip())
         result = {"status": "none", "note": "Your link was removed; run the lookup to search again"}
     else:
         if "://" not in url:
@@ -425,7 +427,7 @@ async def set_link(body: LinkIn):
         year = body.year.strip()
         if year and not re.fullmatch(r"(19|20)\d{2}", year):
             raise HTTPException(400, "Year should be four digits, or left empty.")
-        result = await lookup.set_manual(body.artist, body.title, url, year, body.release.strip())
+        result = await lookup.set_manual(body.artist, body.title, url, year, body.release.strip(), body.key.strip())
     lookup.apply_to_jobs(body.artist, body.title, result)
     return result
 

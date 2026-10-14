@@ -1352,23 +1352,27 @@ async function loadSaved(reset) {
   renderSaved();
 }
 
-const savedNames = r => ({ artist: r.artist || r.list_artist || r.tidy_artist, title: r.title || r.list_title || r.tidy_title });
+// Answers saved by early versions have only the tidied names; the version is put back in a form the lookup reads.
+const oldTitle = r => !r.version ? r.tidy_title : /^vip\b/.test(r.version) ? `${r.tidy_title} (${(r.version.replace(/^vip\s*/, "") + " VIP").trim()})` : `${r.tidy_title} (${r.version} Remix)`;
+const savedNames = r => ({ artist: r.artist || r.list_artist || r.tidy_artist, title: r.title || r.list_title || oldTitle(r) });
 
 function renderSaved() {
-  $("savedHead").replaceChildren(el("tr", {}, ...["Artist (tidied)", "Title (tidied)", "Your spelling", "Link", "Year", "Result", "Saved"].map(t => el("th", { text: t }))));
+  $("savedHead").replaceChildren(el("tr", {}, ...["Artist (tidied)", "Title (tidied)", "Artist (your spelling)", "Title (your spelling)", "Link", "Year", "Result", "Saved"].map(t => el("th", { text: t }))));
   $("savedBody").replaceChildren(...savedState.rows.map(r => {
     const [cls, label] = LOOKUP_TAGS[r.status] || ["wait", r.result];
     const url = safeUrl(r.url), names = savedNames(r);
     const act = (text, title, fn, ghost) => el("button", { class: "btn small" + (ghost ? " ghost" : ""), text, title, onclick: () => fn().catch(x => { $("savedError").textContent = x.message; }) });
     const setLink = async link => {
-      await api("/api/lookup/link", { method: "PUT", body: { artist: names.artist, title: names.title, url: link, year: link === r.url ? r.year || "" : "" } });
+      await api("/api/lookup/link", { method: "PUT", body: { artist: names.artist, title: names.title, url: link, year: link === r.url ? r.year || "" : "",
+        key: r.searched && !r.title ? r.key : "" } });
       await loadSaved(true);
     };
     return el("tr", { class: r.review ? "review" : "" },
       el("td", {}, r.tidy_artist, r.artist && r.artist.toLowerCase() !== r.tidy_artist ? el("small", { text: "typed: " + r.artist }) : null),
       el("td", {}, r.tidy_title, r.version ? el("span", { class: "ver", text: ` [${r.version}]` }) : null,
         r.title && r.title.toLowerCase() !== r.tidy_title ? el("small", { text: "typed: " + r.title }) : null),
-      el("td", {}, r.list_artist || r.list_title ? [r.list_artist, r.list_title].filter(Boolean).join(" \u2013 ") : el("small", { text: "none on file" })),
+      el("td", {}, r.list_artist || el("small", { text: "none on file" })),
+      el("td", {}, r.list_title || el("small", { text: "none on file" })),
       el("td", { class: "link" },
         url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url.replace(/^https?:\/\//, "") }) : null,
         r.list_note ? el("small", { text: "note: " + r.list_note }) : null,
