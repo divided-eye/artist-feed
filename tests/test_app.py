@@ -1396,3 +1396,20 @@ def test_saved_results_can_be_sorted(client):
     assert [l.split(",")[0] for l in lines[1:]] == ["sorta", "sortb", "sortc"]
     for k in ("sortb|zebra", "sorta|mango", "sortc|apple"):
         client.delete("/api/saved", params={"key": k})
+
+
+def test_symbols_written_into_a_name_are_kept():
+    from app import db, lookup
+    assert [lookup.norm(t) for t in ("∑1", "Myca$h", "Mor£ (Instrumental)", "$uicideboy$")] == ["∑1", "myca$h", "mor£", "$uicideboy$"]
+    assert [lookup.norm(t) for t in ("★ Tune ★", "Tune™", "A + B", "100% Dub", "Who's There", "1 $ Tune")] == \
+        ["tune", "tune", "a b", "100 dub", "who s there", "1 tune"]
+    assert lookup.track_key("∑1", "Wake Up Lisa") == "∑1|wake up lisa" != lookup.track_key("1", "Wake Up Lisa")
+    db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)",          # saved before symbols were kept
+               ("manual|myca h|old tune", json.dumps({"status": "manual", "url": "https://x.bandcamp.com/track/m"}), db.now()))
+    assert lookup._manual_for("Myca$h", "Old Tune")["url"] == "https://x.bandcamp.com/track/m"
+    db.execute("DELETE FROM lookup_cache WHERE key=?", ("manual|myca h|old tune",))
+    db.execute("INSERT OR REPLACE INTO known_tracks(key, variant, artist, title, at) VALUES(?,?,?,?,?)", ("1|wake up lisa", "wake up lisa", "∑1", "Wake Up Lisa", db.now()))
+    db.execute("INSERT OR REPLACE INTO known_artists(key, name, at) VALUES(?,?,?)", ("1", "∑1", db.now()))
+    assert lookup.rekey_known() == 2 and lookup.rekey_known() == 0
+    assert lookup.known_for("∑1", "wake up lisa")["title"] == "Wake Up Lisa" and lookup.known_for("1", "wake up lisa")["title"] == ""
+    db.execute("DELETE FROM known_tracks"); db.execute("DELETE FROM known_artists"); lookup._known_cache.clear()

@@ -184,14 +184,36 @@ def _fold_old(text: str) -> str:
     return "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
 
 
+_NO_MARKS = str.maketrans({ch: " " for ch in "\u2122\u00a9\u00ae\u2117\u00b0"})    # trademark, copyright, degree signs
+
+
 def _fold(text: str) -> str:
-    return _fold_old((text or "").translate(_LETTERS))
+    return _fold_old((text or "").translate(_LETTERS).translate(_NO_MARKS))
 
 
 def _old_spelling(text: str) -> str:
     """The text as it was tidied before "ø" and similar letters were understood ("Nøcase" became
     "n case") and other alphabets were dropped: used only to find answers saved back then."""
-    return "".join(" " if ch.isalnum() and not re.search(r"[a-z0-9]", _fold_old(ch)) else ch for ch in text or "")
+    return "".join(" " if (ch.isalnum() and not re.search(r"[a-z0-9]", _fold_old(ch))) or unicodedata.category(ch)[0] == "S"
+                   else ch for ch in text or "")
+
+
+def _words(text: str) -> str:
+    """The letters and digits of a tidied name, of any alphabet, with everything else as a space.
+    A symbol written as part of a word is part of the name and stays: "∑1", "Myca$h", "Mor£".
+    Punctuation never does, nor a symbol standing alone ("★ Tune ★" is "tune")."""
+    if text.isascii() and "$" not in text:
+        return re.sub(r"[\W_]+", " ", text).strip()
+    out = []
+    for i, ch in enumerate(text):
+        if ch.isalnum():
+            out.append(ch)
+        elif ((ch == "$" or (not ch.isascii() and unicodedata.category(ch)[0] == "S"))
+              and (text[i - 1:i].isalnum() or text[i + 1:i + 2].isalnum())):
+            out.append(ch)
+        else:
+            out.append(" ")
+    return " ".join("".join(out).split())
 
 
 def norm(text: str) -> str:
@@ -201,12 +223,12 @@ def norm(text: str) -> str:
     text = _ANY_TAG.sub(" ", text)
     text = _drop_describing(text) if re.sub(r"[\W_]+", "", _drop_describing(text)) else text
     text = re.sub(r"\b(feat|ft|featuring)\b.*$", " ", text)
-    return re.sub(r"[\W_]+", " ", text).strip()        # letters and digits of any alphabet are kept
+    return _words(text)
 
 
 def plain(text: str) -> str:
     """Like norm, but keeps everything, including version tags."""
-    return re.sub(r"[\W_]+", " ", _fold(text)).strip()
+    return _words(_fold(text))
 
 
 @lru_cache(maxsize=8192)
@@ -2173,6 +2195,23 @@ def import_known(entries: list) -> dict:
             "spelling_clashes": spelling_clashes, "link_clashes": link_clashes,
             "clashes": spelling_clashes + link_clashes,
             "clash_examples": sorted(examples, key=lambda x: order[x["what"]])[:40], **known_counts()}
+
+
+def rekey_known() -> int:
+    """Your list is stored under tidied names. When the tidying changes (a kind of character it
+    used to drop is now kept), file each entry under what its name tidies to now."""
+    moved = 0
+    for r in db.query("SELECT rowid AS id, key, variant, artist, title FROM known_tracks"):
+        key, variant = track_key(r["artist"], r["title"]), plain(r["title"])
+        if (key, variant) != (r["key"], r["variant"]):
+            db.execute("UPDATE OR REPLACE known_tracks SET key=?, variant=? WHERE rowid=?", (key, variant, r["id"]))
+            moved += 1
+    for r in db.query("SELECT key, name FROM known_artists"):
+        if norm(r["name"]) != r["key"]:
+            db.execute("UPDATE OR REPLACE known_artists SET key=? WHERE key=?", (norm(r["name"]), r["key"]))
+            moved += 1
+    _known_cache.clear()
+    return moved
 
 
 def known_counts() -> dict:
