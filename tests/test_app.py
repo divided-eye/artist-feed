@@ -46,7 +46,7 @@ def release(name, date, kind="MusicAlbum", ld_extra=None, head=""):
 
 
 # An album on a label's page, with the player data Bandcamp embeds in the page.
-TRALBUM = {"id": 111, "item_type": "album", "artist": "Night Ferry", "current": {"id": 111, "type": "album"},
+TRALBUM = {"id": 111, "item_type": "album", "artist": "Night Ferry", "current": {"id": 111, "type": "album", "publish_date": "05 Mar 2025 16:00:00 GMT"},
            "trackinfo": [{"title": "Intro", "duration": 61.5, "track_id": 1001, "title_link": "/track/intro"},
                          {"title": "Long One", "duration": 3725, "track_id": 1002, "title_link": "/track/long-one",
                           "artist": "Guest Person"}]}
@@ -171,6 +171,9 @@ def test_track_list(client):
     assert (intro["label"], intro["embed"], intro["track_ext_id"], intro["artist"]) == ("Deep Label", "album=111", "1001", "Night Ferry")
     assert long_one["artist"] == "Guest Person" and long_one["url"] == "https://nightferry.bandcamp.com/track/long-one"
     assert third["duration"] is None and third["embed"] is None
+    # posted = when it went up on the site; falls back to the release date when the site doesn't say
+    assert [r["posted"][:10] for r in rows] == ["2026-10-01", "2026-09-01", "2020-01-01", "2025-03-05", "2025-03-05", "2024-01-15"]
+    assert [r["track"] for r in get("?sort=posted&dir=asc")][:2] == ["No Art", ""]
 
     assert [r["track"] for r in get("?sort=duration&dir=desc")][:2] == ["Long One", "Second"]
     assert get("?sort=duration&dir=asc")[-1]["release"] == "Third"            # unknown durations last
@@ -198,8 +201,8 @@ def test_track_list(client):
 
     r = client.get("/api/tracks.csv?sort=duration&dir=desc")
     lines = r.content.decode("utf-8-sig").splitlines()
-    assert lines[0] == "artist,label,release,track,duration,year,released,site,url"
-    assert lines[1] == "Guest Person,Deep Label,First,Long One,1:02:05,2025,2025-03-07,Bandcamp,https://nightferry.bandcamp.com/track/long-one"
+    assert lines[0] == "artist,label,release,track,duration,year,released,posted,site,url"
+    assert lines[1] == "Guest Person,Deep Label,First,Long One,1:02:05,2025,2025-03-07,2025-03-05,Bandcamp,https://nightferry.bandcamp.com/track/long-one"
     assert len(lines) == 7 and "attachment" in r.headers["content-disposition"]
 
 
@@ -216,7 +219,7 @@ def test_upgrade_from_first_version(client):
     assert old.execute("SELECT title, label, detailed FROM posts").fetchall() == [("kept", None, 0)]
 
     before = client.get("/api/tracks").json()
-    db.execute("UPDATE posts SET detailed=0, label=NULL, embed=NULL")   # what an upgraded database looks like
+    db.execute("UPDATE posts SET detailed=1, label=NULL, embed=NULL, posted_at=NULL")   # what an upgraded database looks like
     db.execute("DELETE FROM tracks")
     assert all(r["track_id"] is None for r in client.get("/api/tracks").json())
     for _ in range(2):                                 # BANDCAMP_MAX_NEW=2, three releases

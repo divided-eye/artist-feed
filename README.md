@@ -17,7 +17,8 @@ checks immediately.
 ## Views, search and export
 
 - **Grid** shows one card per release or upload. **List** shows one row per
-  track: artist, label, release, track, duration and year. Click a column
+  track: artist, label, release, track, duration, release year and the date
+  it was posted (uploaded) to the site. Click a column
   heading to sort by it; click again to reverse.
 - **Search** matches artist, label, release and track names, in both views.
 - **Filters** (the row under the title bar) narrow both views by year, label,
@@ -53,7 +54,7 @@ loaded yet, or cannot be embedded; the arrow opens it on the site.
 Replace the files, keep your `data` folder, and run
 `docker compose up -d --build`. The version number beside the title (and at
 http://localhost:8080/api/status) tells you which version is running; this one
-is v5. Labels, track lists and durations for Bandcamp
+is v6. Labels, track lists and durations for Bandcamp
 releases already in your feed are filled in over the next refreshes (12 per
 artist each time; press **Refresh** to speed it up). SoundCloud fills in on the
 first refresh.

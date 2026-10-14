@@ -53,6 +53,7 @@ def parse_tracks(payload: dict) -> list:
             kind="track",
             author=user.get("username"),
             published_at=_date(t.get("display_date") or t.get("created_at")),
+            posted_at=_date(t.get("created_at")),
             label=(t.get("label_name") or "").strip() or None,
             release=(pub.get("album_title") or pub.get("release_title") or "").strip() or None,
             tracks=[Track(t.get("title") or "Untitled", (ms / 1000) if ms else None,

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS posts(
   release TEXT,
   embed TEXT,
   detailed INTEGER NOT NULL DEFAULT 0,
+  posted_at TEXT,
   UNIQUE(account_id, external_id)
 );
 CREATE TABLE IF NOT EXISTS tracks(
@@ -87,8 +88,11 @@ def conn() -> sqlite3.Connection:
 # re-read them (a few per refresh) to fill in labels, track lists and durations.
 ADDED_POST_COLUMNS = {
     "label": "TEXT", "release": "TEXT", "embed": "TEXT",
-    "detailed": "INTEGER NOT NULL DEFAULT 0",
+    "detailed": "INTEGER NOT NULL DEFAULT 0", "posted_at": "TEXT",
 }
+# Raise this when the sources start collecting something new: posts stored with
+# a lower number are re-read (a few per refresh) to pick it up.
+DETAIL_VERSION = 2
 
 
 def migrate(c):
@@ -212,7 +216,8 @@ def apply_table(keep_ids, remove_account_ids, renames, new_accounts, new_artists
 
 def known_ids(account_id):
     return {r["external_id"] for r in query(
-        "SELECT external_id FROM posts WHERE account_id=? AND detailed=1", (account_id,))}
+        "SELECT external_id FROM posts WHERE account_id=? AND detailed>=?",
+        (account_id, DETAIL_VERSION))}
 
 
 def save_result(account, result):
@@ -223,17 +228,18 @@ def save_result(account, result):
         for p in result.posts:
             c.execute(
                 "INSERT INTO posts(account_id, external_id, title, url, image, kind, author,"
-                " published_at, first_seen, label, release, embed, detailed)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1) "
+                " published_at, first_seen, label, release, embed, posted_at, detailed)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(account_id, external_id) DO UPDATE SET title=excluded.title,"
                 " image=COALESCE(excluded.image, image),"
                 " author=COALESCE(excluded.author, author),"
                 " published_at=COALESCE(excluded.published_at, published_at),"
                 " label=COALESCE(excluded.label, label),"
                 " release=COALESCE(excluded.release, release),"
-                " embed=COALESCE(excluded.embed, embed), detailed=1",
+                " embed=COALESCE(excluded.embed, embed),"
+                " posted_at=COALESCE(excluded.posted_at, posted_at), detailed=excluded.detailed",
                 (account["id"], p.external_id, p.title, p.url, p.image, p.kind, p.author,
-                 p.published_at, seen, p.label, p.release, p.embed))
+                 p.published_at, seen, p.label, p.release, p.embed, p.posted_at, DETAIL_VERSION))
             if p.tracks is not None:
                 post_id = c.execute("SELECT id FROM posts WHERE account_id=? AND external_id=?",
                                     (account["id"], p.external_id)).fetchone()[0]
@@ -262,6 +268,7 @@ def save_error(account_id, message):
 
 
 WHEN = "COALESCE(p.published_at, p.first_seen)"
+POSTED = f"COALESCE(p.posted_at, {WHEN})"   # falls back to the release date
 JOINS = ("FROM posts p JOIN accounts a ON a.id=p.account_id "
          "JOIN artists ar ON ar.id=a.artist_id ")
 # One row per track; a post whose tracks are not known yet still gets one row.
@@ -357,6 +364,8 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
     if sort in TRACK_SORTS:      # blanks last, then newest first within equal values
         expr = TRACK_SORTS[sort]
         order = f"({expr}='') ASC, {expr} COLLATE NOCASE {way}, {newest}"
+    elif sort == "posted":
+        order = f"{POSTED} {way}, p.id {way}, t.position ASC"
     elif sort == "duration":
         order = f"(t.duration IS NULL) ASC, t.duration {way}, {newest}"
     else:
@@ -364,7 +373,7 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
     sql = (
         f"SELECT p.id AS post_id, t.id AS track_id, {T_ARTIST} AS artist, {T_LABEL} AS label,"
         f" {T_RELEASE} AS release, {T_TRACK} AS track, t.duration, t.position,"
-        f" t.ext_id AS track_ext_id, {WHEN} AS released, p.published_at,"
+        f" t.ext_id AS track_ext_id, {WHEN} AS released, p.published_at, {POSTED} AS posted,"
         " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind,"
         " p.title AS post_title, a.source, ar.id AS artist_id, ar.name AS tracked_artist "
         + JOINS + "LEFT JOIN tracks t ON t.post_id=p.id " + where + "ORDER BY " + order)

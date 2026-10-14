@@ -32,7 +32,8 @@ class Post:
     image: Optional[str] = None
     kind: Optional[str] = None  # "album", "track", ...
     author: Optional[str] = None
-    published_at: Optional[str] = None  # UTC, "YYYY-MM-DDTHH:MM:SSZ"
+    published_at: Optional[str] = None  # release date; UTC, "YYYY-MM-DDTHH:MM:SSZ"
+    posted_at: Optional[str] = None     # when it was put up on the site, if the site says
     label: Optional[str] = None
     release: Optional[str] = None       # the album/EP this belongs to
     embed: Optional[str] = None         # what the site's embeddable player needs (see index.html)

@@ -139,7 +139,7 @@ def parse_release(html: str, url: str) -> dict:
     soup = BeautifulSoup(html, "lxml")
     out = {"url": _clean(url), "title": None, "image": None, "author": None,
            "published_at": None, "is_release": False,
-           "label": None, "release": None, "embed": None, "tracks": None}
+           "label": None, "release": None, "embed": None, "tracks": None, "posted_at": None}
     ld_tracks, publisher = [], None
 
     for script in soup.find_all("script", type="application/ld+json"):
@@ -188,6 +188,7 @@ def parse_release(html: str, url: str) -> dict:
                             _clean(urljoin(url, link)) if link else None))
     if tracks or ld_tracks:
         out["tracks"] = tracks or ld_tracks
+    out["posted_at"] = _parse_date(current.get("publish_date"))   # when it went up on Bandcamp
 
     props = {}
     tag = soup.find("meta", attrs={"name": "bc-page-properties"})
@@ -276,8 +277,8 @@ class Bandcamp(Source):
                 raise SourceError("No releases found on this Bandcamp page.")
             result.posts.append(Post(rel["url"], rel["title"] or "Untitled", rel["url"],
                                      rel["image"], _kind(rel["url"]), rel["author"],
-                                     rel["published_at"], rel["label"], rel["release"],
-                                     rel["embed"], rel["tracks"]))
+                                     rel["published_at"], rel["posted_at"], rel["label"],
+                                     rel["release"], rel["embed"], rel["tracks"]))
             return result
 
         new = [it for it in items if it["url"] not in known_ids]
@@ -295,7 +296,7 @@ class Bandcamp(Source):
                 image=rel["image"] or it["image"],
                 kind=_kind(it["url"]),
                 author=rel["author"] or it["author"],
-                published_at=rel["published_at"],
+                published_at=rel["published_at"], posted_at=rel["posted_at"],
                 label=rel["label"], release=rel["release"] or rel["title"] or it["title"],
                 embed=rel["embed"], tracks=rel["tracks"]))
         left = len(new) - len(result.posts)

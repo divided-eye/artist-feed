@@ -357,11 +357,11 @@ async function loadGrid(reset) {
 }
 
 const LIST_COLUMNS = [["artist", "Artist"], ["label", "Label"], ["release", "Release"], ["track", "Track"],
-  ["duration", "Duration", "n"], ["date", "Year", "n"]];
+  ["duration", "Duration", "n"], ["date", "Year", "n"], ["posted", "Posted", "n"]];
 
 // Column widths (px) in the list. Drag the edge of a heading to resize; widths are remembered in this browser.
-const COL_DEFAULTS = { go: 48, artist: 190, label: 170, release: 250, track: 290, duration: 92, date: 72, site: 130 };
-const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "site"];
+const COL_DEFAULTS = { go: 48, artist: 180, label: 160, release: 230, track: 260, duration: 92, date: 72, posted: 108, site: 126 };
+const COL_ORDER = ["go", "artist", "label", "release", "track", "duration", "date", "posted", "site"];
 const COL_MIN = 48;
 let colW = { ...COL_DEFAULTS };
 try {
@@ -420,7 +420,7 @@ function grip(key, label) {
 function listHead() {
   const th = ([key, label, cls]) => el("th", { class: cls || "", "aria-sort": sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : null },
     el("button", { title: "Sort by " + label.toLowerCase(), onclick: () => {
-      sort = sort.key === key ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "date" || key === "duration" ? "desc" : "asc" };
+      sort = sort.key === key ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "date" || key === "posted" || key === "duration" ? "desc" : "asc" };
       loadFeed();
     } }, label + (sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : "")), grip(key, label));
   $("listCols").replaceChildren(...COL_ORDER.map(() => el("col")));
@@ -441,7 +441,8 @@ function listRow(r) {
       : el("a", { class: "rowplay", href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${name} on ${s.label}`, text: "↗" })),
     cell(r.artist, "t"), cell(r.label, "t dim"), cell(r.release, "t"), cell(r.track, "t"),
     el("td", { class: "n dim", text: clock(r.duration) }),
-    el("td", { class: "n dim", text: (r.published_at || "").slice(0, 4), title: (r.published_at || "").slice(0, 10) || null }),
+    el("td", { class: "n dim", text: (r.published_at || "").slice(0, 4), title: r.published_at ? "Released " + r.published_at.slice(0, 10) : null }),
+    el("td", { class: "n dim", text: (r.posted || "").slice(0, 10), title: r.posted ? "Posted " + new Date(r.posted).toLocaleString() : null }),
     el("td", { class: "site" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", title: `Open on ${s.label}` },
       el("span", { class: "dot", style: `background:${s.color}` }), s.label)));
   return tr;

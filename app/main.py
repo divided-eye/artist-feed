@@ -15,7 +15,7 @@ from . import db, refresh
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "5"   # shown beside the title, so you can tell which version is running
+VERSION = "6"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -278,12 +278,13 @@ def tracks_csv(source: Optional[str] = None, artist_id: Optional[int] = None,
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(["artist", "label", "release", "track", "duration", "year",
-                     "released", "site", "url"])
+                     "released", "posted", "site", "url"])
     for r in db.tracks(source, artist_id, q, sort, dir, more=more):
         day = (r["published_at"] or "")[:10]
         site = SOURCES[r["source"]].label if r["source"] in SOURCES else r["source"]
         writer.writerow([r["artist"], r["label"], r["release"], r["track"],
-                         _clock(r["duration"]), day[:4], day, site, r["url"]])
+                         _clock(r["duration"]), day[:4], day, (r["posted"] or "")[:10],
+                         site, r["url"]])
     # utf-8-sig so Excel reads accented names correctly
     return Response(out.getvalue().encode("utf-8-sig"), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="tracks.csv"'})
