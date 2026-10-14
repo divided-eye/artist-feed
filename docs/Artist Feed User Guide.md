@@ -198,7 +198,7 @@ The **Saved results** tab in Link Finder lists every track looked up so far, new
 
 Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are, and so is a symbol written into a word, as in "∑1", "Myca$h" or "Mor£"), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column. A track saved under a name that doesn't match your list exactly (saved before versions had entries of their own, or typed without brackets) shows the closest entry, marked "closest in your list": the one with the same words, or the only version of that title. **Edit spelling** (or Add spelling) under the title lets you type how the artist and title should be written; it is saved to your list for that track, and Remove takes the track out of your list.
 
-Each row has Edit, Search again and Forget, plus Looks right on rows marked for review. Forget removes the saved answer, so the track is searched for next time. On a track from your imported list, Forget also asks whether to take it out of the list; a track that is only in your list (never searched) is simply removed from it.
+Each row has Edit, Search again and Forget, plus Looks right on rows marked for review. Forget opens a choice of what to forget: Saved answer (the track is searched for next time), List entry (takes that track out of your imported list; on a row marked "closest in your list" it is called Closest list entry), or Both. Only the choices that apply to the row are shown.
 
 ### Your list of spellings and links
 
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 53 | Forget in Saved results opens a choice: Saved answer, List entry (including the closest list entry), or Both. |
 | 52 | Forget is now on every row in Saved results, including tracks that are only in your imported list, and it can take a track out of your list. |
 | 51 | Saved results: tracks whose saved name doesn't match your list exactly show the closest list entry, marked as such. Edit spelling / Add spelling sets a track's artist and title spelling in place. |
 | 50 | Link Finder: Skip and Add link on rows still waiting during a lookup, including the one being searched. Skip stops that track's search and moves on; Add link sets the link you know and the track is not searched. |

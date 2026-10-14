@@ -114,6 +114,8 @@
   .res td.spellform input { width: 100%; min-width: 9em; background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 5px 7px; font: inherit; }
   .res td small.guess { color: #e6b450; }
+  .res td .forget { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding: 6px; border: 1px dashed var(--line); border-radius: 6px; }
+  .res td .forget small { margin: 0; }
   .sortbtn { all: unset; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; }
   .sortbtn:hover, th[aria-sort] .sortbtn { color: var(--text); }
   .sortbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
@@ -1456,6 +1458,28 @@ function spellingCells(r) {
       r.list_title && !r.list_guess ? el("button", { class: "btn small ghost", text: "Remove", title: "Take this track out of your list", onclick: () => save("", "") }) : null), err)];
 }
 
+// Forget opens a row of choices, so you can drop the saved answer, the list entry, or both.
+let forgetting = null;
+function forgetChoices(r) {
+  const err = el("span", { class: "error" });
+  const listName = [r.list_artist, r.list_title].filter(Boolean).join(" \u2013 ");
+  const go = async (answer, entry) => {
+    try {
+      if (answer) await api("/api/saved?key=" + encodeURIComponent(r.key), { method: "DELETE" });
+      if (entry) await api(`/api/known/entry?key=${encodeURIComponent(r.list_key)}&variant=${encodeURIComponent(r.list_variant || "")}`, { method: "DELETE" });
+      forgetting = null; await loadSaved(true);
+    } catch (x) { err.textContent = x.message; }
+  };
+  const b = (text, title, fn, ghost) => el("button", { class: "btn small" + (ghost ? " ghost" : ""), type: "button", text, title, onclick: fn });
+  return el("div", { class: "forget" },
+    el("small", { text: "Forget:" }),
+    r.searched ? b("Saved answer", "Remove the saved answer; the track is searched for next time", () => go(true, false)) : null,
+    r.list_key ? b(r.list_guess ? "Closest list entry" : "List entry", "Take this entry out of your list: " + listName, () => go(false, true)) : null,
+    r.searched && r.list_key ? b("Both", "Remove the saved answer and the entry in your list", () => go(true, true)) : null,
+    b("Cancel", "", () => { forgetting = null; renderSaved(); }, true),
+    r.list_key ? el("small", { text: "list entry: " + listName }) : null, err);
+}
+
 function renderSaved() {
   $("savedHead").replaceChildren(el("tr", {}, ...SAVED_COLUMNS.map(([key, label]) => {
     const on = savedState.sort === key;
@@ -1491,17 +1515,9 @@ function renderSaved() {
             lookupTab("lookup"); $("lookupText").value = `${names.artist}\t${names.title}`;
             await startLookup($("lookupText").value, "?fresh=true");
           }, true),
-          r.searched || (r.list_key && !r.list_guess) ? act("Forget", "Remove this track: its saved answer, and if you choose, its entry in your list", async () => {
-            const inList = r.list_key && !r.list_guess, label = `${names.artist} \u2013 ${names.title}`;
-            let answer = r.searched, entry = inList;
-            if (r.searched && inList) {
-              if (!confirm(`Forget what is saved for ${label}?`)) return;
-              entry = confirm(`Also take ${label} out of your list?\n\nOK removes it from your list too. Cancel keeps it in your list.`);
-            } else if (!confirm(r.searched ? `Forget what is saved for ${label}? Your list is kept.` : `Take ${label} out of your list?`)) return;
-            if (answer) await api("/api/saved?key=" + encodeURIComponent(r.key), { method: "DELETE" });
-            if (entry) await api(`/api/known/entry?key=${encodeURIComponent(r.list_key)}&variant=${encodeURIComponent(r.list_variant || "")}`, { method: "DELETE" });
-            await loadSaved(true);
-          }, true) : null)),
+          r.searched || r.list_key ? act("Forget", "Choose what to forget: the saved answer, the entry in your list, or both", async () => {
+            forgetting = forgetting === r.key ? null : r.key; renderSaved(); }, true) : null),
+          forgetting === r.key ? forgetChoices(r) : null),
       el("td", { text: r.year || "" }),
       el("td", {}, r.review ? el("span", { class: "tag review", text: "Needs review" }) : null,
         r.review ? el("span", { class: "why", text: r.review + "." }) : null,
