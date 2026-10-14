@@ -6,6 +6,9 @@ import json
 
 from . import db, lookup
 
+# No link to the track itself: an artist's page, a profile, a search, or nothing. (A track found on
+# SoundCloud is found, even though the lookup still checks Bandcamp for it again later.)
+NOT_FOUND = ("bandcamp_artist", "soundcloud", "soundcloud_search", "none", "error")
 FILTERS = ("", "review", "missing", "found", "manual", "list", "nospelling", "unsearched")
 
 
@@ -69,7 +72,7 @@ def _stamp(at: str) -> int:
 
 def _keep(row, which: str) -> bool:
     status = row["status"]
-    return {"": True, "review": bool(row["review"]), "missing": status in lookup.FALLBACK_STATUSES or status == "error",
+    return {"": True, "review": bool(row["review"]), "missing": status in NOT_FOUND,
             "found": status in ("bandcamp", "soundcloud_track", "bandcamp_check"), "manual": status == "manual",
             "list": bool(row["list_title"] or row["list_link"]), "nospelling": not (row["list_title"] or row["list_artist"]),
             "unsearched": not row["searched"]}.get(which, True)

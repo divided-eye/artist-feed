@@ -1321,7 +1321,7 @@ async function loadFan(fill) {
 }
 
 // ---- Link Finder: everything saved so far ----
-const SAVED_PAGE = 200, SAVED_FILTERS = [["", "All"], ["review", "Needs review"], ["missing", "Not found"], ["found", "Found"],
+const SAVED_PAGE = 200, SAVED_FILTERS = [["", "All"], ["review", "Needs review"], ["missing", "Track not found (artist page only)"], ["found", "Track found"],
   ["manual", "Links you set"], ["list", "In your list"], ["nospelling", "No spelling on file"], ["unsearched", "In your list, not looked up yet"]];
 let savedState = { q: "", filter: "", rows: [], total: 0 };
 

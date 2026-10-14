@@ -194,7 +194,7 @@ A bracketed tag ending in remix, edit, bootleg, flip, refix, rework and similar 
 
 ### Saved results
 
-The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, were not found, were found, have a link you set, are in your list, or have no spelling on file. Export downloads whatever the search and filter show.
+The **Saved results** tab in Link Finder lists every track looked up so far, newest first, with its link, year, result and the date it was saved. Search it, or filter to rows that need review, have no link to the track itself (only an artist page, a profile or a search), have the track found on Bandcamp or SoundCloud, have a link you set, are in your list, or have no spelling on file. Export downloads whatever the search and filter show.
 
 Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column.
 
@@ -443,6 +443,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 44 | Saved results: the "Not found" filter no longer includes tracks found on SoundCloud and is renamed "Track not found (artist page only)". Remix answers saved before version 40 whose SoundCloud title repeats the artist are also moved to the remix's own entry. |
 | 43 | Saved results: fixed Edit and Looks right doing nothing on VIP and remix tracks saved before version 40; those answers are moved to their version's own entry at start-up, so they also pick up the title spelling from your list. Your spelling is now two columns, artist and title. |
 | 42 | Names: letters of other alphabets (Cyrillic, Chinese and so on) are kept when a name is tidied instead of being dropped, so titles written in them can be matched, saved and imported from your list. |
 | 41 | Your list: a Year column is read and used when the lookup has no year. Repeated rows for a track are merged (commonest spelling; best link, then commonest). Versions that tidy to the same title are kept as separate entries. Columns without a heading are ignored. Names: ø, æ, ł and similar letters are now read as o, ae, l, so "Nocase" matches "Nøcase"; "(forth. Label)" and "(forthcoming)" are treated like WIP. |

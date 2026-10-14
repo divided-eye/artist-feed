@@ -1534,8 +1534,9 @@ def rekey_old_answers() -> int:
         artist, _, title = rest.partition("|")
         new = title_key(title)
         found = (saved.get("found") or "").rpartition(" \u2014 ")[2]
-        if "#" not in new and found and norm(found) == title and "#" in title_key(found):
-            new = title_key(found)
+        # found is "Artist — Title"; on SoundCloud the title often repeats the artist ("Emalkay - Tune (X Bootleg)")
+        if "#" not in new and found and remix_credits(found) and (norm(found) == title or norm(found).endswith(" " + title)):
+            new = title + "#" + norm(remix_credits(found)[0])
         target = f"{kind}|{artist}|{new}"
         if target == r["key"]:
             continue

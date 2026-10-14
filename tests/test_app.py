@@ -1329,7 +1329,7 @@ def test_answers_saved_under_old_keys_are_moved_and_can_be_edited(client):
     put = lambda key, **r: db.execute("INSERT OR REPLACE INTO lookup_cache(key, result, at) VALUES(?,?,?)", (key, json.dumps(r), db.now()))
     put("v2|river|oldaloo vip", status="soundcloud", url="https://soundcloud.com/wrong-river", found="wrong-river")
     put("v2|emalkay|when i look at old", status="soundcloud_track", url="https://soundcloud.com/kwizma/old",
-        found="Kwizma — When I Look At Old (Kwizma Bootleg)")
+        found="Kwizma — Emalkay - When I Look At Old (Kwizma Bootleg)")
     put("v2|plainman|plain old tune", status="bandcamp", url="https://plainman.bandcamp.com/track/plain-old-tune", found="Plainman — Plain Old Tune")
     assert lookup.rekey_old_answers() == 2 and lookup.rekey_old_answers() == 0
     keys = {r["key"] for r in db.query("SELECT key FROM lookup_cache")}
@@ -1342,5 +1342,10 @@ def test_answers_saved_under_old_keys_are_moved_and_can_be_edited(client):
     rows = client.get("/api/saved?q=river oldaloo").json()["rows"]
     assert len(rows) == 1 and (rows[0]["status"], rows[0]["url"]) == ("manual", "https://soundcloud.com/riverirvine")
     assert lookup._manual_for("River", "Oldaloo VIP")["url"] == "https://soundcloud.com/riverirvine"
+    names = lambda which: {r["key"] for r in client.get(f"/api/saved?limit=1000&filter={which}").json()["rows"]}
+    assert "emalkay|when i look at old#kwizma" in names("found") and "emalkay|when i look at old#kwizma" not in names("missing")
+    put("v2|nobody|only a profile", status="soundcloud", url="https://soundcloud.com/nobody", title="Only A Profile", artist="Nobody")
+    assert "nobody|only a profile" in names("missing") and "nobody|only a profile" not in names("found")
+    client.delete("/api/saved", params={"key": "nobody|only a profile"})
     for k in ("river|oldaloo#vip", "emalkay|when i look at old#kwizma", "plainman|plain old tune"):
         client.delete("/api/saved", params={"key": k})
