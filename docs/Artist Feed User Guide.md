@@ -4,7 +4,7 @@ Oct 14, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 40. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 62. The version number is shown in small grey text beside the title at the top of the app.
 
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
@@ -138,7 +138,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 - Click a column heading to sort by it. Click again to reverse.
 - Drag the right edge of a heading to resize the column. Double-click the edge to reset it. **Reset column widths** resets all of them.
 - The headings stay in place while the list scrolls. Drag a heading onto another to move that column. The Edit Columns button (List view only) opens a menu to tick columns on or off and reorder them with arrows; Reset to default restores the original order, visibility and widths. The layout is remembered in this browser.
-- **Export list** (List view only, beside Refresh Feed at the start of the filter row) downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
+- **Export Feed** (List view only, beside Refresh Feed at the start of the filter row) downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
 - **Released** is the release date the artist set. **Posted** is when the item went up on the site. Posted is blank when the site does not give it.
 
 ### Filters and search
