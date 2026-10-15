@@ -4,7 +4,7 @@ Oct 14, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 62. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 63. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -206,6 +206,7 @@ The box under the table takes a pasted list, one artist or label per line. A lin
 
 - Filled cells are highlighted in light blue italics. They are guesses matched on the name, so check them, especially for common names.
 - When a row already has one site's link, a page with the same address on the other site is preferred.
+- When your SoundCloud username is set in Settings, a profile you follow is preferred over others with the same name.
 - Editing a highlighted cell removes its highlight. Save changes saves whatever is in the table at that moment and clears all highlights.
 - A cell is left empty when nothing fitting is found. A cell you clear is remembered and shows "left empty". Later runs leave it alone, and this is saved with the table.
 
@@ -219,11 +220,13 @@ Each row has a **Rescan** checkbox. Tick it and press Find missing links to sear
 
 ## Settings
 
-The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes.
+The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes and a box for your SoundCloud username.
 
 **Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one site has to stay on.
 
 **Link Finder searches.** Tick the sites Link Finder looks on. A track found on a site higher in the list is preferred: Bandcamp first, then SoundCloud, then YouTube. YouTube starts unticked. Saved answers stay as they were, except that a link on a site you have unticked gives way to the next best one. When you tick a site, rows saved as not found are searched again the next time they are looked up; when the newly ticked site is YouTube, only YouTube is looked at for them, and only for the artists ticked for it.
+
+**Your SoundCloud account.** Many SoundCloud profiles share a name. Enter your SoundCloud username and press **Save and read follows**: the profiles your account follows are then preferred whenever a profile has to be picked by its name, by Find missing links in Tracked Artists and by Link Finder when a track isn't on SoundCloud. A followed profile is found even when SoundCloud's search doesn't list it. The line beside the button says how many profiles were read and when. The list is read again every 12 hours, so a profile you follow later is picked up within half a day (press the button to read it now). Your follows must be public. Clear the box and press the button to stop using it.
 
 ### YouTube
 
@@ -381,6 +384,7 @@ Most personal settings are made in the app itself. A few live in `docker-compose
 | --- | --- | --- |
 | Your tracked artists and labels | Tracked Artists table | Nothing appears in the feed until at least one is saved |
 | Your Bandcamp username | Link Finder panel, or `BANDCAMP_FAN` in `docker-compose.yml` | Lets Link Finder check your purchases first. Your collection must be public. Enter your own username in the Link Finder panel, or set it in the file. |
+| Your SoundCloud username | Settings, or `SOUNDCLOUD_USER` in `docker-compose.yml` | Find missing links and Link Finder prefer the SoundCloud profiles you follow when several share a name. Your follows must be public. |
 | Who can reach the app | `ports` line in `docker-compose.yml` | `"8080:8000"` lets any device on your network open it. `"127.0.0.1:8080:8000"` limits it to this computer. |
 
 ### Preferences in the app
@@ -416,6 +420,7 @@ Add or change lines under `environment:`, then run `docker compose up -d --build
 | `LOOKUP_OWNED_RELEASES` | 15 | Purchases by an artist opened per lookup row |
 | `LOOKUP_MAX_ROWS` | 500 | Largest tracklist accepted |
 | `DEEP_READ_EXTRA_SECONDS` | 1 | Extra gap between background page reads |
+| `SOUNDCLOUD_USER` | unset | Your SoundCloud username, whose followed profiles are preferred (also set in Settings, which wins) |
 | `SOUNDCLOUD_CLIENT_ID` | unset | Supply your own SoundCloud key instead of the automatic one |
 
 ### Wording and colours
@@ -471,7 +476,7 @@ View, column widths, page width and Hide no-preview tracks are stored in the bro
 - **Bandcamp limits how fast it can be read.** The first read of a large purchase history takes hours, and a lookup of a track that is nowhere can take two to three minutes.
 - **Bandcamp's player cannot be started or controlled by the app.** One extra click is needed, and there is no shared volume control.
 - **Pre-orders.** Only the released tracks of a pre-order can be played. Bandcamp's player shows one of those whichever track you pick.
-- **Common artist names.** When a track is not on SoundCloud, a profile is picked by name alone and marked "matched by name only". For a name like River this can be the wrong person. The app learns the right profile for a name when it finds one of their tracks on SoundCloud, or when you set a SoundCloud link with Edit, and uses it from then on, including for answers already saved.
+- **Common artist names.** When a track is not on SoundCloud, a profile is picked by name alone and marked "matched by name only". For a name like River this can be the wrong person. The app learns the right profile for a name when it finds one of their tracks on SoundCloud, or when you set a SoundCloud link with Edit, and uses it from then on, including for answers already saved. Setting your SoundCloud username in Settings also helps: a profile you follow is picked before one matched by name alone, and its note reads "A profile you follow".
 - **Subscriber-only and unlisted tracks** are found only if the label's page is one you track or have bought from and it carries the artist. One known miss: Hannibal Rex, Manyothers on Dungeon Beats. This was left as is by choice.
 - **Labels that never name the artist.** A label release whose title, address and track list do not name the artist is not matched, because accepting title-only matches would give wrong links for common titles.
 - **Label is often blank in the feed.** On Bandcamp it is filled in when a release sits on a label's page. On SoundCloud it appears only when the uploader entered it.
@@ -549,6 +554,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 63 | Your SoundCloud username in Settings: the profiles it follows are preferred when Find missing links or Link Finder picks a SoundCloud profile by name. SOUNDCLOUD\_USER setting. |
 | 62 | App icon: a headphones emoji in the browser tab, replaceable by saving favicon.png (or .ico or .svg) in app/static. |
 | 61 | Filter row: the date menu sits next to the length menu. Show and its results menu moved to the left of the line below the filters, beside Page width, Reset column widths and Edit Columns. |
 | 60 | Title bar: Tracked Artists, Link Finder and Settings on the right of the second line; Refresh Feed and Export list at the start of the filter row. |

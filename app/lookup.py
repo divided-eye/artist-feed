@@ -28,12 +28,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from functools import lru_cache
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qsl, quote, urlparse
 
 from bs4 import BeautifulSoup
 
 from . import db, pace, refresh, sites
 from .sources import SOURCES
+from .sources.base import SourceError
 from .sources.bandcamp import parse_music_grid, parse_profile, parse_release, parse_search
 
 MAX_ROWS = int(os.environ.get("LOOKUP_MAX_ROWS", "500"))
@@ -1343,21 +1344,34 @@ async def suggest_pages(name: str, cells: dict, skip=(), avoid=None) -> dict:
                     notes.append("no Bandcamp page found")
 
             if "soundcloud" in wanted:
-                found = []
+                found = []                             # (address matches the other site's, followed, name fit, followers, profile)
+                try:
+                    follows = await followed_profiles(net.client)
+                except Exception:
+                    follows = []
+                followed = {u["permalink"] for u in follows}
+                for u in follows:                      # profiles you follow come first, even if search misses them
+                    if u["permalink"] in bad["soundcloud"]:
+                        continue
+                    handle = squash(u["permalink"])
+                    fit = _is_profile_of(u, [want])
+                    if fit[0] or handle in hints:
+                        found.append((handle in hints, True, fit[1], 0, u["permalink"]))
                 try:
                     data = await sc._api(net.client, "/search/users", {"q": name, "limit": 20})
                     for u in data.get("collection") or []:
                         handle = squash(u.get("permalink") or (u.get("permalink_url") or "").rstrip("/").split("/")[-1])
                         fit = _is_profile_of(dict(u, permalink=handle), [want])
-                        if (u.get("permalink_url") or "").rstrip("/").split("/")[-1].lower() in bad["soundcloud"]:
+                        profile = (u.get("permalink_url") or "").rstrip("/").split("/")[-1].lower()
+                        if profile in bad["soundcloud"]:
                             continue
                         if handle and (fit[0] or handle in hints):
-                            found.append((handle in hints, fit[1], u.get("followers_count") or 0,
-                                          (u.get("permalink_url") or "").rstrip("/").split("/")[-1].lower()))
+                            found.append((handle in hints, profile in followed, fit[1], u.get("followers_count") or 0, profile))
                 except Exception:
-                    notes.append("SoundCloud search didn't answer")
+                    if not found:
+                        notes.append("SoundCloud search didn't answer")
                 if found:
-                    out["cells"]["soundcloud"] = max(found)[3]
+                    out["cells"]["soundcloud"] = max(found)[4]
                 elif "SoundCloud search didn't answer" not in notes:
                     notes.append("no SoundCloud profile found")
     out["note"] = "; ".join(notes)
@@ -1439,6 +1453,96 @@ def with_known_profile(saved: dict, artist, title):
     if isinstance(saved.get("options"), dict):
         out = dict(out, options={k: fix(v) for k, v in saved["options"].items()})
     return out
+
+
+# ---------- SoundCloud: the profiles your account follows ----------
+
+# Many profiles share a name. When a SoundCloud username is set (Settings), the profiles that
+# account follows are read and preferred whenever a profile has to be picked by its name.
+FOLLOWS_HOURS = 12                       # how long the list of followed profiles is reused
+
+
+def soundcloud_me() -> str:
+    return (db.kv_get("soundcloud_me") or os.environ.get("SOUNDCLOUD_USER") or "").strip()
+
+
+def set_soundcloud_me(text: str) -> str:
+    """Set the SoundCloud account whose followed profiles are preferred: a username or its address."""
+    me = (text or "").strip().rstrip("/")
+    if "soundcloud.com" in me.lower():
+        me = urlparse(me if "://" in me else "https://" + me).path.strip("/").split("/")[0]
+    me = me.lstrip("@").lower()
+    if me and not re.fullmatch(r"[a-z0-9_-]{1,100}", me):
+        raise ValueError("That doesn't look like a SoundCloud username.")
+    db.kv_set("soundcloud_me", me)
+    db.kv_set("soundcloud_follows", "")
+    return me
+
+
+def _follows_saved() -> dict:
+    try:
+        saved = json.loads(db.kv_get("soundcloud_follows") or "{}")
+    except ValueError:
+        saved = {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def follows_status() -> dict:
+    saved, me = _follows_saved(), soundcloud_me()
+    mine = saved.get("user") == me.lower()
+    return {"user": me, "count": len(saved.get("users") or []) if mine else 0,
+            "read_at": saved.get("read_at") if mine else None, "error": (saved.get("error") or "") if mine else ""}
+
+
+async def followed_profiles(client, force=False) -> list:
+    """[{username, permalink, url}] for every profile the account set in Settings follows; [] when none is set.
+    Read from SoundCloud at most every FOLLOWS_HOURS; on failure the last list read is kept."""
+    me = soundcloud_me().lower()
+    if not me:
+        return []
+    saved = _follows_saved()
+    mine = saved.get("user") == me
+    if mine and not force and time.time() - (saved.get("at") or 0) < FOLLOWS_HOURS * 3600:
+        return saved.get("users") or []
+    sc, users = SOURCES["soundcloud"], []
+    try:
+        account = await sc._api(client, "/resolve", {"url": f"https://soundcloud.com/{me}"})
+        if account.get("kind") != "user" or not account.get("id"):
+            raise SourceError("That address is not a SoundCloud profile.")
+        path, params = f"/users/{account['id']}/followings", {"limit": 200, "linked_partitioning": 1}
+        for _ in range(100):                                       # 200 a page: up to 20,000 profiles
+            data = await sc._api(client, path, params)
+            for u in data.get("collection") or []:
+                url = _profile_url(u.get("permalink_url") or "")
+                if url:
+                    users.append({"username": u.get("username") or "", "permalink": url.rsplit("/", 1)[1], "url": url})
+            nxt = data.get("next_href")
+            if not nxt:
+                break
+            page = urlparse(nxt)
+            path, params = page.path, {k: v for k, v in parse_qsl(page.query) if k != "client_id"}
+    except Exception as e:
+        error = str(e) if isinstance(e, SourceError) else f"Couldn't read who {me} follows ({type(e).__name__})."
+        if "profile not found" in error:
+            error = f'No SoundCloud account "{me}" was found.'
+        db.kv_set("soundcloud_follows", json.dumps(dict(saved if mine else {"user": me, "users": []},
+                                                        at=time.time(), error=error)))
+        return (saved.get("users") or []) if mine else []
+    db.kv_set("soundcloud_follows", json.dumps({"user": me, "users": users, "at": time.time(), "error": "",
+                                                "read_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}))
+    return users
+
+
+def followed_match(follows, names, bad=()):
+    """The best followed profile for these names (as _is_profile_of judges), or None."""
+    best = None
+    for u in follows:
+        if u["permalink"] in bad:
+            continue
+        fit = _is_profile_of(u, names)
+        if fit[0] and (best is None or fit > best[0]):
+            best = (fit, u)
+    return best[1] if best else None
 
 
 def _is_profile_of(user, names) -> tuple:
@@ -1523,7 +1627,15 @@ async def from_soundcloud(net, artist, steps, title="", credits=()):
             steps.append(f"SoundCloud: {learned.replace('https://', '')}, learned from an earlier result")
             return {"status": "soundcloud", "site": "SoundCloud", "url": learned, "found": learned.rsplit("/", 1)[1],
                     "note": (whose + ", learned from an earlier result") if whose else "Profile learned from an earlier result"}
-        # 3. a profile with the right name; the whole credit before the people in it
+        # 3. a profile you follow with the right name; the whole credit before the people in it
+        follows = await followed_profiles(net.client)
+        for names in name_sets:
+            mine = followed_match(follows, names)
+            if mine:
+                steps.append(f'SoundCloud: profile "{mine["username"]}", one you follow, matched by name')
+                return {"status": "soundcloud", "site": "SoundCloud", "url": mine["url"], "found": mine["username"],
+                        "note": (whose + ", a profile you follow") if whose else "A profile you follow"}
+        # 4. a profile with the right name; the whole credit before the people in it
         best = None
         for form, names in zip(forms, name_sets):
             for text in dict.fromkeys([form] + [n for n in names[1:3]]):

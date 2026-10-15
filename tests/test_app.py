@@ -242,6 +242,16 @@ def handler(request: httpx.Request) -> httpx.Response:
     if host == "api-v2.soundcloud.com":
         if request.url.params.get("client_id") != CID:
             return httpx.Response(401)
+        if path == "/resolve" and request.url.params["url"].endswith("/mefan"):
+            return httpx.Response(200, json={"kind": "user", "id": 7, "username": "Me"})
+        if path == "/users/7/followings":
+            if request.url.params.get("cursor") == "2":
+                return httpx.Response(200, json={"collection": [
+                    {"username": "Hidden Act", "permalink": "hidden-act-music", "permalink_url": "https://soundcloud.com/hidden-act-music"}]})
+            return httpx.Response(200, json={"collection": [
+                {"username": "River", "permalink": "riverirvine", "permalink_url": "https://soundcloud.com/riverirvine"},
+                {"username": "Someone Else", "permalink": "someone", "permalink_url": "https://soundcloud.com/someone"}],
+                "next_href": "https://api-v2.soundcloud.com/users/7/followings?cursor=2&limit=200&client_id=" + CID})
         if path == "/resolve":
             if not request.url.params["url"].endswith("/nightferry"):
                 return httpx.Response(404)
@@ -1751,3 +1761,29 @@ def test_favicon(client):
     r = client.get("/favicon")
     assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
     assert '<link rel="icon" href="/favicon">' in client.get("/").text
+
+
+def test_followed_soundcloud_profiles_are_preferred(client):
+    ask = lambda name: client.post("/api/table/suggest", json={"name": name, "cells": {}}).json()
+    assert ask("River")["cells"]["soundcloud"] == "river"                  # nothing set: the most followed
+    assert client.post("/api/soundcloud/follows", json={"user": "not a name!"}).status_code == 400
+    st = client.post("/api/soundcloud/follows", json={"user": "https://soundcloud.com/MeFan/likes"}).json()
+    assert (st["user"], st["count"], st["error"]) == ("mefan", 3, "")     # both pages read
+    assert client.get("/api/settings").json()["soundcloud"]["count"] == 3
+    assert ask("River")["cells"]["soundcloud"] == "riverirvine"            # the one you follow
+    assert ask("Hidden Act")["cells"]["soundcloud"] == "hidden-act-music"  # followed, though search doesn't list it
+    got = client.post("/api/table/suggest", json={"name": "River", "cells": {}, "avoid": {"soundcloud": ["riverirvine"]}}).json()
+    assert got["cells"]["soundcloud"] == "river"                           # turned down: the next best
+    # Link Finder: a track not found falls back to the followed profile, though search doesn't list it
+    job = client.post("/api/lookup?fresh=true", content="Artist\tTitle\nHidden Act\tNothing Like This".encode()).json()
+    for _ in range(200):
+        time.sleep(0.02)
+        got = client.get(f"/api/lookup/{job['id']}").json()
+        if got["finished"]:
+            break
+    r = got["rows"][0]
+    assert (r["status"], r["url"], r["note"]) == ("soundcloud", "https://soundcloud.com/hidden-act-music", "A profile you follow")
+    st = client.post("/api/soundcloud/follows", json={"user": "nobody-here"}).json()
+    assert st["count"] == 0 and "nobody-here" in st["error"]
+    assert ask("River")["cells"]["soundcloud"] == "river"
+    client.post("/api/soundcloud/follows", json={"user": ""})

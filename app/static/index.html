@@ -251,6 +251,7 @@
   .toggles label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
   .toggles label.off { opacity: .45; cursor: default; }
   .toggles .order { color: var(--muted); font-size: 12px; }
+  #scMeStatus { margin: 0; } #scMeStatus.error { color: var(--danger); }
   td.ytlook { text-align: center; }
   #artistQ { width: 170px; }
   #artistTable th .sortbtn { display: inline-flex; align-items: center; gap: 6px; }
@@ -392,6 +393,15 @@
       <h3>Link Finder searches</h3>
       <p class="hint">Tick the sites Link Finder looks on. A track found on one higher in the list is preferred: Bandcamp, then SoundCloud, then YouTube. YouTube is only searched for the artists and labels ticked in the <b>YouTube search</b> column of Tracked Artists (for a label, the uploads of its channel you track there are looked through).</p>
       <div id="lookupToggles" class="toggles"></div>
+    </section>
+    <section>
+      <h3>Your SoundCloud account</h3>
+      <p class="hint">Many SoundCloud profiles share a name. Enter your SoundCloud username and the profiles you follow there are preferred whenever a profile has to be picked by name: by <b>Find missing links</b> in Tracked Artists, and by Link Finder when a track isn't on SoundCloud. The list is read again every 12 hours. Your follows must be public.</p>
+      <div class="toggles">
+        <input type="text" id="scMe" placeholder="username" spellcheck="false" autocomplete="off" aria-label="Your SoundCloud username">
+        <button class="btn small" type="button" id="scMeSave">Save and read follows</button>
+        <span class="hint" id="scMeStatus"></span>
+      </div>
     </section>
     <span class="error" id="settingsError" role="alert"></span>
   </form>
@@ -1813,6 +1823,7 @@ async function renderSettings() {
     return el("label", { class: extra.disabled ? "off" : "" }, input,
       color ? el("span", { class: "dot", style: `background:${color}` }) : null, label);
   };
+  renderFollows(st.soundcloud, document.activeElement !== $("scMe"));
   const save = async body => { $("settingsError").textContent = ""; await api("/api/settings", { method: "PUT", body }); await renderSettings(); await sitesChanged(); };
   $("siteToggles").replaceChildren(...st.sites.map(x => box(x.on, x.label, x.color, on => save({ sites: { [x.key]: on } }))));
   const on = new Set(st.sites.filter(x => x.on).map(x => x.key)), chosen = new Set(st.lookup_sites);
@@ -1826,6 +1837,22 @@ async function renderSettings() {
     return lab;
   }));
 }
+function renderFollows(sc, fill) {
+  if (fill) $("scMe").value = sc.user || "";
+  $("scMeStatus").textContent = sc.error ? sc.error
+    : !sc.user ? "Not set"
+    : sc.read_at ? `Following ${sc.count} profile${sc.count === 1 ? "" : "s"} (read ${ago(sc.read_at)})`
+    : "Follows not read yet";
+  $("scMeStatus").classList.toggle("error", !!sc.error);
+}
+$("scMeSave").onclick = async () => {
+  const button = $("scMeSave");
+  button.disabled = true; $("scMeStatus").classList.remove("error"); $("scMeStatus").textContent = "Reading follows…";
+  try { renderFollows(await api("/api/soundcloud/follows", { method: "POST", body: { user: $("scMe").value } }), true); }
+  catch (x) { $("scMeStatus").textContent = x.message; $("scMeStatus").classList.add("error"); }
+  finally { button.disabled = false; }
+};
+$("scMe").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("scMeSave").click(); } });
 // A site switched on or off: the buttons at the top, the table's columns and the feed follow.
 async function sitesChanged() {
   sources = await api("/api/sources");

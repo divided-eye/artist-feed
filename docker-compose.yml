@@ -13,4 +13,5 @@ services:
       BANDCAMP_FAN: ""   # your Bandcamp username; Link Finder checks its purchases first (can also be set in the Link Finder panel)
       # CATCH_UP_MINUTES: "10"   # how often pages with older releases still to load are visited between refreshes
       # LOOKUP_SEARCH_DAYS: "7"   # how long Bandcamp's search answers are reused by Link Finder
+      # SOUNDCLOUD_USER: ""   # your SoundCloud username; profiles it follows are preferred (can also be set in Settings)
       # SOUNDCLOUD_CLIENT_ID: ""   # optional; found automatically when unset

@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "62"   # shown beside the title, so you can tell which version is running
+VERSION = "63"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -115,7 +115,7 @@ class SiteSettings(BaseModel):
 
 @app.get("/api/settings")
 def get_settings():
-    return dict(sites.settings(), fallback=lookup.fallback_pref())
+    return dict(sites.settings(), fallback=lookup.fallback_pref(), soundcloud=lookup.follows_status())
 
 
 @app.put("/api/settings")
@@ -130,6 +130,23 @@ def put_settings(body: SiteSettings):
         sites.set_lookup_sites(body.lookup_sites)
     lookup.sites_changed()
     return get_settings()
+
+
+class FollowsIn(BaseModel):
+    user: str = ""
+
+
+@app.post("/api/soundcloud/follows")
+async def set_soundcloud_follows(body: FollowsIn):
+    """Set your SoundCloud username (blank to stop) and read the profiles it follows now."""
+    try:
+        me = lookup.set_soundcloud_me(body.user)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if me:
+        async with refresh.make_client() as client:
+            await lookup.followed_profiles(client, force=True)
+    return lookup.follows_status()
 
 
 @app.get("/api/artists")
