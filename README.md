@@ -158,3 +158,7 @@ settings in `docker-compose.yml`, described in the guide under "What to personal
   of the sites, so they check the app's logic, not whether the real sites changed.
 - Check what the app can read from a page:
   `docker compose run --rm artist-feed python -m app.check bandcamp artistname`
+
+## License
+
+Free to use, copy, change and share, under the [MIT License](LICENSE).

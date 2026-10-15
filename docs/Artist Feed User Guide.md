@@ -6,6 +6,8 @@ Oct 14, 2026
 
 This guide describes Artist Feed version 62. The version number is shown in small grey text beside the title at the top of the app.
 
+Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
+
 The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
 
 To download a copy of this guide, click the guide's name at the top of the page and choose **Export**, then pick Word, PDF or Markdown. In the phone apps, Export is under Share. A download is a snapshot: later edits made here are not carried into it.
