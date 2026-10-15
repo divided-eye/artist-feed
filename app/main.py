@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "61"   # shown beside the title, so you can tell which version is running
+VERSION = "62"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -84,6 +84,20 @@ def _require_artist(artist_id: int):
 def index():
     # no-cache: the browser always checks for a newer page after an update
     return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
+
+
+ICON_FILES = (("favicon.png", "image/png"), ("favicon.ico", "image/x-icon"), ("favicon.svg", "image/svg+xml"))
+
+
+@app.get("/favicon")
+@app.get("/favicon.ico")
+def favicon():
+    """The page's icon: the first of favicon.png, favicon.ico, favicon.svg found in app/static."""
+    for name, mime in ICON_FILES:
+        path = os.path.join(STATIC, name)
+        if os.path.isfile(path):
+            return FileResponse(path, media_type=mime, headers={"Cache-Control": "no-cache"})
+    raise HTTPException(404, "No icon file.")
 
 
 @app.get("/api/sources")
