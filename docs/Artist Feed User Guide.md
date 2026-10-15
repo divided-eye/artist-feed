@@ -433,6 +433,12 @@ Change only the text between `>` and `<`, or the colour values. Leave `id="..."`
 
 A new version of the app replaces this file. Edits made here are lost unless they are also reported so they can be built in, which is how the current button names, hint text and grey no-preview colour got there.
 
+### App icon
+
+The icon in the browser tab is a file in `app/static`. The app uses the first of these it finds: `favicon.png`, `favicon.ico`, `favicon.svg`. It comes with `favicon.svg`, a headphones emoji.
+
+To use your own, save a square image (64×64 pixels or larger) as `app/static/favicon.png`. Then run `docker compose up -d --build`. Browsers hold on to old icons, so close the tab and open the page again if the old one still shows. Delete `favicon.png` to go back to the emoji.
+
 ## What is saved
 
 Everything the app keeps is in one file, `data/feed.db`, inside the app's folder. Copy the `data` folder to move or back up everything.
@@ -541,6 +547,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 62 | App icon: a headphones emoji in the browser tab, replaceable by saving favicon.png (or .ico or .svg) in app/static. |
 | 61 | Filter row: the date menu sits next to the length menu. Show and its results menu moved to the left of the line below the filters, beside Page width, Reset column widths and Edit Columns. |
 | 60 | Title bar: Tracked Artists, Link Finder and Settings on the right of the second line; Refresh Feed and Export list at the start of the filter row. |
 | 59 | Title bar: Tracked Artists, Link Finder and Settings sit beside Grid \| List; Export list sits beside Refresh Feed. The Columns button is now Edit Columns. Setup instructions rewritten for newcomers to Docker, with a way to run the app without Docker. |

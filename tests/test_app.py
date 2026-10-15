@@ -1745,3 +1745,9 @@ def test_rows_sharing_a_name_can_be_kept_as_different_artists(client):
     left = [x for x in r.json()["rows"] if not (x["name"] == "Tube Band" and x["cells"].get("soundcloud") == "othertubeband")]
     after = client.put("/api/table", json={"rows": left}).json()["rows"]
     assert not next(x for x in after if x["name"] == "Tube Band")["same_name"]
+
+
+def test_favicon(client):
+    r = client.get("/favicon")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    assert '<link rel="icon" href="/favicon">' in client.get("/").text
