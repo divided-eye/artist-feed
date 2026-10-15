@@ -36,7 +36,9 @@
     border-radius: 8px; padding: 7px 10px; min-width: 0; }
   input[type=text]:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .spacer { flex: 1; }
-  .actions { display: flex; gap: 10px; margin-left: auto; }      /* stays at the right edge, also when the bar wraps */
+  .actions { display: flex; gap: 10px; margin-left: auto; }
+  .panels { display: flex; gap: 10px; }
+  .viewgroup { display: flex; gap: 10px; flex-wrap: nowrap; }   /* Grid|List and the panel buttons stay together */      /* stays at the right edge, also when the bar wraps */
   .btn[aria-pressed="true"] { background: var(--accent); color: #14160a; border-color: var(--accent); }
   .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; }
   .btn:hover { background: var(--panel-2); }
@@ -294,17 +296,21 @@
     <div class="chips" id="chips"></div>
     <select id="artistFilter" aria-label="Filter by artist"><option value="">All artists</option></select>
     <input type="text" id="search" placeholder="Search" aria-label="Search titles, artists, labels">
+    <div class="viewgroup">
     <div class="seg" role="group" aria-label="View">
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
+    <div class="panels">
+      <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
+      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
+      <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
+    </div>
+    </div>
     <div class="spacer"></div>
-    <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
     <span class="status" id="status"></span> <span class="error" id="feedError" role="alert"></span>
     <div class="actions">
       <button class="btn" id="refreshBtn" title="Check every tracked artist for new posts now">Refresh Feed</button>
-      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
-      <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
-      <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
+      <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
     </div>
   </div>
   <div class="bar filters">
@@ -345,7 +351,7 @@
     </select>
     <button class="btn small" id="resetCols" hidden title="Put the list columns back to their original widths">Reset column widths</button>
     <span class="colwrap">
-      <button class="btn small" id="colsBtn" hidden aria-expanded="false" aria-controls="colsMenu" title="Choose which list columns are shown, and their order">Columns</button>
+      <button class="btn small" id="colsBtn" hidden aria-expanded="false" aria-controls="colsMenu" title="Choose which list columns are shown, and their order">Edit Columns</button>
       <div class="colmenu" id="colsMenu" hidden role="dialog" aria-label="List columns">
         <div class="colmenu-hint">Tick the columns to show. Use the arrows here, or drag a heading in the list, to reorder.</div>
         <ul id="colsList"></ul>

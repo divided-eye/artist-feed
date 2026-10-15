@@ -27,14 +27,29 @@ What it does not do:
 
 ## Installing, running and updating
 
-The app runs in Docker, so the only thing to install is Docker Desktop (free for personal use). On Windows, accept the default WSL 2 option during setup.
+There are two ways to run the app. **Docker** is the recommended one: Docker Desktop is a free program that runs the app in its own sealed-off space, with everything it needs included, and starts it again whenever the computer starts. You don't need to learn Docker to use it; the few commands below are all there is. If you would rather not install Docker, see **Running without Docker** further down.
+
+Whichever way you choose, the app runs on your own computer, and you use it in your web browser at http://localhost:8080. Other devices on your home network can open it at `http://<your computer's address>:8080`.
+
+### Installing Docker Desktop (once)
+
+1. Download Docker Desktop from docker.com/products/docker-desktop and run the installer. On Windows, keep the default option **Use WSL 2** ticked. If the installer says WSL needs updating, let it, or run `wsl --update` in PowerShell.
+2. Restart the computer if asked, then open Docker Desktop. Accept the terms; you can skip signing in.
+3. Wait until the bottom-left corner of Docker Desktop says the engine is running (a green indicator).
+
+Docker Desktop is free for personal use. It needs a 64-bit Windows 10 or 11, or a recent Mac, and about 4 GB of memory to spare.
 
 ### First run
 
-1. Start Docker Desktop and wait until it says the engine is running.
-2. Unzip the app, and open the folder that directly contains `docker-compose.yml`.
-3. Open a terminal in that folder and run `docker compose up -d --build`.
-4. Open http://localhost:8080 in a browser.
+1. Get the app's files. Either download them from GitHub with Git (`git clone https://github.com/divided-eye/artist-feed.git`, see Keeping it in Git), or unzip the zip you were given. Put the folder somewhere permanent, such as `Documents\artist-feed`.
+2. Open that folder in File Explorer and check it directly contains `docker-compose.yml`. ("Extract all" on Windows often adds an extra outer folder; if so, go one level in.)
+3. Open a terminal in that folder: in File Explorer, click the address bar, type `powershell` and press Enter. On a Mac, open Terminal and type ` cd  ` followed by the folder's path.
+4. Make sure Docker Desktop is running, then type `docker compose up -d --build` and press Enter. The first time takes a few minutes while it downloads and builds; later starts take seconds. When it finishes, it prints that the container is started.
+5. Open http://localhost:8080 in your browser. Click **Tracked Artists**, add a few artists, and press **Save changes**.
+
+From then on the app starts by itself whenever Docker Desktop starts. To make Docker Desktop start with the computer, tick **Start Docker Desktop when you sign in** in its Settings.
+
+If the page doesn't open: check Docker Desktop is running and the app is listed under **Containers** with a green dot. `docker compose logs --tail 50`, run in the app's folder, shows its latest messages. If another program already uses port 8080, change `8080:8000` in `docker-compose.yml` to, say, `8090:8000`, run `docker compose up -d` again and open http://localhost:8090.
 
 ### Updating to a new version
 
@@ -76,6 +91,38 @@ The file `.gitattributes` keeps line endings as Linux expects them, so files edi
 
 The running app uses its own copy of the files. After changing any file in the folder, run `docker compose up -d --build` again and hard-refresh the page (Ctrl+Shift+R).
 
+### Running without Docker
+
+The app is an ordinary Python program, so it can run without Docker. The trade-off: it only runs while its window is open, it doesn't start by itself when the computer starts, and you install Python and the app's libraries yourself.
+
+**Installing (once), on Windows:**
+
+1. Install Python 3.12 from python.org/downloads. On the installer's first screen, tick **Add python.exe to PATH**.
+2. Open PowerShell in the app's folder (the one containing `requirements.txt`) and run these three lines one at a time:
+
+```
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+The first line makes a private Python environment for the app in a `.venv` folder, the second switches to it, and the third installs the libraries the app needs. If PowerShell refuses the second line because running scripts is disabled, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, answer Y, and try again.
+
+On a Mac the same steps are `python3 -m venv .venv`, `source .venv/bin/activate` and `pip install -r requirements.txt`.
+
+**Starting it**, each time, in PowerShell in the app's folder:
+
+```
+.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
+
+Then open http://localhost:8080. Leave the window open while you use the app; closing it, or pressing Ctrl+C in it, stops the app. Use `--host 127.0.0.1` instead of `0.0.0.0` to keep it to this computer only.
+
+**Where things are.** Your data is saved in the `data` folder inside the app's folder, the same as with Docker, so you can switch between the two ways and keep everything. The settings in `docker-compose.yml` don't apply; set them in PowerShell before starting instead, for example `$env:REFRESH_MINUTES = "30"`.
+
+**Updating** works as with Docker (`git pull`, or a new folder with your `data` folder copied in), then run `pip install -r requirements.txt` again in case the libraries changed, and start the app as above.
+
 ## Using the feed
 
 The feed shows everything collected from your tracked artists, newest first. It refreshes itself every hour while the app is running. **Refresh Feed** checks immediately. If a refresh is already under way (for example for pages just added), a full one follows as soon as it ends. When it finishes, the line beside the buttons says what it found: how many new posts, how many Bandcamp pages were skipped because a Link Finder lookup was running (they are checked on the next refresh), and how many pages couldn't be read. The reasons for those are in the Status column of Tracked Artists and in the app's log (docker compose logs).
@@ -90,8 +137,8 @@ The feed shows everything collected from your tracked artists, newest first. It 
 
 - Click a column heading to sort by it. Click again to reverse.
 - Drag the right edge of a heading to resize the column. Double-click the edge to reset it. **Reset column widths** resets all of them.
-- The headings stay in place while the list scrolls. Drag a heading onto another to move that column. The Columns button (List view only) opens a menu to tick columns on or off and reorder them with arrows; Reset to default restores the original order, visibility and widths. The layout is remembered in this browser.
-- **Export list** downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
+- The headings stay in place while the list scrolls. Drag a heading onto another to move that column. The Edit Columns button (List view only) opens a menu to tick columns on or off and reorder them with arrows; Reset to default restores the original order, visibility and widths. The layout is remembered in this browser.
+- **Export list** (List view only, beside Refresh Feed) downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
 - **Released** is the release date the artist set. **Posted** is when the item went up on the site. Posted is blank when the site does not give it.
 
 ### Filters and search
@@ -494,6 +541,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 59 | Title bar: Tracked Artists, Link Finder and Settings sit beside Grid \| List; Export list sits beside Refresh Feed. The Columns button is now Edit Columns. Setup instructions rewritten for newcomers to Docker, with a way to run the app without Docker. |
 | 58 | Tracked Artists: two rows sharing a name are refused on Save, like two rows with the same page, unless you mark them as different artists with "Different artists, keep both". |
 | 57 | List view: the hide column is titled Hide, and its ✕ hides only that track instead of the whole release. Cards still hide whole releases. |
 | 56 | Tracked Artists: Filter rows box, a menu of row types (Needs attention, Still being checked, No posts yet, New, Ticked for YouTube search) with counts, and sortable columns. |
