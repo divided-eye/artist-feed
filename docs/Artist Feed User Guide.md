@@ -154,7 +154,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 | Clear filters | Resets everything above except Hide no-preview tracks |
 | Page width | Standard, Wide or Full window |
 
-Filters apply to both views and to the export. Two more controls sit in the same row. The date menu keeps the last 7, 30, 90 days or 12 months, or a range you pick with two dates; a second menu chooses whether that goes by posted date (the release date is used where a post has none) or by release date. Show limits the page to the first 25 to 500 results in the current sort order, and the export is limited the same way.
+Filters apply to both views and to the export. The date menu sits next to the length menu. It keeps the last 7, 30, 90 days or 12 months, or a range you pick with two dates; a second menu chooses whether that goes by posted date (the release date is used where a post has none) or by release date. Show, at the left of the line below the filters (with Page width, Reset column widths and Edit Columns on the right), limits the page to the first 25 to 500 results in the current sort order, and the export is limited the same way.
 
 ### Listening
 
@@ -389,7 +389,7 @@ These are remembered without editing any file.
 | --- | --- | --- |
 | Grid or List view | Title bar | This browser |
 | Column widths | Drag in List view | This browser |
-| Page width | Filter row | This browser |
+| Page width | Line below the filters | This browser |
 | Hide no-preview tracks | Filter row | This browser |
 | Artist link when a track isn't found | Link Finder panel | The app's data |
 | Hidden releases and listened-to marks | Feed | The app's data |
@@ -541,6 +541,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 61 | Filter row: the date menu sits next to the length menu. Show and its results menu moved to the left of the line below the filters, beside Page width, Reset column widths and Edit Columns. |
 | 60 | Title bar: Tracked Artists, Link Finder and Settings on the right of the second line; Refresh Feed and Export list at the start of the filter row. |
 | 59 | Title bar: Tracked Artists, Link Finder and Settings sit beside Grid \| List; Export list sits beside Refresh Feed. The Columns button is now Edit Columns. Setup instructions rewritten for newcomers to Docker, with a way to run the app without Docker. |
 | 58 | Tracked Artists: two rows sharing a name are refused on Save, like two rows with the same page, unless you mark them as different artists with "Different artists, keep both". |

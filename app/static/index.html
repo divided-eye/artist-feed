@@ -321,8 +321,6 @@
       <option value="">Any length</option><option value="short">Under 3 min</option><option value="medium">3–6 min</option>
       <option value="long">6–10 min</option><option value="extended">Over 10 min</option>
     </select>
-    <label class="opt" title="Leave out Bandcamp tracks that can't be listened to yet, such as the unreleased tracks of a pre-order"><input type="checkbox" id="fPreview"> Hide no-preview tracks</label>
-    <label class="opt" title="Show the items you have hidden, so you can put them back"><input type="checkbox" id="fHidden"> Show hidden (<span id="hiddenCount">0</span>)</label>
     <select id="fRange" aria-label="Filter by date">
       <option value="">Any date</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>
       <option value="90">Last 90 days</option><option value="365">Last 12 months</option><option value="custom">Date range…</option>
@@ -335,26 +333,30 @@
     <select id="fDateBy" aria-label="Which date the date filter uses" title="Which date the date filter uses" hidden>
       <option value="posted">by posted date</option><option value="released">by release date</option>
     </select>
-    <span class="lbl">Show</span>
-    <select id="fMax" aria-label="How many results to show" title="Limit how many results are shown">
-      <option value="">All results</option><option value="25">First 25</option><option value="50">First 50</option>
-      <option value="100">First 100</option><option value="250">First 250</option><option value="500">First 500</option>
-    </select>
+    <label class="opt" title="Leave out Bandcamp tracks that can't be listened to yet, such as the unreleased tracks of a pre-order"><input type="checkbox" id="fPreview"> Hide no-preview tracks</label>
+    <label class="opt" title="Show the items you have hidden, so you can put them back"><input type="checkbox" id="fHidden"> Show hidden (<span id="hiddenCount">0</span>)</label>
     <button class="btn small" id="clearFilters" hidden>Clear filters</button>
-    <div class="spacer"></div>
-    <span class="lbl">Page width</span>
-    <select id="pageWidth" aria-label="Page width">
-      <option value="1280px">Standard</option><option value="1600px">Wide</option><option value="100vw">Full window</option>
-    </select>
-    <button class="btn small" id="resetCols" hidden title="Put the list columns back to their original widths">Reset column widths</button>
-    <span class="colwrap">
-      <button class="btn small" id="colsBtn" hidden aria-expanded="false" aria-controls="colsMenu" title="Choose which list columns are shown, and their order">Edit Columns</button>
-      <div class="colmenu" id="colsMenu" hidden role="dialog" aria-label="List columns">
-        <div class="colmenu-hint">Tick the columns to show. Use the arrows here, or drag a heading in the list, to reorder.</div>
-        <ul id="colsList"></ul>
-        <button class="btn small" id="colsReset">Reset to default</button>
-      </div>
-    </span>
+    <div class="row2">                         <!-- own line: how many results on the left, page and column controls on the right -->
+      <span class="lbl">Show</span>
+      <select id="fMax" aria-label="How many results to show" title="Limit how many results are shown">
+        <option value="">All results</option><option value="25">First 25</option><option value="50">First 50</option>
+        <option value="100">First 100</option><option value="250">First 250</option><option value="500">First 500</option>
+      </select>
+      <div class="spacer"></div>
+      <span class="lbl">Page width</span>
+      <select id="pageWidth" aria-label="Page width">
+        <option value="1280px">Standard</option><option value="1600px">Wide</option><option value="100vw">Full window</option>
+      </select>
+      <button class="btn small" id="resetCols" hidden title="Put the list columns back to their original widths">Reset column widths</button>
+      <span class="colwrap">
+        <button class="btn small" id="colsBtn" hidden aria-expanded="false" aria-controls="colsMenu" title="Choose which list columns are shown, and their order">Edit Columns</button>
+        <div class="colmenu" id="colsMenu" hidden role="dialog" aria-label="List columns">
+          <div class="colmenu-hint">Tick the columns to show. Use the arrows here, or drag a heading in the list, to reorder.</div>
+          <ul id="colsList"></ul>
+          <button class="btn small" id="colsReset">Reset to default</button>
+        </div>
+      </span>
+    </div>
   </div>
 </header>
 
