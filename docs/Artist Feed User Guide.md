@@ -1,10 +1,10 @@
 # Artist Feed: User Guide
 
-Oct 14, 2026
+Oct 15, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 63. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 64. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -174,6 +174,16 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 - Hidden releases and tracks stay hidden through refreshes. Tick **Show hidden** and use ↺ to bring one back. In the list, ↺ on a track of a release hidden from the grid brings back the whole release.
 - Anything you press play on is dimmed afterwards. Playing a card marks the whole release. Playing a list row marks that track.
 - There is no button to mark something as unheard.
+
+### Downloads
+
+The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It appears once your Bandcamp username is set in the Link Finder panel.
+
+- Two things are counted: a purchase made since the app first read your collection, and a pre-order whose release date has come. A pre-order is not counted when you buy it, only when it comes out.
+- Point at the button to see the list of releases. Click it to open your Bandcamp collection in a new tab, where the download links are; the count goes back to zero.
+- Your purchases are checked as often as the feed refreshes (every hour unless you changed it), and whenever Link Finder starts a lookup.
+- The app can't download the files itself. Bandcamp's download links need you to be signed in to your account, and the app only reads your public collection page.
+- Purchases you made before setting your username are not counted, and a collection set to private can't be read.
 
 ## Tracked Artists
 
@@ -383,7 +393,7 @@ Most personal settings are made in the app itself. A few live in `docker-compose
 | Setting | Where | Why |
 | --- | --- | --- |
 | Your tracked artists and labels | Tracked Artists table | Nothing appears in the feed until at least one is saved |
-| Your Bandcamp username | Link Finder panel, or `BANDCAMP_FAN` in `docker-compose.yml` | Lets Link Finder check your purchases first. Your collection must be public. Enter your own username in the Link Finder panel, or set it in the file. |
+| Your Bandcamp username | Link Finder panel, or `BANDCAMP_FAN` in `docker-compose.yml` | Lets Link Finder check your purchases first, and the Downloads button count what you have to download. Your collection must be public. Enter your own username in the Link Finder panel, or set it in the file. |
 | Your SoundCloud username | Settings, or `SOUNDCLOUD_USER` in `docker-compose.yml` | Find missing links and Link Finder prefer the SoundCloud profiles you follow when several share a name. Your follows must be public. |
 | Who can reach the app | `ports` line in `docker-compose.yml` | `"8080:8000"` lets any device on your network open it. `"127.0.0.1:8080:8000"` limits it to this computer. |
 
@@ -554,6 +564,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 64 | Downloads button: counts new Bandcamp purchases and pre-orders that have come out; clicking it opens your Bandcamp collection and clears the count. |
 | 63 | Your SoundCloud username in Settings: the profiles it follows are preferred when Find missing links or Link Finder picks a SoundCloud profile by name. SOUNDCLOUD\_USER setting. |
 | 62 | App icon: a headphones emoji in the browser tab, replaceable by saving favicon.png (or .ico or .svg) in app/static. |
 | 61 | Filter row: the date menu sits next to the length menu. Show and its results menu moved to the left of the line below the filters, beside Page width, Reset column widths and Edit Columns. |

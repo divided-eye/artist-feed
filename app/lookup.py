@@ -781,8 +781,11 @@ def collection_status():
             **collection_state}
 
 
-def _store_collection(fan, items, tracklists):
-    """Save one batch. Returns how many of the items were new."""
+def _store_collection(fan, items, tracklists, alert=False):
+    """Save one batch. Returns how many of the items were new.
+
+    alert: the first complete read is done, so a purchase not seen before is a new one to download
+    (unless it is a pre-order). A pre-order that is no longer one has come out: also one to download."""
     by_key, by_featured = {}, {}
     for it in items:
         kind = it.get("tralbum_type") or ("t" if it.get("item_type") == "track" else "a")
@@ -797,12 +800,19 @@ def _store_collection(fan, items, tracklists):
     with db._lock:                                   # one transaction per batch
         c = db.conn()
         for key, it in by_key.items():
-            if not c.execute("SELECT 1 FROM collection_items WHERE key=?", (key,)).fetchone():
+            pre = 1 if it.get("is_preorder") else 0
+            was = c.execute("SELECT preorder FROM collection_items WHERE key=?", (key,)).fetchone()
+            if not was:
                 new += 1
-            c.execute("INSERT INTO collection_items(key, fan, title, band, url, kind) VALUES(?,?,?,?,?,?) "
-                      "ON CONFLICT(key) DO UPDATE SET title=excluded.title, band=excluded.band, url=excluded.url",
+                if alert and not pre:
+                    _alert(c, key, "new")
+            elif was[0] and not pre:
+                _alert(c, key, "released")
+            c.execute("INSERT INTO collection_items(key, fan, title, band, url, kind, preorder) VALUES(?,?,?,?,?,?,?) "
+                      "ON CONFLICT(key) DO UPDATE SET title=excluded.title, band=excluded.band, url=excluded.url,"
+                      " preorder=excluded.preorder",
                       (key, fan, it.get("item_title") or "", it.get("band_name") or "",
-                       it["item_url"].split("?")[0], key[0]))
+                       it["item_url"].split("?")[0], key[0], pre))
         for list_key, tracks in (tracklists or {}).items():
             tracks = [t for t in tracks or [] if isinstance(t, dict) and t.get("title")]
             key = list_key if list_key in by_key else next(
@@ -840,6 +850,7 @@ async def sync_collection(full=False, on_progress=None):
         if db.query("SELECT 1 FROM collection_items WHERE fan<>? LIMIT 1", (fan,)):
             db.execute("DELETE FROM collection_tracks")          # a different account: start over
             db.execute("DELETE FROM collection_items")
+            db.execute("DELETE FROM download_alerts")
             db.kv_set("collection_complete", "")
             db.kv_set("collection_token", "")
         complete = db.kv_get("collection_complete") == "1"
@@ -864,7 +875,7 @@ async def sync_collection(full=False, on_progress=None):
             cache = (blob.get("item_cache") or {}).get("collection") or {}
             order = info.get("sequence") or list(cache)
             new = _store_collection(fan, [cache[k] for k in order if k in cache],
-                                    (blob.get("tracklists") or {}).get("collection") or {})
+                                    (blob.get("tracklists") or {}).get("collection") or {}, alert=complete)
             total = info.get("item_count") or 0
             # Not finished yet: carry on from the saved place. Finished: only what is newer.
             token = (db.kv_get("collection_token") or info.get("last_token")) if not complete else info.get("last_token")
@@ -880,7 +891,7 @@ async def sync_collection(full=False, on_progress=None):
                     raise ValueError(f"Bandcamp answered {j.status_code} while reading your purchases.")
                 data = j.json()
                 items = data.get("items") or []
-                new = _store_collection(fan, items, data.get("tracklists") or {})
+                new = _store_collection(fan, items, data.get("tracklists") or {}, alert=complete)
                 token = data.get("last_token") if data.get("more_available") and items else None
                 if not complete:
                     db.kv_set("collection_token", token or "")   # where to carry on if interrupted
@@ -899,6 +910,68 @@ async def sync_collection(full=False, on_progress=None):
         collection_state.update(syncing=False, progress="")
     if DEEP_AUTO:
         deep_read_in_background()
+
+
+# ---------- Bandcamp: purchases ready to download ----------
+
+def _alert(c, key, reason):
+    c.execute("INSERT OR IGNORE INTO download_alerts(key, reason, at) VALUES(?,?,?)", (key, reason, db.now()))
+
+
+def downloads() -> dict:
+    """The purchases to download that haven't been shown yet, newest first."""
+    fan = collection_fan()
+    rows = db.query("SELECT i.title, i.band, i.url, a.reason, a.at FROM download_alerts a "
+                    "JOIN collection_items i ON i.key=a.key ORDER BY a.at DESC, a.rowid DESC") if fan else []
+    return {"fan": fan, "url": f"https://bandcamp.com/{quote(fan)}" if fan else "",
+            "count": len(rows), "items": rows}
+
+
+def clear_downloads():
+    db.execute("DELETE FROM download_alerts")
+
+
+async def check_preorders(net):
+    """Pre-orders whose release date has come are ready to download. A pre-order's date is read
+    from its page once (again a day later if the page had none); after that no requests are needed."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for row in db.query("SELECT key, url, release_date, checked_at FROM collection_items WHERE preorder=1"):
+        date = row["release_date"]
+        if not date and (row["checked_at"] or "") < yesterday:
+            r = await net.get(row["url"])
+            if r.status_code == 429:
+                raise Blocked("Bandcamp is rate-limiting requests")
+            if r.status_code == 200:
+                date = (parse_release(r.text, row["url"])["published_at"] or "")[:10]
+            db.execute("UPDATE collection_items SET release_date=?, checked_at=? WHERE key=?",
+                       (date, db.now(), row["key"]))
+        if date and date <= today:
+            with db._lock:
+                c = db.conn()
+                c.execute("UPDATE collection_items SET preorder=0 WHERE key=?", (row["key"],))
+                _alert(c, row["key"], "released")
+                c.commit()
+
+
+async def check_purchases():
+    """Look for new purchases and pre-orders that have come out."""
+    if not collection_fan():
+        return
+    await sync_collection()
+    async with refresh.make_client() as client:
+        await check_preorders(Net(client))
+
+
+async def purchases_forever():
+    """Started with the app: checks for purchases to download as often as the feed refreshes."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await check_purchases()
+        except Exception:
+            pass
+        await asyncio.sleep(max(refresh.REFRESH_MINUTES, 5) * 60)
 
 
 async def deep_read():

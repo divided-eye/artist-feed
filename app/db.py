@@ -72,7 +72,10 @@ CREATE TABLE IF NOT EXISTS lookup_cache(key TEXT PRIMARY KEY, result TEXT NOT NU
 CREATE TABLE IF NOT EXISTS web_cache(kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, at TEXT NOT NULL,
   PRIMARY KEY(kind, key));
 CREATE TABLE IF NOT EXISTS collection_items(key TEXT PRIMARY KEY, fan TEXT NOT NULL, title TEXT NOT NULL,
-  band TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL);
+  band TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL,
+  preorder INTEGER NOT NULL DEFAULT 0, release_date TEXT NOT NULL DEFAULT '', checked_at TEXT NOT NULL DEFAULT '');
+-- Purchases ready to download that you haven't been shown yet: new ones, and pre-orders now out.
+CREATE TABLE IF NOT EXISTS download_alerts(key TEXT PRIMARY KEY, reason TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS collection_tracks(item_key TEXT NOT NULL, position INTEGER, title TEXT NOT NULL, artist TEXT);
 CREATE INDEX IF NOT EXISTS collection_tracks_item ON collection_tracks(item_key);
 -- Your own list of tracks: how each artist and title should be written, and optionally a link.
@@ -126,6 +129,11 @@ def migrate(c):
     for name, kind in ADDED_POST_COLUMNS.items():
         if name not in have:
             c.execute(f"ALTER TABLE posts ADD COLUMN {name} {kind}")
+    cols = {r[1] for r in c.execute("PRAGMA table_info(collection_items)")}
+    for name, kind in (("preorder", "INTEGER NOT NULL DEFAULT 0"), ("release_date", "TEXT NOT NULL DEFAULT ''"),
+                       ("checked_at", "TEXT NOT NULL DEFAULT ''")):
+        if cols and name not in cols:
+            c.execute(f"ALTER TABLE collection_items ADD COLUMN {name} {kind}")
     cols = {r[1] for r in c.execute("PRAGMA table_info(artists)")}
     if cols and "aliases" not in cols:
         c.execute("ALTER TABLE artists ADD COLUMN aliases TEXT NOT NULL DEFAULT ''")

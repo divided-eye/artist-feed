@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "63"   # shown beside the title, so you can tell which version is running
+VERSION = "64"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -38,8 +38,9 @@ async def lifespan(app):
     if os.environ.get("DISABLE_SCHEDULER") != "1":
         task = asyncio.create_task(refresh.scheduler())
     deep = asyncio.create_task(lookup.deep_read_forever()) if lookup.DEEP_AUTO else None
+    buys = asyncio.create_task(lookup.purchases_forever()) if task else None
     yield
-    for t in (task, deep):
+    for t in (task, deep, buys):
         if t:
             t.cancel()
 
@@ -693,9 +694,34 @@ async def refresh_now():
     return {"ok": True, "state": refresh.request_refresh()}
 
 
+@app.get("/api/downloads")
+def get_downloads():
+    """Purchases ready to download that you haven't been shown yet."""
+    return lookup.downloads()
+
+
+@app.post("/api/downloads/clear")
+def clear_downloads():
+    lookup.clear_downloads()
+    return lookup.downloads()
+
+
+@app.post("/api/downloads/check")
+async def check_downloads():
+    """Look for new purchases and pre-orders that have come out now."""
+    try:
+        await lookup.check_purchases()
+    except lookup.Blocked:
+        raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")
+    return lookup.downloads()
+
+
 @app.get("/api/status")
 def status():
+    d = lookup.downloads()
     return {"version": VERSION, "refreshing": refresh.state["refreshing"] > 0,
+            "downloads": {"fan": d["fan"], "url": d["url"], "count": d["count"],
+                          "items": [f'{x["band"]} — {x["title"]}' for x in d["items"][:20]]},
             "bandcamp_on_hold": pace.on_hold() or refresh.state["held"] > 0,
             "last_refresh": refresh.state["last_refresh"], "queued": refresh.state["queued"],
             "last_result": refresh.state["last_result"],

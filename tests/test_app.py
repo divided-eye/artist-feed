@@ -24,7 +24,7 @@ os.environ["BANDCAMP_BACKOFF_SECONDS"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import refresh  # noqa: E402
+from app import db, refresh  # noqa: E402
 from app.main import app  # noqa: E402
 from app.sources import SOURCES  # noqa: E402
 from app.sources.bandcamp import parse_music_grid, parse_release  # noqa: E402
@@ -1787,3 +1787,49 @@ def test_followed_soundcloud_profiles_are_preferred(client):
     assert st["count"] == 0 and "nobody-here" in st["error"]
     assert ask("River")["cells"]["soundcloud"] == "river"
     client.post("/api/soundcloud/follows", json={"user": ""})
+
+
+def test_new_purchases_to_download(client):
+    def read_purchases():
+        client.post("/api/collection", json={"fan": "divided_eye"})
+        for _ in range(300):
+            time.sleep(0.02)
+            if not client.get("/api/collection").json()["syncing"]:
+                return
+        raise AssertionError("still reading")
+    calls.pop("collection_fail", None)
+    read_purchases()
+    if not client.get("/api/collection").json()["complete"]:
+        read_purchases()
+    client.post("/api/downloads/clear")
+    assert client.get("/api/status").json()["downloads"] == {
+        "fan": "divided_eye", "url": "https://bandcamp.com/divided_eye", "count": 0, "items": []}
+    blob = json.loads(json.dumps(FAN_BLOB))
+    blob["collection_data"]["sequence"] = ["a5", "a6", "a1", "a2"]
+    blob["item_cache"]["collection"]["a5"] = {"tralbum_type": "a", "tralbum_id": 5, "item_title": "Fresh One", "band_name": "Masot",
+                                              "item_url": "https://masot.bandcamp.com/album/fresh-one"}
+    blob["item_cache"]["collection"]["a6"] = {"tralbum_type": "a", "tralbum_id": 6, "item_title": "Coming Soon", "band_name": "Masot",
+                                              "item_url": "https://masot.bandcamp.com/album/coming-soon", "is_preorder": True}
+    old = PAGES[("bandcamp.com", "/divided_eye")]
+    PAGES[("bandcamp.com", "/divided_eye")] = '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(blob)) + '"></div>'
+    PAGES[("masot.bandcamp.com", "/album/coming-soon")] = release("Coming Soon", "01 Jan 2099 00:00:00 GMT")
+    try:
+        d = client.post("/api/downloads/check").json()
+        # the new purchase is ready to download; the pre-order isn't out yet
+        assert [(x["title"], x["reason"]) for x in d["items"]] == [("Fresh One", "new")]
+        assert client.get("/api/status").json()["downloads"]["items"] == ["Masot — Fresh One"]
+        assert client.post("/api/downloads/clear").json()["count"] == 0
+        assert client.post("/api/downloads/check").json()["count"] == 0      # shown once only
+        # its release date comes: ready to download
+        db.execute("UPDATE collection_items SET release_date='2020-01-01' WHERE title='Coming Soon'")
+        d = client.post("/api/downloads/check").json()
+        assert [(x["title"], x["reason"]) for x in d["items"]] == [("Coming Soon", "released")]
+        client.post("/api/downloads/clear")
+        # a pre-order Bandcamp itself shows as out is ready too
+        blob["item_cache"]["collection"]["a6"]["is_preorder"] = False
+        db.execute("UPDATE collection_items SET preorder=1 WHERE title='Coming Soon'")
+        PAGES[("bandcamp.com", "/divided_eye")] = '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(blob)) + '"></div>'
+        assert [x["title"] for x in client.post("/api/downloads/check").json()["items"]] == ["Coming Soon"]
+        client.post("/api/downloads/clear")
+    finally:
+        PAGES[("bandcamp.com", "/divided_eye")] = old
