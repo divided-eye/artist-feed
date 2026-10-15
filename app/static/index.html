@@ -37,8 +37,7 @@
   input[type=text]:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .spacer { flex: 1; }
   .actions { display: flex; gap: 10px; margin-left: auto; }
-  .panels { display: flex; gap: 10px; }
-  .viewgroup { display: flex; gap: 10px; flex-wrap: nowrap; }   /* Grid|List and the panel buttons stay together */      /* stays at the right edge, also when the bar wraps */
+  .row2 { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }      /* stays at the right edge, also when the bar wraps */
   .btn[aria-pressed="true"] { background: var(--accent); color: #14160a; border-color: var(--accent); }
   .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; }
   .btn:hover { background: var(--panel-2); }
@@ -296,24 +295,22 @@
     <div class="chips" id="chips"></div>
     <select id="artistFilter" aria-label="Filter by artist"><option value="">All artists</option></select>
     <input type="text" id="search" placeholder="Search" aria-label="Search titles, artists, labels">
-    <div class="viewgroup">
     <div class="seg" role="group" aria-label="View">
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
-    <div class="panels">
-      <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
-      <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
-      <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
-    </div>
-    </div>
-    <div class="spacer"></div>
-    <span class="status" id="status"></span> <span class="error" id="feedError" role="alert"></span>
-    <div class="actions">
-      <button class="btn" id="refreshBtn" title="Check every tracked artist for new posts now">Refresh Feed</button>
-      <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
+    <div class="row2">                         <!-- always its own line: status on the left, panel buttons on the right -->
+      <span class="status" id="status"></span> <span class="error" id="feedError" role="alert"></span>
+      <div class="spacer"></div>
+      <div class="actions">
+        <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
+        <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
+        <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
+      </div>
     </div>
   </div>
   <div class="bar filters">
+    <button class="btn" id="refreshBtn" title="Check every tracked artist for new posts now">Refresh Feed</button>
+    <a class="btn" id="exportBtn" hidden download="tracks.csv" title="Download every row that matches the current filters">Export list</a>
     <span class="lbl">Filter</span>
     <select id="fYear" aria-label="Filter by year"><option value="">Any year</option></select>
     <select id="fLabel" aria-label="Filter by label"><option value="">Any label</option></select>

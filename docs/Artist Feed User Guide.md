@@ -138,7 +138,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 - Click a column heading to sort by it. Click again to reverse.
 - Drag the right edge of a heading to resize the column. Double-click the edge to reset it. **Reset column widths** resets all of them.
 - The headings stay in place while the list scrolls. Drag a heading onto another to move that column. The Edit Columns button (List view only) opens a menu to tick columns on or off and reorder them with arrows; Reset to default restores the original order, visibility and widths. The layout is remembered in this browser.
-- **Export list** (List view only, beside Refresh Feed) downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
+- **Export list** (List view only, beside Refresh Feed at the start of the filter row) downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
 - **Released** is the release date the artist set. **Posted** is when the item went up on the site. Posted is blank when the site does not give it.
 
 ### Filters and search
@@ -217,7 +217,7 @@ Each row has a **Rescan** checkbox. Tick it and press Find missing links to sear
 
 ## Settings
 
-The **Settings** button at the top opens two lists of checkboxes.
+The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes.
 
 **Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one site has to stay on.
 
@@ -541,6 +541,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 60 | Title bar: Tracked Artists, Link Finder and Settings on the right of the second line; Refresh Feed and Export list at the start of the filter row. |
 | 59 | Title bar: Tracked Artists, Link Finder and Settings sit beside Grid \| List; Export list sits beside Refresh Feed. The Columns button is now Edit Columns. Setup instructions rewritten for newcomers to Docker, with a way to run the app without Docker. |
 | 58 | Tracked Artists: two rows sharing a name are refused on Save, like two rows with the same page, unless you mark them as different artists with "Different artists, keep both". |
 | 57 | List view: the hide column is titled Hide, and its ✕ hides only that track instead of the whole release. Cards still hide whole releases. |
