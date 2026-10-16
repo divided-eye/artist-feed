@@ -19,6 +19,8 @@ async def main(source_key, text):
     print(f"{result.display_name or handle} - {len(result.posts)} posts")
     for p in sorted(result.posts, key=lambda p: p.published_at or "", reverse=True):
         print(f"  {p.published_at or '(no date)':20}  {p.kind:6} {p.title}  {p.url}")
+    for line in result.trace:
+        print("  ·", line)
     if result.warning:
         print("note:", result.warning)
 

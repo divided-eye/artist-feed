@@ -11,6 +11,8 @@ import re
 from datetime import datetime
 from urllib.parse import urlparse
 
+import httpx
+
 from .. import db
 from .base import FetchResult, Post, Source, SourceError, Track, iso
 
@@ -106,6 +108,10 @@ class SoundCloud(Source):
                    "Referer": "https://soundcloud.com/"}
         for attempt in (0, 1):
             cid = await self._client_id(client, force=bool(attempt))
+            if path.startswith("http"):                 # a next_href: keep its own query (cursor etc.)
+                url = httpx.URL(path)
+                params = {**dict(url.params), **params}
+                path = str(url.copy_with(query=None)).removeprefix(API)
             r = await client.get(API + path, params={**params, "client_id": cid}, headers=headers)
             if r.status_code in (401, 403) and attempt == 0 and not os.environ.get("SOUNDCLOUD_CLIENT_ID"):
                 continue  # key expired: fetch a fresh one and retry once
@@ -126,9 +132,32 @@ class SoundCloud(Source):
             meta["user_id"] = user["id"]
             result.display_name = user.get("username")
             result.avatar = _big(user.get("avatar_url"))
-        data = await self._api(client, f"/users/{meta['user_id']}/tracks",
-                               {"limit": LIMIT, "linked_partitioning": 1})
+        uid = meta["user_id"]
+        data = await self._api(client, f"/users/{uid}/tracks", {"limit": LIMIT, "linked_partitioning": 1})
         result.posts = parse_tracks(data)
+        result.trace.append(f"Tracks list: {len(data.get('collection') or [])} items"
+                            + (", more pages" if data.get("next_href") else ""))
+        # SoundCloud sometimes answers with an empty first page that still points to a next one.
+        pages = 1
+        while not result.posts and data.get("next_href") and pages < 4:
+            data = await self._api(client, data["next_href"], {})
+            result.posts = parse_tracks(data)
+            pages += 1
+            result.trace.append(f"Tracks list page {pages}: {len(data.get('collection') or [])} items")
+        if not result.posts:
+            # The profile's "All" tab: its own uploads show there even when the Tracks list comes back empty.
+            stream = await self._api(client, f"/stream/users/{uid}", {"limit": LIMIT, "linked_partitioning": 1})
+            items = stream.get("collection") or []
+            own = [i["track"] for i in items if i.get("type") == "track" and i.get("track")]
+            result.posts = parse_tracks({"collection": own})
+            result.trace.append(f"All tab: {len(items)} items, {len(own)} of them its own tracks")
+        if not result.posts:
+            user = await self._api(client, f"/users/{uid}", {})
+            count = user.get("track_count") or 0
+            result.trace.append(f"Profile ({user.get('permalink')}, id {uid}) says it has {count} tracks")
+            if count:
+                result.warning = (f"SoundCloud says this profile has {count} tracks but didn't list any; "
+                                  "it will try again next refresh.")
         if result.posts and not result.display_name:
             result.display_name = result.posts[0].author
         return result

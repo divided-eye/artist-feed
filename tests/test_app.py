@@ -1875,3 +1875,34 @@ def test_focus_feed_and_marked_rows(client):
     assert [e["row"] for e in bad.json()["errors"]] == [1]
     ok = client.put("/api/table", json={"rows": [dict(rows[0], remove=True), rows[1]]})
     assert [r["name"] for r in ok.json()["rows"]] == [rows[1]["name"]]
+
+
+def test_soundcloud_profile_with_an_empty_tracks_list(client):
+    import asyncio
+    track = {"kind": "track", "id": 5001, "title": "Meus Olhos", "permalink_url": "https://soundcloud.com/oxo/meus-olhos",
+             "created_at": "2022-05-01T10:00:00Z", "user": {"username": "Oxo"}}
+    db.kv_set("soundcloud_client_id", "c" * 32)
+
+    def site(request):
+        path, cursor = request.url.path, request.url.params.get("cursor")
+        if path == "/users/1/tracks":                       # empty page that points to another, then a page with tracks
+            return httpx.Response(200, json={"collection": [track] if cursor else [],
+                                             "next_href": None if cursor else "https://api-v2.soundcloud.com/users/1/tracks?cursor=2"})
+        if path in ("/users/2/tracks", "/users/3/tracks"):
+            return httpx.Response(200, json={"collection": []})
+        if path == "/stream/users/2":                       # the All tab: a repost and its own track
+            return httpx.Response(200, json={"collection": [{"type": "track-repost", "track": dict(track, id=1)},
+                                                            {"type": "track", "track": track}]})
+        if path == "/stream/users/3":
+            return httpx.Response(200, json={"collection": []})
+        if path == "/users/3":
+            return httpx.Response(200, json={"permalink": "oxo3", "track_count": 37})
+        return httpx.Response(404)
+
+    async def read(uid):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
+            return await SOURCES["soundcloud"].fetch(c, {"id": 0, "url": "x", "meta": {"user_id": uid}}, set())
+    first, second, third = (asyncio.run(read(u)) for u in (1, 2, 3))
+    assert [p.title for p in first.posts] == ["Meus Olhos"] and not first.warning
+    assert [p.external_id for p in second.posts] == ["5001"]
+    assert third.posts == [] and "37 tracks" in third.warning and any("37" in t for t in third.trace)

@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 67. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 68. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -340,7 +340,7 @@ Bandcamp has no public API or artist feed. For each tracked page the app reads t
 
 ### Reading SoundCloud
 
-SoundCloud's RSS feeds are empty for most musicians, so the app uses the same data endpoints the soundcloud.com website calls. They need a public key that is embedded in the site's own code. The app finds that key itself and replaces it when it expires. Only an artist's own uploads are read, not reposts.
+SoundCloud's RSS feeds are empty for most musicians, so the app uses the same data endpoints the soundcloud.com website calls. They need a public key that is embedded in the site's own code. The app finds that key itself and replaces it when it expires. Only an artist's own uploads are read, not reposts. SoundCloud sometimes sends back an empty track list for a profile that has tracks. When that happens the app also reads the profile's All tab, keeping only the artist's own uploads. If that comes back empty too while SoundCloud says the profile has tracks, the row's Status says so, and the app tries again on the next refresh. To see what SoundCloud returns for one profile, run docker compose exec artist-feed python -m app.check soundcloud username: it lists the tracks found and what each request returned.
 
 ### Reading YouTube
 
@@ -570,6 +570,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 68 | SoundCloud profiles whose track list comes back empty are read from their All tab instead, and the Status column says when SoundCloud lists none for a profile that has tracks. app.check shows what each SoundCloud request returned. |
 | 67 | Focus column in Tracked Artists and a Focus Feed button showing only those artists. Removing a row now marks it (dark red-grey, with Undo) until you Save. |
 | 66 | Refresh estimate timed per site, so it no longer climbs as the quick SoundCloud and YouTube pages finish. A ✕ in the search and filter boxes empties them. Tracked Artists button has a hover description. |
 | 65 | Refresh progress: the status line shows pages checked so far and a rough estimate of the time left. |

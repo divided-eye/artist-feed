@@ -46,6 +46,7 @@ class FetchResult:
     display_name: Optional[str] = None
     avatar: Optional[str] = None
     warning: Optional[str] = None  # shown next to the account in the UI
+    trace: list = field(default_factory=list)  # what each request returned (printed by app.check)
 
 
 class SourceError(Exception):
