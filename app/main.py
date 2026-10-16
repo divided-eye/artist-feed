@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "64"   # shown beside the title, so you can tell which version is running
+VERSION = "65"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -725,4 +725,5 @@ def status():
             "bandcamp_on_hold": pace.on_hold() or refresh.state["held"] > 0,
             "last_refresh": refresh.state["last_refresh"], "queued": refresh.state["queued"],
             "last_result": refresh.state["last_result"],
+            "progress": refresh.progress(),
             "refresh_minutes": refresh.REFRESH_MINUTES}

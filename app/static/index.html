@@ -1396,11 +1396,24 @@ $("downloadsBtn").addEventListener("click", () => {
   fetch("/api/downloads/clear", { method: "POST", keepalive: true }).catch(() => {});
   showDownloads({ fan: true, url: $("downloadsBtn").href, count: 0, items: [] });
 });
+// "120 of 450 pages · about 12 min left": a rough guide while a refresh runs.
+function progressText(p) {
+  if (!p || !p.pages) return "";
+  let text = ` ${p.done.toLocaleString()} of ${p.pages.toLocaleString()} page${p.pages === 1 ? "" : "s"}`;
+  const left = p.seconds_left;
+  if (left != null && p.done < p.pages) {
+    const min = Math.round(left / 60);
+    text += " · " + (left < 60 ? "less than a minute left"
+      : min < 60 ? `about ${min} min left`
+      : `about ${Math.floor(min / 60)} h ${min % 60 ? (min % 60) + " min " : ""}left`);
+  }
+  return text;
+}
 async function pollStatus() {
   clearTimeout(statusTimer);                  // one polling loop, however often it is kicked
   try {
     const s = await api("/api/status");
-    $("status").textContent = s.refreshing ? "Checking for new posts…" + (s.queued ? " (a full refresh follows)" : "")
+    $("status").textContent = s.refreshing ? "Checking for new posts…" + progressText(s.progress) + (s.queued ? " (a full refresh follows)" : "")
       : (s.last_refresh ? "Updated " + ago(s.last_refresh) + refreshSummary(s.last_result) : "");
     $("status").title = s.bandcamp_on_hold ? "Bandcamp checks are on hold while a lookup runs or Bandcamp has asked for a pause; they resume on the next refresh." : "";
     if (s.bandcamp_on_hold && !s.refreshing && !(s.last_result && s.last_result.held)) $("status").textContent += " · Bandcamp on hold";

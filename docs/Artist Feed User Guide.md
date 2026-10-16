@@ -1,10 +1,10 @@
 # Artist Feed: User Guide
 
-Oct 15, 2026
+Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 64. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 65. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -349,6 +349,8 @@ Every request to Bandcamp goes through one queue, two seconds apart, whether it 
 - If Bandcamp answers "slow down" (error 429), everything waits as long as it asks, or 30 seconds doubling each time, and then carries on with a wider gap. The status line shows the pause.
 - While a lookup or a purchases read is running, the feed's own Bandcamp checks stand aside and resume on the next refresh.
 
+While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". The estimate starts from the pace of the last full refresh and switches to this refresh's own pace after ten pages. Bandcamp's two-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
+
 ### Background reading
 
 After your purchases are read, the app keeps working in the background, one page every few seconds, pausing whenever a lookup is running.
@@ -564,6 +566,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 65 | Refresh progress: the status line shows pages checked so far and a rough estimate of the time left. |
 | 64 | Downloads button: counts new Bandcamp purchases and pre-orders that have come out; clicking it opens your Bandcamp collection and clears the count. |
 | 63 | Your SoundCloud username in Settings: the profiles it follows are preferred when Find missing links or Link Finder picks a SoundCloud profile by name. SOUNDCLOUD\_USER setting. |
 | 62 | App icon: a headphones emoji in the browser tab, replaceable by saving favicon.png (or .ico or .svg) in app/static. |

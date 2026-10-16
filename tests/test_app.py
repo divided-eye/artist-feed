@@ -1833,3 +1833,18 @@ def test_new_purchases_to_download(client):
         client.post("/api/downloads/clear")
     finally:
         PAGES[("bandcamp.com", "/divided_eye")] = old
+
+
+def test_refresh_progress_estimate(client):
+    assert refresh.progress() is None                                   # nothing running
+    db.kv_set("refresh_seconds_per_page", "2")
+    run = {"pages": 100, "done": 4, "started": time.monotonic() - 40}
+    refresh._runs.append(run)
+    try:
+        assert refresh.progress() == {"pages": 100, "done": 4, "seconds_left": 192}   # last run's pace at first
+        run["done"] = 20                                                 # then this run's own: 2 s a page
+        assert refresh.progress()["seconds_left"] == 160
+        assert client.get("/api/status").json()["progress"]["done"] == 20
+    finally:
+        refresh._runs.remove(run)
+        db.kv_set("refresh_seconds_per_page", "")

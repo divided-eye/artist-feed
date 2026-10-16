@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import time
 
 import httpx
 
@@ -18,6 +19,7 @@ CONCURRENCY = int(os.environ.get("REFRESH_CONCURRENCY", "3"))
 CATCH_UP_MINUTES = float(os.environ.get("CATCH_UP_MINUTES", "10"))
 
 state = {"refreshing": 0, "last_refresh": None, "held": 0, "queued": False, "last_result": None}
+_runs = []          # the refreshes running now: {"pages", "done", "started"}
 _tasks = set()
 
 
@@ -25,7 +27,36 @@ def make_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(headers=BROWSER_HEADERS, follow_redirects=True, timeout=25)
 
 
-async def _refresh_one(client, sem, account, tally):
+async def _refresh_one(client, sem, account, tally, run):
+    try:
+        await _read_one(client, sem, account, tally)
+    finally:
+        run["done"] += 1
+
+
+def progress():
+    """Pages checked so far in the refreshes running now, and a rough estimate of the time left.
+
+    The estimate uses this run's own pace once a few pages are done; before that, the pace of the
+    last full refresh. Bandcamp's pauses make it uneven, so it is only a guide."""
+    if not _runs:
+        return None
+    pages, done = sum(r["pages"] for r in _runs), sum(r["done"] for r in _runs)
+    elapsed = time.monotonic() - min(r["started"] for r in _runs)
+    try:
+        saved = float(db.kv_get("refresh_seconds_per_page") or 0)
+    except ValueError:
+        saved = 0.0
+    if done >= 10 or (done and not saved):
+        per_page = elapsed / done
+    elif saved:
+        per_page = saved
+    else:
+        return {"pages": pages, "done": done, "seconds_left": None}
+    return {"pages": pages, "done": done, "seconds_left": round(max(0, pages - done) * per_page)}
+
+
+async def _read_one(client, sem, account, tally):
     async with sem:
         source = SOURCES.get(account["source"])
         if source is None or not sites.is_on(source.key):     # a site switched off isn't checked
@@ -63,10 +94,14 @@ async def refresh(account_ids=None):
     state["held"] = 0
     tally = {"pages": len(accounts), "checked": 0, "new": 0, "errors": 0, "held": 0,
              "lookup_running": pace.on_hold()}
+    run = {"pages": len(accounts), "done": 0, "started": time.monotonic()}
+    _runs.append(run)
     try:
         sem = asyncio.Semaphore(CONCURRENCY)
         async with make_client() as client:
-            await asyncio.gather(*(_refresh_one(client, sem, a, tally) for a in accounts))
+            await asyncio.gather(*(_refresh_one(client, sem, a, tally, run) for a in accounts))
+        if account_ids is None and len(accounts) >= 5:      # remembered for the next estimate
+            db.kv_set("refresh_seconds_per_page", f"{(time.monotonic() - run['started']) / len(accounts):.3f}")
         if account_ids is None:
             state["last_refresh"] = db.now()
             db.kv_set("last_refresh", state["last_refresh"])
@@ -74,6 +109,7 @@ async def refresh(account_ids=None):
             log.info("refresh: %(checked)s of %(pages)s pages read, %(new)s new posts, %(errors)s problems, "
                      "%(held)s Bandcamp pages left for later", tally)
     finally:
+        _runs.remove(run)
         state["refreshing"] -= 1
 
 
