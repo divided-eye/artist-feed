@@ -100,6 +100,12 @@
   .seg button { border: 0; background: transparent; padding: 6px 12px; color: var(--muted); }
   .seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--text); }
   #search { width: 190px; }
+  .clearable { position: relative; display: inline-flex; align-items: center; }
+  .clearable input { padding-right: 26px; }
+  .clearx { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: transparent;
+            color: var(--muted); font-size: 12px; line-height: 1; padding: 4px 5px; border-radius: 4px; cursor: pointer; }
+  .clearx:hover { color: var(--text); background: var(--panel-2); }
+  .clearable input:placeholder-shown + .clearx { display: none; }     /* only when there is something to clear */
   .bar.filters { padding-top: 0; gap: 8px 10px; }
   .bar.filters select { max-width: 220px; padding: 5px 8px; font-size: 14px; }
   .bar.filters select.on { border-color: var(--accent); }
@@ -301,7 +307,7 @@
     <h1>artist<span>/</span>feed <small id="version" title="App version"></small></h1>
     <div class="chips" id="chips"></div>
     <select id="artistFilter" aria-label="Filter by artist"><option value="">All artists</option></select>
-    <input type="text" id="search" placeholder="Search" aria-label="Search titles, artists, labels">
+    <span class="clearable"><input type="text" id="search" placeholder="Search" aria-label="Search titles, artists, labels"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
     <div class="seg" role="group" aria-label="View">
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
@@ -310,7 +316,7 @@
       <div class="spacer"></div>
       <div class="actions">
         <a class="btn" id="downloadsBtn" hidden target="_blank" rel="noopener" href="https://bandcamp.com/"><svg class="dlicon" width="19" height="11" viewBox="0 0 458.32 269.31" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="matrix(1.3333 0 0 -1.3333 0 275.18)"><g transform="scale(.1)"><path d="m2343.2 43.969h-2343.2l1094.2 2019.9h2343.2l-1094.2-2019.9" fill="#1da0c3"/></g></g></svg>Downloads<span class="dlcount" id="downloadsCount" hidden></span></a>
-        <button class="btn" id="manageBtn" aria-pressed="false">Tracked Artists</button>
+        <button class="btn" id="manageBtn" aria-pressed="false" title="Add, edit or remove the artists and labels in your feed, and their Bandcamp, SoundCloud and YouTube pages">Tracked Artists</button>
         <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
         <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
       </div>
@@ -421,7 +427,7 @@
     <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
     <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
     <button class="btn" id="clearAllBtn" title="Empty the whole table (nothing is removed until you save)">Clear All</button>
-    <input type="text" id="artistQ" placeholder="Filter rows" aria-label="Show only rows containing these words" spellcheck="false" autocomplete="off">
+    <span class="clearable"><input type="text" id="artistQ" placeholder="Filter rows" aria-label="Show only rows containing these words" spellcheck="false" autocomplete="off"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
     <select id="artistShow" aria-label="Which rows to show"></select>
     <div class="spacer"></div>
     <span class="unsaved" id="unsaved" hidden>Unsaved changes</span>
@@ -479,7 +485,7 @@
   </div>
   <div class="pane" id="savedPane" hidden>
     <div class="tools">
-      <input type="text" id="savedQ" placeholder="Search saved results" aria-label="Search saved results" spellcheck="false" autocomplete="off">
+      <span class="clearable"><input type="text" id="savedQ" placeholder="Search saved results" aria-label="Search saved results" spellcheck="false" autocomplete="off"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
       <select id="savedFilter" aria-label="Which saved results to show"></select>
       <div class="spacer"></div>
       <span class="status" id="savedStatus"></span>
@@ -1409,6 +1415,16 @@ function progressText(p) {
   }
   return text;
 }
+// The ✕ in a search or filter box empties it, as if you had deleted the text yourself.
+document.addEventListener("click", e => {
+  const x = e.target.closest(".clearx");
+  if (!x) return;
+  const input = x.previousElementSibling;
+  input.value = "";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  input.focus();
+});
 async function pollStatus() {
   clearTimeout(statusTimer);                  // one polling loop, however often it is kicked
   try {

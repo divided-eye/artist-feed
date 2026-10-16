@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 65. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 66. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -149,7 +149,7 @@ The feed shows everything collected from your tracked artists, newest first. It 
 | --- | --- |
 | All / Bandcamp / SoundCloud | Show one site or both |
 | All artists | Show one tracked artist |
-| Search | Matches artist, label, release and track names, a moment after you stop typing (Enter searches at once). If the feed can't be loaded, a red message beside the status line says so. |
+| Search | Matches artist, label, release and track names, a moment after you stop typing (Enter searches at once). The ✕ at its right end empties it; the filter box in Tracked Artists and the search box for saved results have one too. If the feed can't be loaded, a red message beside the status line says so. |
 | Year, Label, Type, Length | Narrow by release year, label (or no label), albums and EPs versus single tracks, and track length |
 | Hide no-preview tracks | Leaves out Bandcamp tracks that cannot be played yet |
 | Show hidden | Shows releases you have hidden, dimmed, so you can restore them |
@@ -349,7 +349,7 @@ Every request to Bandcamp goes through one queue, two seconds apart, whether it 
 - If Bandcamp answers "slow down" (error 429), everything waits as long as it asks, or 30 seconds doubling each time, and then carries on with a wider gap. The status line shows the pause.
 - While a lookup or a purchases read is running, the feed's own Bandcamp checks stand aside and resume on the next refresh.
 
-While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". The estimate starts from the pace of the last full refresh and switches to this refresh's own pace after ten pages. Bandcamp's two-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
+While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". Each site is timed separately, since the refresh ends when its slowest site does: a site's pace comes from the last full refresh at first, then from this refresh once five of its pages are done. Bandcamp's two-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
 
 ### Background reading
 
@@ -566,6 +566,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 66 | Refresh estimate timed per site, so it no longer climbs as the quick SoundCloud and YouTube pages finish. A ✕ in the search and filter boxes empties them. Tracked Artists button has a hover description. |
 | 65 | Refresh progress: the status line shows pages checked so far and a rough estimate of the time left. |
 | 64 | Downloads button: counts new Bandcamp purchases and pre-orders that have come out; clicking it opens your Bandcamp collection and clears the count. |
 | 63 | Your SoundCloud username in Settings: the profiles it follows are preferred when Find missing links or Link Finder picks a SoundCloud profile by name. SOUNDCLOUD\_USER setting. |

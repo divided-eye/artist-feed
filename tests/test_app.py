@@ -1837,14 +1837,18 @@ def test_new_purchases_to_download(client):
 
 def test_refresh_progress_estimate(client):
     assert refresh.progress() is None                                   # nothing running
-    db.kv_set("refresh_seconds_per_page", "2")
-    run = {"pages": 100, "done": 4, "started": time.monotonic() - 40}
+    db.kv_set("refresh_pace", json.dumps({"bandcamp": 3}))
+    run = {"pages": 120, "done": 22, "started": time.monotonic() - 40,
+           "by": {"soundcloud": {"pages": 100, "done": 20}, "bandcamp": {"pages": 20, "done": 2}}}
     refresh._runs.append(run)
     try:
-        assert refresh.progress() == {"pages": 100, "done": 4, "seconds_left": 192}   # last run's pace at first
-        run["done"] = 20                                                 # then this run's own: 2 s a page
-        assert refresh.progress()["seconds_left"] == 160
-        assert client.get("/api/status").json()["progress"]["done"] == 20
+        # SoundCloud: 20 pages in 40 s, 80 left = 160 s; Bandcamp: last refresh's 3 s a page, 18 left = 54 s
+        assert refresh.progress() == {"pages": 120, "done": 22, "seconds_left": 160}
+        # the quick pages are done: what's left is the slow site, at its own pace (10 pages in 40 s)
+        run["by"] = {"soundcloud": {"pages": 100, "done": 100}, "bandcamp": {"pages": 20, "done": 10}}
+        run["done"] = 110
+        assert refresh.progress()["seconds_left"] == 40
+        assert client.get("/api/status").json()["progress"]["done"] == 110
     finally:
         refresh._runs.remove(run)
-        db.kv_set("refresh_seconds_per_page", "")
+        db.kv_set("refresh_pace", "")
