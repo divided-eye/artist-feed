@@ -1852,3 +1852,26 @@ def test_refresh_progress_estimate(client):
     finally:
         refresh._runs.remove(run)
         db.kv_set("refresh_pace", "")
+
+
+def test_focus_feed_and_marked_rows(client):
+    client.put("/api/table", json={"rows": []})
+    client.put("/api/table", json={"rows": [
+        {"name": "Night Ferry", "cells": {"bandcamp": "nightferry"}, "focus": True},
+        {"name": "Solo", "cells": {"bandcamp": "solo"}}]})
+    wait(client)
+    rows = {r["name"]: r for r in client.get("/api/table").json()}
+    assert rows["Night Ferry"]["focus"] and not rows["Solo"]["focus"]
+    assert [a["name"] for a in client.get("/api/artists").json() if a["focus"]] == ["Night Ferry"]
+    everyone = client.get("/api/feed").json()
+    focused = client.get("/api/feed?focus=1").json()
+    assert focused and len(focused) < len(everyone) and {p["artist_id"] for p in focused} == {rows["Night Ferry"]["id"]}
+    # nobody ticked: the Focus Feed is empty, not everyone
+    client.put("/api/table", json={"rows": [dict(r, focus=False) for r in client.get("/api/table").json()]})
+    assert client.get("/api/feed?focus=1").json() == []
+    # a row marked for removal (with errors elsewhere still pointing at the right row numbers)
+    rows = client.get("/api/table").json()
+    bad = client.put("/api/table", json={"rows": [dict(rows[0], remove=True), {"name": "X", "cells": {"soundcloud": "not a profile!"}}]})
+    assert [e["row"] for e in bad.json()["errors"]] == [1]
+    ok = client.put("/api/table", json={"rows": [dict(rows[0], remove=True), rows[1]]})
+    assert [r["name"] for r in ok.json()["rows"]] == [rows[1]["name"]]

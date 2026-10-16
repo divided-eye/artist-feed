@@ -356,6 +356,10 @@ def _filters(source, artist_id, q, fields, more=None, per_track=False):
     if artist_id:
         where.append("a.artist_id=?")
         args.append(artist_id)
+    if more.get("focus_ids") is not None:      # the Focus Feed: only the artists ticked for it
+        ids = more["focus_ids"]
+        where.append("a.artist_id IN (" + ",".join("?" * len(ids)) + ")" if ids else "0")
+        args += ids
     if more.get("year"):
         where.append(f"substr({WHEN},1,4)=?")
         args.append(str(more["year"]))

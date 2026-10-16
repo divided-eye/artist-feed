@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 66. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 67. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -135,6 +135,10 @@ The feed shows everything collected from your tracked artists, newest first. It 
 - **List** shows one row per track: artist, track, duration, year, release, posted date, release date, label and site. It opens sorted by Posted, newest first.
 - The app remembers which view you last used.
 
+### Focus Feed
+
+The **Focus Feed** button, beside Grid | List, shows only the artists ticked in the **Focus** column of Tracked Artists: a short list of the ones you want to follow most closely, out of everyone you track. Click it again (or Clear filters) to show everyone. The other filters still apply on top of it. Tick or untick Focus in Tracked Artists, then Save changes.
+
 ### List view
 
 - Click a column heading to sort by it. Click again to reverse.
@@ -194,13 +198,13 @@ The **Tracked Artists** button opens a table with one row per artist or label an
 - Leave the artist name empty and it is filled in from the page. If an artist goes by other names, add them after the first, separated by commas: "Night Ferry, NF, Nightferry". The first name is the one shown in the feed. Link Finder treats all of them as the same artist, so a track listed under any of the names matches their releases and falls back to their pages. Put a name that contains a comma in double quotes. Type other names in the table itself; in the paste box, commas separate the name from the links.
 - Copy rows from Excel or Google Sheets and paste them into any cell. They fill the table from that cell onward, in the order name, Bandcamp, SoundCloud.
 - Nothing changes until you press **Save changes**. If any row has a problem, nothing is saved and that row shows the reason.
-- Deleting a row and saving stops tracking that artist and removes their posts. It asks you to confirm.
+- The ✕ at the end of a row marks it for removal: the row turns a dark red-grey, its text is struck through, and an Undo button takes the ✕'s place. Nothing is removed until you Save, which stops tracking those artists and removes their posts after asking you to confirm. A new row that was never saved goes at once. The Focus column, left of the artist's name, picks the artists shown by the Focus Feed button.
 - **Export CSV** downloads the saved list. **Import CSV** adds a file's rows to the table for you to review and save.
 - After a save, rows are sorted by artist name, or by the column you sorted on.
 
 The Status column shows how many posts each artist has, and any problem reading one of their pages.
 
-To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, and Ticked for YouTube search. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
+To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, Ticked for YouTube search, Ticked for Focus, and Marked for removal. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
 
 Each artist belongs on one row. Save is refused, with a message on every row involved, when two rows have the same page, or share a name (any of the names in their Artist cells). Both usually happen after **Import CSV**, which adds the file's rows as new rows rather than updating the ones you have: move the new pages into the existing row and delete the extra one. Two rows for one artist would leave Link Finder using whichever it finds first. If two rows really are different artists who share a name (in different genres, say), press **Different artists, keep both** on one of them and save. That is remembered, and both rows then say "Shares its name with another row". Link Finder still can't tell them apart by name, so give the right link with Edit when it picks the wrong one. Renaming one of them ends it.
 
@@ -566,6 +570,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 67 | Focus column in Tracked Artists and a Focus Feed button showing only those artists. Removing a row now marks it (dark red-grey, with Undo) until you Save. |
 | 66 | Refresh estimate timed per site, so it no longer climbs as the quick SoundCloud and YouTube pages finish. A ✕ in the search and filter boxes empties them. Tracked Artists button has a hover description. |
 | 65 | Refresh progress: the status line shows pages checked so far and a rough estimate of the time left. |
 | 64 | Downloads button: counts new Bandcamp purchases and pre-orders that have come out; clicking it opens your Bandcamp collection and clears the count. |

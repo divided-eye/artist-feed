@@ -205,11 +205,16 @@
   .bulk textarea { flex: 1; height: 84px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 13px; }
   td.rescan { text-align: center; width: 1%; }
+  td.focus { text-align: center; }
+  /* a row marked for removal: kept (and undoable) until Save */
+  #artistTable tr.removed td { background: #2b2023; color: #8a7a7d; }
+  #artistTable tr.removed td input[type=text] { color: #8a7a7d; text-decoration: line-through; }
+  .undo { font-size: 12px; padding: 3px 8px; }
   /* the artist table: fixed columns sized in script, so they can be dragged and the name always fits */
   #artistTable { table-layout: fixed; width: auto; min-width: 0; }
   #artistTable th { overflow: hidden; text-overflow: ellipsis; }
   #artistTable td.state { min-width: 0; overflow-wrap: anywhere; }
-  #artistTable td.num, #artistTable td.act, #artistTable td.rescan { width: auto; }
+  #artistTable td.num, #artistTable td.act, #artistTable td.rescan, #artistTable td.focus { width: auto; }
   /* a cell filled in by "Find missing links": check it, then Save */
   td input[type=text].auto { background: rgba(125, 200, 255, .16); box-shadow: inset 3px 0 0 rgba(125, 200, 255, .9); font-style: italic; }
   .legend { display: inline-block; padding: 0 6px; background: rgba(125, 200, 255, .16); box-shadow: inset 3px 0 0 rgba(125, 200, 255, .9); font-style: italic; }
@@ -310,6 +315,7 @@
     <div class="chips" id="chips"></div>
     <select id="artistFilter" aria-label="Filter by artist"><option value="">All artists</option></select>
     <span class="clearable"><input type="text" id="search" placeholder="Search" aria-label="Search titles, artists, labels"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
+    <button class="btn" id="focusBtn" aria-pressed="false" title="Show only the artists ticked in the Focus column of Tracked Artists: a short list of the ones you follow most closely. Click again to show everyone.">Focus Feed</button>
     <div class="seg" role="group" aria-label="View">
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
@@ -507,7 +513,7 @@
 <script>
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
-let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted" }, offset = 0, wasRefreshing = false;
+let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted", focus: false }, offset = 0, wasRefreshing = false;
 let hideNoPreview = false;      // a standing preference, kept in this browser; not cleared by "Clear filters"
 try { hideNoPreview = localStorage.getItem("hideNoPreview") === "1"; } catch {}
 let view = "grid", sort = { key: "posted", dir: "desc" }, playing = null;
@@ -638,7 +644,8 @@ function syncFilterControls() {
   $("fSince").value = filter.since; $("fUntil").value = filter.until; $("fDateBy").value = filter.dateBy;
   $("fSince").classList.toggle("on", !!filter.since); $("fUntil").classList.toggle("on", !!filter.until);
   $("fMax").classList.toggle("on", !!maxResults);
-  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden || filter.range);
+  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden || filter.range || filter.focus);
+  $("focusBtn").setAttribute("aria-pressed", String(!!filter.focus));
 }
 
 async function loadFacets() {
@@ -661,6 +668,7 @@ function filterQuery(extra) {
   if (filter.q.trim()) q.set("q", filter.q.trim());
   for (const k of EXTRA_FILTERS) if (filter[k]) q.set(k, filter[k]);
   if (filter.hidden) q.set("hidden", "1");
+  if (filter.focus) q.set("focus", "1");
   if (hideNoPreview) q.set("preview", "1");
   const [since, until] = dateRange();
   if (since) q.set("since", since);
@@ -686,7 +694,12 @@ const pageSize = size => maxResults ? Math.max(0, Math.min(size, maxResults - of
 function showEmpty(none) {
   $("empty").hidden = !none;
   if (!none) return;
-  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]) || filter.range;
+  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]) || filter.range || filter.focus;
+  if (filter.focus && artists.length && !artists.some(a => a.focus)) {
+    $("empty").replaceChildren(el("b", { text: "No artists in your Focus Feed yet" }),
+      "Tick the Focus box beside an artist in Tracked Artists, then Save.");
+    return;
+  }
   $("empty").replaceChildren(el("b", { text: !artists.length ? "No artists yet" : filtered ? "Nothing matches" : "Nothing here yet" }),
     !artists.length ? "Use the Tracked Artists button to add your first one." : filtered ? "Try a different search or filter." : "New posts appear after the next refresh.");
 }
@@ -1012,8 +1025,13 @@ function stateCell(row) {
 }
 
 function rowEl(row) {
-  const tr = el("tr", { class: row.errors.length ? "has-error" : "" });
+  const tr = el("tr", { class: (row.errors.length ? "has-error" : "") + (row.removed ? " removed" : "") });
   tr.append(el("td", { class: "num", text: String(table.indexOf(row) + 1) }));
+  const focus = el("input", { type: "checkbox", "aria-label": "Show this artist in the Focus Feed",
+    title: "Show this artist in the Focus Feed" });
+  focus.checked = !!row.focus;
+  focus.addEventListener("change", () => { row.focus = focus.checked; setDirty(true); });
+  tr.append(el("td", { class: "focus" }, focus));
   columns().forEach((col, c) => {
     const input = el("input", { type: "text", value: getCell(row, col), spellcheck: "false", autocomplete: "off",
       "aria-label": col === "name" ? "Artist name" : src(col).label,
@@ -1041,7 +1059,7 @@ function rowEl(row) {
       if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
       let next = tr[e.key === "ArrowUp" ? "previousElementSibling" : "nextElementSibling"];
       while (next && next.hidden) next = next[e.key === "ArrowUp" ? "previousElementSibling" : "nextElementSibling"];
-      if (next) { e.preventDefault(); next.querySelectorAll("input")[c].focus(); }
+      if (next) { e.preventDefault(); next.querySelectorAll("input[type=text]")[c].focus(); }
     });
     tr.append(el("td", {}, input));
   });
@@ -1058,19 +1076,28 @@ function rowEl(row) {
   rescan.addEventListener("change", () => { row.rescan = rescan.checked; });
   tr.append(el("td", { class: "rescan" }, rescan));
   tr.append(stateCell(row));
-  tr.append(el("td", { class: "act" }, el("button", { class: "btn small ghost", title: "Delete row", "aria-label": "Delete row", text: "✕",
-    onclick: () => { table.splice(table.indexOf(row), 1); setDirty(true); renderTable(); } })));
+  // ✕ marks the row for removal; it stays, shaded, with Undo in place of the ✕ until you Save.
+  tr.append(el("td", { class: "act" }, row.removed
+    ? el("button", { class: "btn small undo", type: "button", title: "Keep this row", text: "Undo",
+        onclick: () => { row.removed = false; setDirty(true); renderTable(); } })
+    : el("button", { class: "btn small ghost", type: "button", title: "Remove this row (when you Save)", "aria-label": "Remove row", text: "✕",
+        onclick: () => {
+          if (isBlank(row) || (row.id === null && table[table.length - 1] === row)) { table.splice(table.indexOf(row), 1); }
+          else row.removed = true;
+          setDirty(true); renderTable();
+        } })));
+  if (row.removed) tr.querySelectorAll("input").forEach(i => { i.disabled = true; });
   return tr;
 }
 
 // Column widths in the artist table. The artist's name comes first: its column is as wide as the
 // longest name needs, and the site columns share what is left. Drag a heading's edge to set a width
 // yourself (remembered in this browser); double-click the edge to hand it back.
-const TCOL_FIXED = { num: 44, rescan: 66, act: 40, ytlook: 122 }, TCOL_MIN = 70;
+const TCOL_FIXED = { num: 44, focus: 58, rescan: 66, act: 62, ytlook: 122 }, TCOL_MIN = 70;
 let tcolW = {};
 try { tcolW = JSON.parse(localStorage.getItem("artistColumns") || "{}") || {}; } catch {}
 const hasYoutube = () => sources.some(s => s.key === "youtube");
-const tcolKeys = () => ["num", "name", ...sources.map(s => s.key), ...(hasYoutube() ? ["ytlook"] : []), "rescan", "state", "act"];
+const tcolKeys = () => ["num", "focus", "name", ...sources.map(s => s.key), ...(hasYoutube() ? ["ytlook"] : []), "rescan", "state", "act"];
 let measure;
 function nameWidth() {
   const sample = $("tbody").querySelector("input[type=text]");
@@ -1086,7 +1113,7 @@ function applyTableCols() {
   if (!room) return;                                   // drawer closed
   const sites = sources.map(s => s.key), w = { ...TCOL_FIXED };
   if (!hasYoutube()) delete w.ytlook;
-  const stateMin = 150, fixed = TCOL_FIXED.num + TCOL_FIXED.rescan + TCOL_FIXED.act + (hasYoutube() ? TCOL_FIXED.ytlook : 0);
+  const stateMin = 150, fixed = TCOL_FIXED.num + TCOL_FIXED.focus + TCOL_FIXED.rescan + TCOL_FIXED.act + (hasYoutube() ? TCOL_FIXED.ytlook : 0);
   // The name is never cut short. When that leaves too little room, the other columns keep a
   // usable minimum and the table scrolls sideways instead.
   w.name = tcolW.name || nameWidth();
@@ -1137,7 +1164,9 @@ function renderTable() {
         el("span", { class: "arrow", "aria-hidden": "true", text: on ? (tview.dir === "asc" ? " \u25B2" : " \u25BC") : "" })),
       tgrip(key, label));
   };
-  $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }), head("name", "Artist"),
+  $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }),
+    el("th", { text: "Focus", title: "Tick the artists to show in the Focus Feed (the button beside Grid | List): the ones you want to follow most closely" }),
+    head("name", "Artist"),
     ...sources.map(s => head(s.key, s.label, el("span", { class: "dot", style: `background:${s.color}` }))),
     ...(hasYoutube() ? [el("th", { text: "YouTube search", title: "Tick the artists and labels Link Finder may look for on YouTube (when YouTube is ticked for Link Finder in Settings)" })] : []),
     el("th", { text: "Rescan", title: "Tick a row to have Find missing links search its cleared cells again" }),
@@ -1158,7 +1187,9 @@ const TSHOW = [["", "All rows", () => true],
   ["checking", "Still being checked", isChecking],
   ["empty", "No posts yet", r => r.id !== null && !r.post_count],
   ["new", "New, not saved yet", r => r.id === null],
-  ["youtube", "Ticked for YouTube search", r => !!r.youtube_lookup]];
+  ["youtube", "Ticked for YouTube search", r => !!r.youtube_lookup],
+  ["focus", "Ticked for Focus", r => !!r.focus],
+  ["removed", "Marked for removal", r => !!r.removed]];
 function statusRank(row) {                          // problems first, then fewest posts
   return [hasIssue(row) ? 0 : isChecking(row) ? 1 : 2, row.id === null ? -1 : row.post_count || 0];
 }
@@ -1227,7 +1258,7 @@ async function fillMissing() {
   if (filling) { filling = false; return; }           // the button reads "Stop" while running
   const guessable = c => c === "name" || (src(c) && src(c).suggest);          // Find missing links can't guess every site
   const open = r => columns().filter(c => guessable(c) && !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
-  const todo = table.filter(r => !isBlank(r) && open(r).length);
+  const todo = table.filter(r => !isBlank(r) && !r.removed && open(r).length);
   if (!todo.length) { $("fillStatus").textContent = "Nothing to look for. Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
   filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
   Object.assign(fillWait, { rows: new Set(todo), now: null, since: Date.now() });
@@ -1345,12 +1376,12 @@ async function loadTable() {
 async function saveTable() {
   filling = false;
   while (table.length && isBlank(table[table.length - 1])) table.pop();
-  const staying = new Set(table.filter(r => !isBlank(r)).map(r => r.id));
+  const staying = new Set(table.filter(r => !isBlank(r) && !r.removed).map(r => r.id));
   const removed = savedIds.filter(id => !staying.has(id)).length;
   if (removed && !confirm(`This stops tracking ${removed} artist${removed > 1 ? "s" : ""} and removes their posts from the feed. Continue?`)) { renderTable(); return; }
   $("tableError").textContent = "";
   const r = await fetch("/api/table", { method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup, keep_separate }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected, keep_separate: !!keep_separate,
+    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup, keep_separate, focus, removed }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected, keep_separate: !!keep_separate, focus: !!focus, remove: !!removed,
       ...(hasYoutube() ? { youtube_lookup: !!youtube_lookup } : {}) })) }) });
   const data = await r.json().catch(() => ({}));
   table.forEach(row => { row.errors = []; row.sameName = false; });
@@ -1835,6 +1866,7 @@ $("importBtn").onclick = () => $("csvFile").click();
 $("csvFile").onchange = async e => { const f = e.target.files[0]; if (f) importCsv(await f.text()); e.target.value = ""; };
 $("moreBtn").onclick = () => loadFeed(false);
 $("viewGrid").onclick = () => setView("grid");
+$("focusBtn").onclick = () => { filter.focus = !filter.focus; $("focusBtn").setAttribute("aria-pressed", String(filter.focus)); loadFeed(); };
 $("viewList").onclick = () => setView("list");
 $("dockClose").onclick = closePlayer;
 $("fHidden").onchange = e => { filter.hidden = e.target.checked ? "1" : ""; loadFeed(); };
@@ -1848,7 +1880,7 @@ $("pageWidth").onchange = e => setPageWidth(e.target.value);
 { let w = "1280px"; try { w = localStorage.getItem("pageWidth") || w; } catch {} setPageWidth(w); }
 for (const k of EXTRA_FILTERS) $(FILTER_SELECTS[k]).onchange = e => { filter[k] = e.target.value; loadFeed(); };
 $("clearFilters").onclick = () => {
-  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "" });
+  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", focus: false });
   $("fHidden").checked = false;
   $("search").value = ""; $("artistFilter").value = ""; renderChips(); loadFeed();
 };

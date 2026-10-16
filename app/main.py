@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "66"   # shown beside the title, so you can tell which version is running
+VERSION = "67"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -152,7 +152,8 @@ async def set_soundcloud_follows(body: FollowsIn):
 
 @app.get("/api/artists")
 def artists():
-    return db.list_artists()
+    focus = sites.focus_names()
+    return [dict(a, focus=lookup.norm(a["name"]) in focus) for a in db.list_artists()]
 
 
 @app.post("/api/artists", status_code=201)
@@ -186,6 +187,8 @@ class TableRow(BaseModel):
     cells: dict[str, str] = {}
     youtube_lookup: Optional[bool] = None   # Link Finder may search YouTube for this artist or label
     keep_separate: bool = False             # shares a name with another row on purpose (different artists)
+    focus: bool = False                     # shown by the Focus Feed button
+    remove: bool = False                    # marked for removal (✕): stops being tracked, like a blank row
     skip: list[str] = []                 # cells cleared on purpose: "Find missing links" leaves them alone
     rejected: dict[str, list[str]] = {}  # guesses turned down, never offered again
 
@@ -212,6 +215,7 @@ class TableIn(BaseModel):
 
 def _table_rows():
     rows, remembered, on, youtube, same = [], _left_empty(), sites.enabled(), sites.youtube_names(), _same_name_ok()
+    focus = sites.focus_names()
     for a in db.list_artists():
         cells = {key: [] for key in on}
         problems = []
@@ -229,6 +233,7 @@ def _table_rows():
         shown = lookup.join_names([a["name"]] + lookup.split_names(a.get("aliases") or ""))
         rows.append({"id": a["id"], "name": shown, "post_count": a["post_count"],
                      "youtube_lookup": lookup.norm(a["name"]) in youtube,
+                     "focus": lookup.norm(a["name"]) in focus,
                      "same_name": lookup.norm(a["name"]) in same,
                      "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
                      "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
@@ -279,10 +284,12 @@ async def suggest_row(body: SuggestIn):
 async def save_table(body: TableIn):
     """Replace the whole artist list with the rows sent. Nothing changes unless every row is valid."""
     existing = {a["id"]: a for a in db.list_artists()}
-    errors, claimed, plan, remember, youtube, claimed_names = [], {}, [], {}, set(), {}
+    errors, claimed, plan, remember, youtube, claimed_names, focus = [], {}, [], {}, set(), {}, set()
     allowed = _same_name_ok()
     on = set(sites.enabled())
     for index, row in enumerate(body.rows):
+        if row.remove:
+            continue                                # left out: an existing artist stops being tracked
         pages = []
         for key, text in row.cells.items():
             if key in SOURCES and key not in on:
@@ -319,6 +326,8 @@ async def save_table(body: TableIn):
                 "rejected": {k: list(dict.fromkeys(v))[:20] for k, v in row.rejected.items() if k in SOURCES and v}}
         if note["skip"] or note["rejected"]:
             remember[lookup.norm(plan[-1][1])] = note
+        if row.focus:
+            focus.add(lookup.norm(plan[-1][1]))
         if row.youtube_lookup:                      # every name the artist goes by
             youtube.update(lookup.norm(n) for n in [plan[-1][1]] + lookup.split_names(aliases))
     # Two rows for one artist (by any of their names) would leave Link Finder picking one of them:
@@ -351,6 +360,7 @@ async def save_table(body: TableIn):
     added = db.apply_table(keep, drop_accounts, renames, new_accounts, new_artists)
     db.kv_set("table_left_empty", json.dumps(remember))
     db.kv_set("same_name_ok", json.dumps(sorted(n for n in shared if n in allowed)))   # only names still shared
+    sites.set_focus_names(focus)
     if any(r.youtube_lookup is not None for r in body.rows):       # sent only while YouTube is on
         sites.set_youtube_names(youtube)
     lookup.forget_aliases()
@@ -392,14 +402,21 @@ def delete_account(account_id: int):
 def more_filters(year: Optional[str] = None, label: Optional[str] = None,
                  kind: Optional[str] = None, length: Optional[str] = None, hidden: Optional[str] = None,
                  preview: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None,
-                 date_by: Optional[str] = None):
+                 date_by: Optional[str] = None, focus: Optional[str] = None):
     """The optional filters every view and the export accept. hidden=1 also shows hidden items;
     preview=1 leaves out tracks that can't be listened to yet; since/until (YYYY-MM-DD) keep a
     date range, by posted date (date_by=posted, the default) or release date (date_by=released)."""
     day = lambda v: v if v and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else None
     return {"year": year, "label": label, "kind": kind, "length": length, "hidden": hidden == "1",
             "preview": preview == "1", "since": day(since), "until": day(until),
-            "date_by": "released" if date_by == "released" else "posted"}
+            "date_by": "released" if date_by == "released" else "posted",
+            "focus_ids": _focus_ids() if focus == "1" else None}
+
+
+def _focus_ids() -> list:
+    """The artists ticked in the Focus column (focus=1: the Focus Feed button)."""
+    names = sites.focus_names()
+    return [r["id"] for r in db.query("SELECT id, name FROM artists") if lookup.norm(r["name"]) in names]
 
 
 class HiddenIn(BaseModel):

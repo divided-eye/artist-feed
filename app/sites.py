@@ -71,6 +71,15 @@ def set_youtube_names(names):
     db.kv_set("youtube_lookup", json.dumps(sorted(set(n for n in names if n))))
 
 
+def focus_names() -> set:
+    """Tidied names of the artists ticked in the Focus column of Tracked Artists."""
+    return set(_load("focus_names", []))
+
+
+def set_focus_names(names):
+    db.kv_set("focus_names", json.dumps(sorted(set(n for n in names if n))))
+
+
 def settings() -> dict:
     return {"sites": [{"key": s.key, "label": s.label, "color": s.color, "on": is_on(s.key)} for s in SOURCES.values()],
             "lookup_sites": lookup_chosen(), "lookup_order": list(LOOKUP_ORDER)}
