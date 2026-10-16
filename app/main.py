@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "68"   # shown beside the title, so you can tell which version is running
+VERSION = "69"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -263,6 +263,19 @@ class SuggestIn(BaseModel):
     cells: dict[str, str] = {}
     skip: list[str] = []
     avoid: dict[str, list[str]] = {}
+
+
+@app.post("/api/artists/{artist_id}/check")
+async def check_artist(artist_id: int):
+    """Tracked Artists' "Check now": read one artist's pages straight away, then return its row."""
+    ids = [a["id"] for a in db.list_accounts(artist_id=artist_id)]
+    if not ids:
+        raise HTTPException(404, "That artist has no pages to check.")
+    await refresh.refresh(account_ids=ids)
+    row = next((r for r in _table_rows() if r["id"] == artist_id), None)
+    if row is None:
+        raise HTTPException(404, "That artist is no longer tracked.")
+    return row
 
 
 @app.post("/api/table/suggest")

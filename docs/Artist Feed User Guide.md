@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 68. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 69. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -202,7 +202,7 @@ The **Tracked Artists** button opens a table with one row per artist or label an
 - **Export CSV** downloads the saved list. **Import CSV** adds a file's rows to the table for you to review and save.
 - After a save, rows are sorted by artist name, or by the column you sorted on.
 
-The Status column shows how many posts each artist has, and any problem reading one of their pages.
+The Status column shows how many posts each artist has, and any problem reading one of their pages. Click **Check now** beside the count to read that artist's pages straight away, without waiting for the next refresh or refreshing everyone; the count and any problems update when it finishes.
 
 To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, Ticked for YouTube search, Ticked for Focus, and Marked for removal. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
 
@@ -570,6 +570,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 69 | Check now in the Status column of Tracked Artists reads one artist's pages straight away. The Focus, YouTube search and Rescan checkboxes sit centred in their rows. |
 | 68 | SoundCloud profiles whose track list comes back empty are read from their All tab instead, and the Status column says when SoundCloud lists none for a profile that has tracks. app.check shows what each SoundCloud request returned. |
 | 67 | Focus column in Tracked Artists and a Focus Feed button showing only those artists. Removing a row now marks it (dark red-grey, with Undo) until you Save. |
 | 66 | Refresh estimate timed per site, so it no longer climbs as the quick SoundCloud and YouTube pages finish. A ✕ in the search and filter boxes empties them. Tracked Artists button has a hover description. |

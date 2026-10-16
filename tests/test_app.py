@@ -1906,3 +1906,14 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
     assert [p.title for p in first.posts] == ["Meus Olhos"] and not first.warning
     assert [p.external_id for p in second.posts] == ["5001"]
     assert third.posts == [] and "37 tracks" in third.warning and any("37" in t for t in third.trace)
+
+
+def test_check_now_reads_one_artist(client):
+    nf = client.post("/api/artists", json={"name": "Night Ferry", "accounts": [
+        {"source": "soundcloud", "handle": "nightferry"}]}).json()["id"]
+    from app import db as d
+    d.execute("DELETE FROM posts")
+    d.execute("UPDATE accounts SET last_checked=NULL")
+    row = client.post(f"/api/artists/{nf}/check").json()
+    assert row["id"] == nf and row["post_count"] == 2 and row["problems"] == []
+    assert client.post("/api/artists/99999/check").status_code == 404

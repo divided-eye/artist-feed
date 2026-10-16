@@ -206,6 +206,12 @@
     border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 13px; }
   td.rescan { text-align: center; width: 1%; }
   td.focus { text-align: center; }
+  /* checkbox cells: centred both ways, whatever the row's height */
+  td.focus, td.rescan, td.ytlook { vertical-align: middle; }
+  td.state .checknow { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+  td.state .checknow:hover { text-decoration: underline; }
+  td.state .checknow:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+  td.focus input, td.rescan input, td.ytlook input { display: block; margin: 0 auto; }
   /* a row marked for removal: kept (and undoable) until Save */
   #artistTable tr.removed td { background: #2b2023; color: #8a7a7d; }
   #artistTable tr.removed td input[type=text] { color: #8a7a7d; text-decoration: line-through; }
@@ -1017,11 +1023,27 @@ function stateCell(row) {
   if (row.id === null) td.append(isBlank(row) ? "" : row.keep_separate ? "new · kept separate" : "new");
   else {
     td.append(row.post_count + " posts");
+    td.append(el("button", { class: "checknow", type: "button", text: row.checking ? "checking…" : "Check now",
+      disabled: !!row.checking, title: "Read this artist's pages now, without waiting for the next refresh",
+      onclick: e => checkNow(row, e.target.closest("tr")) }));
     if (row.same_name) td.append(el("span", { class: "dim", text: "Shares its name with another row (different artists)",
       title: "Saved as separate artists. Rename one to stop sharing the name." }));
     row.problems.forEach(m => td.append(el("span", { class: "warn", text: m })));
   }
   return td;
+}
+
+async function checkNow(row, tr) {
+  row.checking = true;
+  const swap = () => { const fresh = rowEl(row); tr.replaceWith(fresh); tr = fresh; applyTableCols(); };
+  swap();
+  try {
+    const r = await fetch(`/api/artists/${row.id}/check`, { method: "POST" });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Couldn't check this artist.");
+    row.post_count = data.post_count; row.problems = data.problems || [];
+  } catch (x) { row.problems = [x.message]; }
+  finally { row.checking = false; swap(); }
 }
 
 function rowEl(row) {
