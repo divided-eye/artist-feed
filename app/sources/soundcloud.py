@@ -18,7 +18,8 @@ from .base import FetchResult, Post, Source, SourceError, Track, iso
 
 API = "https://api-v2.soundcloud.com"
 LIMIT = int(os.environ.get("SOUNDCLOUD_LIMIT", "30"))
-MAX_PAGES = 4          # most pages read from one list in one visit
+MAX_PAGES = 4          # most pages with tracks on them read from one list in one visit
+MAX_EMPTY_PAGES = 25   # most pages read in all, empty ones included
 SCRIPT_RE = re.compile(r"https://a-v2\.sndcdn\.com/assets/[A-Za-z0-9._-]+\.js")
 CLIENT_ID_RE = re.compile(r"""client_id["']?\s*[:=]\s*["']([A-Za-z0-9]{32})["']""")
 RESERVED = {"discover", "stream", "search", "you", "upload", "charts", "pages", "settings"}
@@ -34,6 +35,15 @@ def _date(text):
             return iso(datetime.strptime(text, "%Y/%m/%d %H:%M:%S %z"))
         except ValueError:
             return None
+
+
+def _next_note(data):
+    """For app.check: where SoundCloud's next page starts (its "offset" is often a date)."""
+    href = data.get("next_href")
+    if not href:
+        return ""
+    params = {k: v for k, v in httpx.URL(href).params.items() if k not in ("client_id", "limit", "linked_partitioning")}
+    return ", more pages" + (f" (next from {', '.join(f'{k}={v}' for k, v in params.items())})" if params else "")
 
 
 def _big(url):
@@ -158,33 +168,49 @@ class SoundCloud(Source):
                     posts.append(p)
 
         # The Tracks list. SoundCloud leaves out some tracks after choosing a page, so a page can
-        # come back short (or empty) with more after it: keep going until there are enough.
+        # come back short, or empty, with more after it. Empty pages are cheap, so more of them are
+        # followed than full ones.
         data = await self._api(client, f"/users/{uid}/tracks", {"limit": LIMIT, "linked_partitioning": 1})
         add(parse_tracks(await self._filled(client, data.get("collection") or [], result.trace, "Tracks list")))
         short = bool(data.get("next_href"))
-        result.trace.append(f"Tracks list: {len(data.get('collection') or [])} items"
-                            + (", more pages" if short else ""))
-        pages = 1
-        while len(posts) < LIMIT and data.get("next_href") and pages < MAX_PAGES:
+        result.trace.append(f"Tracks list: {len(data.get('collection') or [])} items" + _next_note(data))
+        pages, full = 1, int(bool(data.get("collection")))
+        while len(posts) < LIMIT and data.get("next_href") and full < MAX_PAGES and pages < MAX_EMPTY_PAGES:
             data = await self._api(client, data["next_href"], {})
             pages += 1
+            full += bool(data.get("collection"))
             add(parse_tracks(await self._filled(client, data.get("collection") or [], result.trace,
                                                 f"Tracks list page {pages}")))
-            result.trace.append(f"Tracks list page {pages}: {len(data.get('collection') or [])} items")
+            result.trace.append(f"Tracks list page {pages}: {len(data.get('collection') or [])} items" + _next_note(data))
         if len(posts) < LIMIT and (short or not posts):
-            # The profile's "All" tab lists its own uploads (and reposts, skipped) even when the
-            # Tracks list leaves them out.
+            # The profile's "All" tab: its uploads, and reposts (kept only when they are its own tracks).
             stream, pages = {"next_href": None}, 0
             while len(posts) < LIMIT and pages < MAX_PAGES and (pages == 0 or stream.get("next_href")):
                 stream = await self._api(client, stream["next_href"] or f"/stream/users/{uid}",
                                          {} if pages else {"limit": LIMIT, "linked_partitioning": 1})
                 items = stream.get("collection") or []
-                own = [i["track"] for i in items if i.get("type") == "track" and i.get("track")]
+                own = [i["track"] for i in items if i.get("track") and (
+                    i.get("type") == "track" or str((i["track"].get("user") or {}).get("id") or i["track"].get("user_id")) == str(uid))]
+                kinds = {}
+                for i in items:
+                    kinds[i.get("type") or "?"] = kinds.get(i.get("type") or "?", 0) + 1
                 before = len(posts)
                 pages += 1
                 add(parse_tracks(await self._filled(client, own, result.trace, f"All tab page {pages}")))
-                result.trace.append(f"All tab page {pages}: {len(items)} items, {len(own)} of them its own tracks, "
-                                    f"{len(posts) - before} not already found")
+                result.trace.append(f"All tab page {pages}: {len(items)} items "
+                                    f"({', '.join(f'{n} {k}' for k, n in kinds.items()) or 'none'}), "
+                                    f"{len(own)} of them its own tracks, {len(posts) - before} not already found")
+        if len(posts) < LIMIT and (short or not posts):
+            # The "Popular tracks" tab: its most played uploads, old ones included.
+            try:
+                top = await self._api(client, f"/users/{uid}/toptracks", {"limit": 50})
+            except (SourceError, httpx.HTTPError) as e:      # an extra: never worth failing the page over
+                top = {}
+                result.trace.append(f"Popular tracks: couldn't read ({e})")
+            items = top.get("collection") or []
+            before = len(posts)
+            add(parse_tracks(await self._filled(client, items, result.trace, "Popular tracks")))
+            result.trace.append(f"Popular tracks: {len(items)} items, {len(posts) - before} not already found")
         result.posts = posts
         if not result.posts:
             user = await self._api(client, f"/users/{uid}", {})

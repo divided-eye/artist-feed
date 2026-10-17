@@ -1893,6 +1893,19 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
         if path == "/stream/users/2":                       # the All tab: a repost and its own track
             return httpx.Response(200, json={"collection": [{"type": "track-repost", "track": dict(track, id=1)},
                                                             {"type": "track", "track": track}]})
+        if path == "/users/7/toptracks":                    # only the Popular tracks tab lists them
+            return httpx.Response(200, json={"collection": [dict(track, id=7001)]})
+        if path.endswith("/toptracks") or path == "/stream/users/7":
+            return httpx.Response(200, json={"collection": []})
+        if path == "/users/7/tracks":
+            return httpx.Response(200, json={"collection": []})
+        if path == "/users/6/tracks":                       # six empty pages, then the tracks
+            n = int(cursor or 0)
+            return httpx.Response(200, json={"collection": [dict(track, id=6100)] if n == 6 else [],
+                                             "next_href": None if n == 6 else f"https://api-v2.soundcloud.com/users/6/tracks?cursor={n + 1}&offset=2025-01-0{n + 1}"})
+        if path == "/stream/users/6":                       # a repost of its own track counts too
+            return httpx.Response(200, json={"collection": [{"type": "track-repost", "track": dict(track, id=6200, user={"id": 6})},
+                                                            {"type": "track-repost", "track": dict(track, id=6300, user={"id": 99})}]})
         if path == "/users/5/tracks":                       # one full track, two given only as numbers
             return httpx.Response(200, json={"collection": [track, {"id": 6001, "kind": "track", "policy": "ALLOW"},
                                                             {"id": 6002, "kind": "track"}]})
@@ -1918,7 +1931,10 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
     async def read(uid):
         async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
             return await SOURCES["soundcloud"].fetch(c, {"id": 0, "url": "x", "meta": {"user_id": uid}}, set())
-    first, second, third, fourth, fifth = (asyncio.run(read(u)) for u in (1, 2, 3, 4, 5))
+    first, second, third, fourth, fifth, sixth, seventh = (asyncio.run(read(u)) for u in (1, 2, 3, 4, 5, 6, 7))
+    assert [p.external_id for p in sixth.posts] == ["6100", "6200"]
+    assert any("next from" in t and "offset=2025-01-01" in t for t in sixth.trace)
+    assert [p.external_id for p in seventh.posts] == ["7001"]
     assert [p.title for p in fifth.posts] == ["Meus Olhos", "Old 6001", "Old 6002"]
     assert any("2 listed without details" in t for t in fifth.trace)
     assert [p.external_id for p in fourth.posts] == ["5001", "5002", "5003"]
