@@ -174,15 +174,31 @@ class SoundCloud(Source):
         add(parse_tracks(await self._filled(client, data.get("collection") or [], result.trace, "Tracks list")))
         short = bool(data.get("next_href"))
         result.trace.append(f"Tracks list: {len(data.get('collection') or [])} items" + _next_note(data))
+        # Newest first, so once a page holds a track already saved, everything after it is known too.
+        known = lambda d: any(str(t.get("id")) in known_ids for t in d.get("collection") or [])
+        reached = known(data)
         pages, full = 1, int(bool(data.get("collection")))
-        while len(posts) < LIMIT and data.get("next_href") and full < MAX_PAGES and pages < MAX_EMPTY_PAGES:
+        while (len(posts) < LIMIT and not reached and data.get("next_href") and full < MAX_PAGES
+               and pages < MAX_EMPTY_PAGES):
             data = await self._api(client, data["next_href"], {})
             pages += 1
             full += bool(data.get("collection"))
             add(parse_tracks(await self._filled(client, data.get("collection") or [], result.trace,
                                                 f"Tracks list page {pages}")))
             result.trace.append(f"Tracks list page {pages}: {len(data.get('collection') or [])} items" + _next_note(data))
-        if len(posts) < LIMIT and (short or not posts):
+            reached = known(data)
+        if reached:
+            result.trace.append("Reached tracks already saved: nothing older to look for")
+        extra = len(posts) < LIMIT and (short or not posts) and not reached
+        if extra and posts and not data.get("next_href"):
+            # The whole list was read: look further only if SoundCloud says there are more tracks.
+            try:
+                count = (await self._api(client, f"/users/{uid}", {})).get("track_count") or 0
+            except (SourceError, httpx.HTTPError):
+                count = LIMIT                                # unknown: look further to be safe
+            extra = len(posts) < count
+            result.trace.append(f"Tracks list read to the end: {len(posts)} of the {count} tracks the profile shows")
+        if extra:
             # The profile's "All" tab: its uploads, and reposts (kept only when they are its own tracks).
             stream, pages = {"next_href": None}, 0
             while len(posts) < LIMIT and pages < MAX_PAGES and (pages == 0 or stream.get("next_href")):
@@ -200,7 +216,7 @@ class SoundCloud(Source):
                 result.trace.append(f"All tab page {pages}: {len(items)} items "
                                     f"({', '.join(f'{n} {k}' for k, n in kinds.items()) or 'none'}), "
                                     f"{len(own)} of them its own tracks, {len(posts) - before} not already found")
-        if len(posts) < LIMIT and (short or not posts):
+        if extra and len(posts) < LIMIT:
             # The "Popular tracks" tab: its most played uploads, old ones included.
             try:
                 top = await self._api(client, f"/users/{uid}/toptracks", {"limit": 50})

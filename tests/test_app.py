@@ -1918,6 +1918,10 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
         if path == "/users/4/tracks":                       # a short page (others left out), then nothing
             return httpx.Response(200, json={"collection": [] if cursor else [track],
                                              "next_href": None if cursor else "https://api-v2.soundcloud.com/users/4/tracks?cursor=2"})
+        if path in ("/users/1", "/users/6"):
+            return httpx.Response(200, json={"track_count": 1 if path.endswith("1") else 2})
+        if path == "/users/4":
+            return httpx.Response(200, json={"permalink": "oxo4", "track_count": 3})
         if path == "/stream/users/4":                       # the All tab: the same track and two more, over two pages
             if cursor:
                 return httpx.Response(200, json={"collection": [{"type": "track", "track": dict(track, id=5003)}]})
@@ -1928,9 +1932,11 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
             return httpx.Response(200, json={"permalink": "oxo3", "track_count": 37})
         return httpx.Response(404)
 
-    async def read(uid):
+    async def read(uid, known=frozenset()):
         async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
-            return await SOURCES["soundcloud"].fetch(c, {"id": 0, "url": "x", "meta": {"user_id": uid}}, set())
+            return await SOURCES["soundcloud"].fetch(c, {"id": 0, "url": "x", "meta": {"user_id": uid}}, set(known))
+    again = asyncio.run(read(6, {"6100"}))                 # already saved: no looking further
+    assert [p.external_id for p in again.posts] == ["6100"] and any("already saved" in t for t in again.trace)
     first, second, third, fourth, fifth, sixth, seventh = (asyncio.run(read(u)) for u in (1, 2, 3, 4, 5, 6, 7))
     assert [p.external_id for p in sixth.posts] == ["6100", "6200"]
     assert any("next from" in t and "offset=2025-01-01" in t for t in sixth.trace)

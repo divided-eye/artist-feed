@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 72. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 73. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -340,7 +340,7 @@ Bandcamp has no public API or artist feed. For each tracked page the app reads t
 
 ### Reading SoundCloud
 
-SoundCloud's RSS feeds are empty for most musicians, so the app uses the same data endpoints the soundcloud.com website calls. They need a public key that is embedded in the site's own code. The app finds that key itself and replaces it when it expires. Only an artist's own uploads are read, not reposts. SoundCloud's track list sometimes leaves tracks out, coming back short or empty for a profile that has more. When that happens the app reads further pages of the list (up to 25 when they come back empty), then the profile's All tab and its Popular tracks tab, keeping only the artist's own uploads, until it has 30. SoundCloud also sometimes lists a track as just its number, with no title or link (most often older tracks); the app looks those up so they aren't dropped. If that comes back empty too while SoundCloud says the profile has tracks, the row's Status says so, and the app tries again on the next refresh. To see what SoundCloud returns for one profile, run docker compose exec artist-feed python -m app.check soundcloud username: it lists the tracks found and what each request returned.
+SoundCloud's RSS feeds are empty for most musicians, so the app uses the same data endpoints the soundcloud.com website calls. They need a public key that is embedded in the site's own code. The app finds that key itself and replaces it when it expires. Only an artist's own uploads are read, not reposts. SoundCloud's track list sometimes leaves tracks out, coming back short or empty for a profile that has more. When that happens the app reads further pages of the list (up to 25 when they come back empty), then the profile's All tab and its Popular tracks tab, keeping only the artist's own uploads, until it has 30. This extra reading happens only for profiles whose list comes back short: it stops as soon as it reaches tracks already saved, and the All and Popular tabs are skipped when the whole list was read and holds every track the profile shows. SoundCloud also sometimes lists a track as just its number, with no title or link (most often older tracks); the app looks those up so they aren't dropped. If that comes back empty too while SoundCloud says the profile has tracks, the row's Status says so, and the app tries again on the next refresh. To see what SoundCloud returns for one profile, run docker compose exec artist-feed python -m app.check soundcloud username: it lists the tracks found and what each request returned.
 
 ### Reading YouTube
 
@@ -570,6 +570,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 73 | SoundCloud's extra reading stops at tracks already saved, and skips the All and Popular tabs when the track list was complete, so later refreshes of quiet profiles take a few requests instead of twenty. |
 | 72 | SoundCloud: empty track-list pages are followed further, reposts of an artist's own tracks count, and the Popular tracks tab is read as a last resort. app.check shows where each next page starts and what the All tab held. |
 | 71 | SoundCloud tracks listed only by number (no title or link) are looked up instead of dropped; app.check reports how many there were. |
 | 70 | SoundCloud profiles whose track list comes back short (not only empty) are filled in from further pages and the All tab, up to the 30 most recent uploads. |
