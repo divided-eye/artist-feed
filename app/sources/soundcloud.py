@@ -18,6 +18,7 @@ from .base import FetchResult, Post, Source, SourceError, Track, iso
 
 API = "https://api-v2.soundcloud.com"
 LIMIT = int(os.environ.get("SOUNDCLOUD_LIMIT", "30"))
+MAX_PAGES = 4          # most pages read from one list in one visit
 SCRIPT_RE = re.compile(r"https://a-v2\.sndcdn\.com/assets/[A-Za-z0-9._-]+\.js")
 CLIENT_ID_RE = re.compile(r"""client_id["']?\s*[:=]\s*["']([A-Za-z0-9]{32})["']""")
 RESERVED = {"discover", "stream", "search", "you", "upload", "charts", "pages", "settings"}
@@ -133,24 +134,42 @@ class SoundCloud(Source):
             result.display_name = user.get("username")
             result.avatar = _big(user.get("avatar_url"))
         uid = meta["user_id"]
+        seen, posts = set(), []
+
+        def add(found):
+            for p in found:
+                if p.external_id not in seen:
+                    seen.add(p.external_id)
+                    posts.append(p)
+
+        # The Tracks list. SoundCloud leaves out some tracks after choosing a page, so a page can
+        # come back short (or empty) with more after it: keep going until there are enough.
         data = await self._api(client, f"/users/{uid}/tracks", {"limit": LIMIT, "linked_partitioning": 1})
-        result.posts = parse_tracks(data)
+        add(parse_tracks(data))
+        short = bool(data.get("next_href"))
         result.trace.append(f"Tracks list: {len(data.get('collection') or [])} items"
-                            + (", more pages" if data.get("next_href") else ""))
-        # SoundCloud sometimes answers with an empty first page that still points to a next one.
+                            + (", more pages" if short else ""))
         pages = 1
-        while not result.posts and data.get("next_href") and pages < 4:
+        while len(posts) < LIMIT and data.get("next_href") and pages < MAX_PAGES:
             data = await self._api(client, data["next_href"], {})
-            result.posts = parse_tracks(data)
+            add(parse_tracks(data))
             pages += 1
             result.trace.append(f"Tracks list page {pages}: {len(data.get('collection') or [])} items")
-        if not result.posts:
-            # The profile's "All" tab: its own uploads show there even when the Tracks list comes back empty.
-            stream = await self._api(client, f"/stream/users/{uid}", {"limit": LIMIT, "linked_partitioning": 1})
-            items = stream.get("collection") or []
-            own = [i["track"] for i in items if i.get("type") == "track" and i.get("track")]
-            result.posts = parse_tracks({"collection": own})
-            result.trace.append(f"All tab: {len(items)} items, {len(own)} of them its own tracks")
+        if len(posts) < LIMIT and (short or not posts):
+            # The profile's "All" tab lists its own uploads (and reposts, skipped) even when the
+            # Tracks list leaves them out.
+            stream, pages = {"next_href": None}, 0
+            while len(posts) < LIMIT and pages < MAX_PAGES and (pages == 0 or stream.get("next_href")):
+                stream = await self._api(client, stream["next_href"] or f"/stream/users/{uid}",
+                                         {} if pages else {"limit": LIMIT, "linked_partitioning": 1})
+                items = stream.get("collection") or []
+                own = [i["track"] for i in items if i.get("type") == "track" and i.get("track")]
+                before = len(posts)
+                add(parse_tracks({"collection": own}))
+                pages += 1
+                result.trace.append(f"All tab page {pages}: {len(items)} items, {len(own)} of them its own tracks, "
+                                    f"{len(posts) - before} not already found")
+        result.posts = posts
         if not result.posts:
             user = await self._api(client, f"/users/{uid}", {})
             count = user.get("track_count") or 0

@@ -1893,8 +1893,17 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
         if path == "/stream/users/2":                       # the All tab: a repost and its own track
             return httpx.Response(200, json={"collection": [{"type": "track-repost", "track": dict(track, id=1)},
                                                             {"type": "track", "track": track}]})
-        if path == "/stream/users/3":
+        if path in ("/stream/users/1", "/stream/users/3"):
             return httpx.Response(200, json={"collection": []})
+        if path == "/users/4/tracks":                       # a short page (others left out), then nothing
+            return httpx.Response(200, json={"collection": [] if cursor else [track],
+                                             "next_href": None if cursor else "https://api-v2.soundcloud.com/users/4/tracks?cursor=2"})
+        if path == "/stream/users/4":                       # the All tab: the same track and two more, over two pages
+            if cursor:
+                return httpx.Response(200, json={"collection": [{"type": "track", "track": dict(track, id=5003)}]})
+            return httpx.Response(200, json={"collection": [{"type": "track", "track": track},
+                                                            {"type": "track", "track": dict(track, id=5002)}],
+                                             "next_href": "https://api-v2.soundcloud.com/stream/users/4?cursor=2"})
         if path == "/users/3":
             return httpx.Response(200, json={"permalink": "oxo3", "track_count": 37})
         return httpx.Response(404)
@@ -1902,7 +1911,8 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
     async def read(uid):
         async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
             return await SOURCES["soundcloud"].fetch(c, {"id": 0, "url": "x", "meta": {"user_id": uid}}, set())
-    first, second, third = (asyncio.run(read(u)) for u in (1, 2, 3))
+    first, second, third, fourth = (asyncio.run(read(u)) for u in (1, 2, 3, 4))
+    assert [p.external_id for p in fourth.posts] == ["5001", "5002", "5003"]
     assert [p.title for p in first.posts] == ["Meus Olhos"] and not first.warning
     assert [p.external_id for p in second.posts] == ["5001"]
     assert third.posts == [] and "37 tracks" in third.warning and any("37" in t for t in third.trace)
