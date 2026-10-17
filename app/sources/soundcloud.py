@@ -123,6 +123,21 @@ class SoundCloud(Source):
             r.raise_for_status()
             return r.json()
 
+    async def _filled(self, client, items, trace, where):
+        """SoundCloud sometimes lists a track as just its number (no title or link), most often for
+        older ones: look those up by number so they aren't dropped."""
+        full = [t for t in items if t.get("permalink_url")]
+        bare = [t["id"] for t in items if not t.get("permalink_url") and t.get("id")
+                and t.get("kind", "track") == "track"]
+        if bare:
+            got = []
+            for i in range(0, len(bare), 50):
+                found = await self._api(client, "/tracks", {"ids": ",".join(str(x) for x in bare[i:i + 50])})
+                got += found if isinstance(found, list) else found.get("collection") or []
+            full += [t for t in got if t.get("permalink_url")]
+            trace.append(f"{where}: {len(bare)} listed without details, {len(got)} of them looked up")
+        return {"collection": full}
+
     async def fetch(self, client, account, known_ids):
         meta = account["meta"]
         result = FetchResult()
@@ -145,15 +160,16 @@ class SoundCloud(Source):
         # The Tracks list. SoundCloud leaves out some tracks after choosing a page, so a page can
         # come back short (or empty) with more after it: keep going until there are enough.
         data = await self._api(client, f"/users/{uid}/tracks", {"limit": LIMIT, "linked_partitioning": 1})
-        add(parse_tracks(data))
+        add(parse_tracks(await self._filled(client, data.get("collection") or [], result.trace, "Tracks list")))
         short = bool(data.get("next_href"))
         result.trace.append(f"Tracks list: {len(data.get('collection') or [])} items"
                             + (", more pages" if short else ""))
         pages = 1
         while len(posts) < LIMIT and data.get("next_href") and pages < MAX_PAGES:
             data = await self._api(client, data["next_href"], {})
-            add(parse_tracks(data))
             pages += 1
+            add(parse_tracks(await self._filled(client, data.get("collection") or [], result.trace,
+                                                f"Tracks list page {pages}")))
             result.trace.append(f"Tracks list page {pages}: {len(data.get('collection') or [])} items")
         if len(posts) < LIMIT and (short or not posts):
             # The profile's "All" tab lists its own uploads (and reposts, skipped) even when the
@@ -165,8 +181,8 @@ class SoundCloud(Source):
                 items = stream.get("collection") or []
                 own = [i["track"] for i in items if i.get("type") == "track" and i.get("track")]
                 before = len(posts)
-                add(parse_tracks({"collection": own}))
                 pages += 1
+                add(parse_tracks(await self._filled(client, own, result.trace, f"All tab page {pages}")))
                 result.trace.append(f"All tab page {pages}: {len(items)} items, {len(own)} of them its own tracks, "
                                     f"{len(posts) - before} not already found")
         result.posts = posts

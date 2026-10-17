@@ -1893,6 +1893,13 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
         if path == "/stream/users/2":                       # the All tab: a repost and its own track
             return httpx.Response(200, json={"collection": [{"type": "track-repost", "track": dict(track, id=1)},
                                                             {"type": "track", "track": track}]})
+        if path == "/users/5/tracks":                       # one full track, two given only as numbers
+            return httpx.Response(200, json={"collection": [track, {"id": 6001, "kind": "track", "policy": "ALLOW"},
+                                                            {"id": 6002, "kind": "track"}]})
+        if path == "/tracks":
+            ids = request.url.params["ids"].split(",")
+            return httpx.Response(200, json=[dict(track, id=int(i), title=f"Old {i}",
+                                                  permalink_url=f"https://soundcloud.com/oxo/old-{i}") for i in ids])
         if path in ("/stream/users/1", "/stream/users/3"):
             return httpx.Response(200, json={"collection": []})
         if path == "/users/4/tracks":                       # a short page (others left out), then nothing
@@ -1911,7 +1918,9 @@ def test_soundcloud_profile_with_an_empty_tracks_list(client):
     async def read(uid):
         async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
             return await SOURCES["soundcloud"].fetch(c, {"id": 0, "url": "x", "meta": {"user_id": uid}}, set())
-    first, second, third, fourth = (asyncio.run(read(u)) for u in (1, 2, 3, 4))
+    first, second, third, fourth, fifth = (asyncio.run(read(u)) for u in (1, 2, 3, 4, 5))
+    assert [p.title for p in fifth.posts] == ["Meus Olhos", "Old 6001", "Old 6002"]
+    assert any("2 listed without details" in t for t in fifth.trace)
     assert [p.external_id for p in fourth.posts] == ["5001", "5002", "5003"]
     assert [p.title for p in first.posts] == ["Meus Olhos"] and not first.warning
     assert [p.external_id for p in second.posts] == ["5001"]
