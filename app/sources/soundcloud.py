@@ -238,3 +238,21 @@ class SoundCloud(Source):
         if result.posts and not result.display_name:
             result.display_name = result.posts[0].author
         return result
+
+    async def related(self, client, track_id, limit=50):
+        """The "Related tracks" a SoundCloud track page lists, as plain rows for the feed."""
+        data = await self._api(client, f"/tracks/{int(track_id)}/related", {"limit": limit, "linked_partitioning": 1})
+        rows = []
+        for t in data.get("collection") or []:
+            if not t.get("permalink_url") or t.get("kind", "track") != "track":
+                continue
+            pub = t.get("publisher_metadata") or {}
+            ms = t.get("full_duration") or t.get("duration")
+            rows.append({"id": str(t.get("id") or t["permalink_url"]),
+                         "artist": (pub.get("artist") or (t.get("user") or {}).get("username") or "").strip(),
+                         "uploader": (t.get("user") or {}).get("username") or "",
+                         "track": t.get("title") or "Untitled",
+                         "url": t["permalink_url"],
+                         "duration": round(ms / 1000) if ms else None,
+                         "posted": _date(t.get("created_at"))})
+        return rows

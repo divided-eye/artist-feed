@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "73"   # shown beside the title, so you can tell which version is running
+VERSION = "74"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -722,6 +722,30 @@ async def retry_lookup_row(job_id: str, body: RetryIn):
 @app.post("/api/refresh")
 async def refresh_now():
     return {"ok": True, "state": refresh.request_refresh()}
+
+
+RELATED_HOURS = 24
+
+
+@app.get("/api/related/{track_id}")
+async def related_tracks(track_id: str, offset: int = 0, limit: int = 3):
+    """A SoundCloud track's "Related tracks", read only when asked (the + beside a row in the
+    list), kept for a day, and handed out a few at a time."""
+    if not track_id.isdigit():
+        raise HTTPException(400, "Related tracks are only available for SoundCloud tracks.")
+    rows = lookup.cache_get("sc_related", track_id, RELATED_HOURS / 24)
+    if rows is None:
+        try:
+            async with refresh.make_client() as client:
+                rows = await SOURCES["soundcloud"].related(client, track_id)
+        except SourceError as e:
+            raise HTTPException(502, str(e))
+        except Exception:
+            _log.exception("related tracks for %s", track_id)
+            raise HTTPException(502, "Couldn't reach SoundCloud for related tracks.")
+        lookup.cache_put("sc_related", track_id, rows)
+    offset, limit = max(0, offset), max(1, min(limit, 50))
+    return {"tracks": rows[offset:offset + limit], "total": len(rows)}
 
 
 @app.get("/api/downloads")

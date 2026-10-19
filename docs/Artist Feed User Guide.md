@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 73. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 74. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -145,6 +145,7 @@ The **Focus Feed** button, beside Grid | List, shows only the artists ticked in 
 - Drag the right edge of a heading to resize the column. Double-click the edge to reset it. **Reset column widths** resets all of them.
 - The headings stay in place while the list scrolls. Drag a heading onto another to move that column. The Edit Columns button (List view only) opens a menu to tick columns on or off and reorder them with arrows; Reset to default restores the original order, visibility and widths. The layout is remembered in this browser.
 - **Export Feed** (List view only, beside Refresh Feed at the start of the filter row) downloads a CSV of every row that matches the current filters, in the current sort order, not just the rows on screen.
+- **Related tracks** (SoundCloud rows only): click **+** beside a SoundCloud track to open, under it, the first three tracks SoundCloud lists as related to it, with their artist, track, duration and posted date. **Show 5 more** adds five more below them each time; − closes the list. Each track plays in the player with ▶, and its name opens it on SoundCloud. They are read from SoundCloud only when you click +, never during a refresh, and kept for a day.
 - **Released** is the release date the artist set. **Posted** is when the item went up on the site. Posted is blank when the site does not give it.
 
 ### Filters and search
@@ -570,6 +571,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 74 | List view: a + beside each SoundCloud track opens its related tracks underneath (three at first, Show 5 more adds five at a time), read only when clicked. |
 | 73 | SoundCloud's extra reading stops at tracks already saved, and skips the All and Popular tabs when the track list was complete, so later refreshes of quiet profiles take a few requests instead of twenty. |
 | 72 | SoundCloud: empty track-list pages are followed further, reposts of an artist's own tracks count, and the Popular tracks tab is read as a last resort. app.check shows where each next page starts and what the All tab held. |
 | 71 | SoundCloud tracks listed only by number (no title or link) are looked up instead of dropped; app.check reports how many there were. |

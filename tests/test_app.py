@@ -176,6 +176,9 @@ searched = []
 calls = {"expired_once": False}
 
 
+related_calls = []
+
+
 def handler(request: httpx.Request) -> httpx.Response:
     host, path = request.url.host, request.url.path
     calls["requests"] = calls.get("requests", 0) + 1
@@ -257,6 +260,13 @@ def handler(request: httpx.Request) -> httpx.Response:
                 return httpx.Response(404)
             return httpx.Response(200, json={"kind": "user", "id": 42, "username": "Night Ferry",
                                              "avatar_url": "https://i1.sndcdn.com/avatars-1-large.jpg"})
+        if path == "/tracks/900/related":
+            related_calls.append(1)
+            return httpx.Response(200, json={"collection": [
+                {"kind": "track", "id": 1000 + i, "title": f"Rel {i}", "permalink_url": f"https://soundcloud.com/x/rel-{i}",
+                 "duration": 30000, "full_duration": 181000, "created_at": f"2025-0{1 + i % 9}-01T00:00:00Z",
+                 "user": {"username": f"Uploader {i}"}, "publisher_metadata": {"artist": "Pub Artist"} if i == 0 else {}}
+                for i in range(10)] + [{"kind": "playlist", "id": 5}]})
         if path == "/users/42/tracks":
             return httpx.Response(200, json={"collection": [
                 {"kind": "track", "id": 900, "title": "Demo", "permalink_url": "https://soundcloud.com/nightferry/demo",
@@ -1958,3 +1968,14 @@ def test_check_now_reads_one_artist(client):
     row = client.post(f"/api/artists/{nf}/check").json()
     assert row["id"] == nf and row["post_count"] == 2 and row["problems"] == []
     assert client.post("/api/artists/99999/check").status_code == 404
+
+
+def test_related_tracks_on_request(client):
+    first = client.get("/api/related/900").json()
+    assert first["total"] == 10 and [t["track"] for t in first["tracks"]] == ["Rel 0", "Rel 1", "Rel 2"]
+    assert first["tracks"][0]["artist"] == "Pub Artist" and first["tracks"][1]["artist"] == "Uploader 1"
+    assert first["tracks"][0]["duration"] == 181 and first["tracks"][0]["posted"].startswith("2025-01-01")
+    more = client.get("/api/related/900?offset=3&limit=5").json()
+    assert [t["track"] for t in more["tracks"]] == ["Rel 3", "Rel 4", "Rel 5", "Rel 6", "Rel 7"]
+    assert len(related_calls) == 1                         # read once, then handed out from the saved copy
+    assert client.get("/api/related/abc").status_code == 400
