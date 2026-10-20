@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 74. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 75. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -182,7 +182,7 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 
 ### Downloads
 
-The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It appears once your Bandcamp username is set in the Link Finder panel.
+The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It appears once your Bandcamp username is set in the Link Finder panel. It is optional: untick **Show the Downloads button** in Settings to remove it. While it is off, purchases aren't watched for downloads and any waiting count is dropped, so switching it back on starts fresh. Link Finder still uses your purchases either way.
 
 - Two things are counted: a purchase made since the app first read your collection, and a pre-order whose release date has come. A pre-order is not counted when you buy it, only when it comes out.
 - Point at the button to see the list of releases. Click it to open your Bandcamp collection in a new tab, where the download links are; the count goes back to zero.
@@ -571,6 +571,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 75 | The Downloads button is optional: Settings has a Show the Downloads button switch. Off, purchases aren't watched for downloads. |
 | 74 | List view: a + beside each SoundCloud track opens its related tracks underneath (three at first, Show 5 more adds five at a time), read only when clicked. |
 | 73 | SoundCloud's extra reading stops at tracks already saved, and skips the All and Popular tabs when the track list was complete, so later refreshes of quiet profiles take a few requests instead of twenty. |
 | 72 | SoundCloud: empty track-list pages are followed further, reposts of an artist's own tracks count, and the Popular tracks tab is read as a last resort. app.check shows where each next page starts and what the All tab held. |

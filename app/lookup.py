@@ -914,7 +914,22 @@ async def sync_collection(full=False, on_progress=None):
 
 # ---------- Bandcamp: purchases ready to download ----------
 
+def downloads_on() -> bool:
+    """The Downloads button (Settings): on unless switched off."""
+    return db.kv_get("downloads_on") != "0"
+
+
+def set_downloads_on(on: bool):
+    """Switched off, purchases aren't watched for downloads and the list waiting is dropped, so
+    switching back on starts fresh rather than with everything bought in the meantime."""
+    db.kv_set("downloads_on", "1" if on else "0")
+    if not on:
+        clear_downloads()
+
+
 def _alert(c, key, reason):
+    if not downloads_on():
+        return
     c.execute("INSERT OR IGNORE INTO download_alerts(key, reason, at) VALUES(?,?,?)", (key, reason, db.now()))
 
 
@@ -923,7 +938,7 @@ def downloads() -> dict:
     fan = collection_fan()
     rows = db.query("SELECT i.title, i.band, i.url, a.reason, a.at FROM download_alerts a "
                     "JOIN collection_items i ON i.key=a.key ORDER BY a.at DESC, a.rowid DESC") if fan else []
-    return {"fan": fan, "url": f"https://bandcamp.com/{quote(fan)}" if fan else "",
+    return {"on": downloads_on(), "fan": fan, "url": f"https://bandcamp.com/{quote(fan)}" if fan else "",
             "count": len(rows), "items": rows}
 
 
@@ -956,7 +971,7 @@ async def check_preorders(net):
 
 async def check_purchases():
     """Look for new purchases and pre-orders that have come out."""
-    if not collection_fan():
+    if not collection_fan() or not downloads_on():
         return
     await sync_collection()
     async with refresh.make_client() as client:

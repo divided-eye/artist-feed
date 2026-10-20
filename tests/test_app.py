@@ -1812,7 +1812,7 @@ def test_new_purchases_to_download(client):
     if not client.get("/api/collection").json()["complete"]:
         read_purchases()
     client.post("/api/downloads/clear")
-    assert client.get("/api/status").json()["downloads"] == {
+    assert client.get("/api/status").json()["downloads"] == {"on": True,
         "fan": "divided_eye", "url": "https://bandcamp.com/divided_eye", "count": 0, "items": []}
     blob = json.loads(json.dumps(FAN_BLOB))
     blob["collection_data"]["sequence"] = ["a5", "a6", "a1", "a2"]
@@ -1840,6 +1840,19 @@ def test_new_purchases_to_download(client):
         db.execute("UPDATE collection_items SET preorder=1 WHERE title='Coming Soon'")
         PAGES[("bandcamp.com", "/divided_eye")] = '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(blob)) + '"></div>'
         assert [x["title"] for x in client.post("/api/downloads/check").json()["items"]] == ["Coming Soon"]
+        # switched off in Settings: the list is dropped, nothing is watched, and the button goes
+        st = client.put("/api/settings", json={"downloads": False}).json()["downloads"]
+        assert st == {"on": False, "fan": "divided_eye"}
+        assert client.get("/api/status").json()["downloads"]["on"] is False
+        assert client.get("/api/downloads").json()["count"] == 0
+        assert client.post("/api/downloads/check").status_code == 409
+        db.execute("UPDATE collection_items SET preorder=1, release_date='2020-01-01' WHERE title='Coming Soon'")
+        import asyncio
+        from app import lookup
+        asyncio.run(lookup.check_purchases())                    # the background check does nothing
+        assert db.query("SELECT preorder FROM collection_items WHERE title='Coming Soon'")[0]["preorder"] == 1
+        client.put("/api/settings", json={"downloads": True})
+        assert client.get("/api/settings").json()["downloads"]["on"] is True
         client.post("/api/downloads/clear")
     finally:
         PAGES[("bandcamp.com", "/divided_eye")] = old

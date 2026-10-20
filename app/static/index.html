@@ -441,6 +441,11 @@
       <div id="lookupToggles" class="toggles"></div>
     </section>
     <section>
+      <h3>Bandcamp downloads</h3>
+      <p class="hint">The <b>Downloads</b> button counts purchases waiting to be downloaded from Bandcamp (new purchases, and pre-orders once they come out) and opens your collection. It needs your Bandcamp username, set in Link Finder. Switched off, the button is gone and purchases aren't watched for it; Link Finder still uses your purchases.</p>
+      <div id="downloadsToggle" class="toggles"></div>
+    </section>
+    <section>
       <h3>Your SoundCloud account</h3>
       <p class="hint">Many SoundCloud profiles share a name. Enter your SoundCloud username and the profiles you follow there are preferred whenever a profile has to be picked by name: by <b>Find missing links</b> in Tracked Artists, and by Link Finder when a track isn't on SoundCloud. The list is read again every 12 hours. Your follows must be public.</p>
       <div class="toggles">
@@ -1533,7 +1538,7 @@ let statusTimer = null;
 // Purchases ready to download: a count on the Downloads button. Opening Bandcamp clears it.
 function showDownloads(d) {
   const b = $("downloadsBtn");
-  b.hidden = !(d && d.fan);
+  b.hidden = !(d && d.fan && d.on !== false);
   if (b.hidden) return;
   b.href = d.url;
   $("downloadsCount").hidden = !d.count;
@@ -2023,6 +2028,10 @@ async function renderSettings() {
       color ? el("span", { class: "dot", style: `background:${color}` }) : null, label);
   };
   renderFollows(st.soundcloud, document.activeElement !== $("scMe"));
+  const dlBox = box(st.downloads.on, "Show the Downloads button", null,
+    async on => { $("settingsError").textContent = ""; await api("/api/settings", { method: "PUT", body: { downloads: on } }); await renderSettings(); pollStatus(); });
+  $("downloadsToggle").replaceChildren(dlBox, ...(st.downloads.on && !st.downloads.fan
+    ? [el("span", { class: "hint", text: "Set your Bandcamp username in Link Finder for the button to appear." })] : []));
   const save = async body => { $("settingsError").textContent = ""; await api("/api/settings", { method: "PUT", body }); await renderSettings(); await sitesChanged(); };
   $("siteToggles").replaceChildren(...st.sites.map(x => box(x.on, x.label, x.color, on => save({ sites: { [x.key]: on } }))));
   const on = new Set(st.sites.filter(x => x.on).map(x => x.key)), chosen = new Set(st.lookup_sites);

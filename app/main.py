@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "74"   # shown beside the title, so you can tell which version is running
+VERSION = "75"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -112,11 +112,13 @@ def sources():
 class SiteSettings(BaseModel):
     sites: Optional[dict[str, bool]] = None      # site key: switched on
     lookup_sites: Optional[list[str]] = None     # the sites Link Finder searches
+    downloads: Optional[bool] = None              # the Bandcamp Downloads button
 
 
 @app.get("/api/settings")
 def get_settings():
-    return dict(sites.settings(), fallback=lookup.fallback_pref(), soundcloud=lookup.follows_status())
+    return dict(sites.settings(), fallback=lookup.fallback_pref(), soundcloud=lookup.follows_status(),
+                downloads={"on": lookup.downloads_on(), "fan": lookup.collection_fan()})
 
 
 @app.put("/api/settings")
@@ -129,6 +131,8 @@ def put_settings(body: SiteSettings):
         raise HTTPException(400, str(e))
     if body.lookup_sites is not None:
         sites.set_lookup_sites(body.lookup_sites)
+    if body.downloads is not None:
+        lookup.set_downloads_on(body.downloads)
     lookup.sites_changed()
     return get_settings()
 
@@ -763,6 +767,8 @@ def clear_downloads():
 @app.post("/api/downloads/check")
 async def check_downloads():
     """Look for new purchases and pre-orders that have come out now."""
+    if not lookup.downloads_on():
+        raise HTTPException(409, "The Downloads button is switched off in Settings.")
     try:
         await lookup.check_purchases()
     except lookup.Blocked:
@@ -774,7 +780,7 @@ async def check_downloads():
 def status():
     d = lookup.downloads()
     return {"version": VERSION, "refreshing": refresh.state["refreshing"] > 0,
-            "downloads": {"fan": d["fan"], "url": d["url"], "count": d["count"],
+            "downloads": {"on": d["on"], "fan": d["fan"], "url": d["url"], "count": d["count"],
                           "items": [f'{x["band"]} — {x["title"]}' for x in d["items"][:20]]},
             "bandcamp_on_hold": pace.on_hold() or refresh.state["held"] > 0,
             "last_refresh": refresh.state["last_refresh"], "queued": refresh.state["queued"],
