@@ -2,7 +2,7 @@ name: artist-feed   # fixed name, so an update replaces the running app whatever
 services:
   artist-feed:
     build: .
-    restart: unless-stopped
+    restart: always
     ports:
       - "8080:8000"          # use "127.0.0.1:8080:8000" to keep it to this machine only
     volumes:
