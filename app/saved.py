@@ -9,7 +9,7 @@ from . import db, lookup
 # No link to the track itself: an artist's page, a profile, a search, or nothing. (A track found on
 # SoundCloud is found, even though the lookup still checks Bandcamp for it again later.)
 NOT_FOUND = ("bandcamp_artist", "soundcloud", "soundcloud_search", "youtube_channel", "none", "error")
-FOUND = ("bandcamp", "soundcloud_track", "bandcamp_check", "youtube")
+FOUND = ("bandcamp", "soundcloud_track", "bandcamp_check", "youtube", "beatport", "beatport_check", "discogs")
 FILTERS = ("", "lastrun", "review", "missing", "found", "manual", "list", "nospelling", "unsearched")
 
 

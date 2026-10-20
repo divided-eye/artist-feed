@@ -5,16 +5,23 @@ refreshes, its posts left out of the feed and Link Finder never uses it. Pages y
 are kept, so switching it back on brings everything back.
 
 Link Finder searches the sites ticked for it, in a fixed order of preference: Bandcamp, then
-SoundCloud, then YouTube. YouTube is off for Link Finder until you tick it, and even then is only
-searched for the artists and labels ticked for it in Tracked Artists.
+Beatport, then SoundCloud, then YouTube, then Discogs. YouTube is off for Link Finder until you tick
+it, and even then is only searched for the artists and labels ticked for it in Tracked Artists.
+Beatport and Discogs are only used by Link Finder (they have no feed), and are off until ticked.
 """
 import json
 
 from . import db
 from .sources import SOURCES
 
-LOOKUP_ORDER = ("bandcamp", "soundcloud", "youtube")     # first found wins, in this order
+LOOKUP_ORDER = ("bandcamp", "beatport", "soundcloud", "youtube", "discogs")     # first found wins, in this order
 LOOKUP_DEFAULT = ("bandcamp", "soundcloud")
+# Sites Link Finder can search that aren't feed sites: always "on", used only when ticked for it.
+LOOKUP_ONLY = {"beatport": ("Beatport", "#01ff95"), "discogs": ("Discogs", "#c9b98f")}
+
+
+def label(key: str) -> str:
+    return LOOKUP_ONLY[key][0] if key in LOOKUP_ONLY else SOURCES[key].label if key in SOURCES else key
 
 
 def _load(key, default):
@@ -48,7 +55,7 @@ def set_on(key: str, on: bool):
 def lookup_sites() -> list:
     """The sites Link Finder searches, best first: ticked for it, and switched on."""
     chosen = set(_load("lookup_sites", LOOKUP_DEFAULT))
-    return [k for k in LOOKUP_ORDER if k in chosen and is_on(k)]
+    return [k for k in LOOKUP_ORDER if k in chosen and (is_on(k) or k in LOOKUP_ONLY)]
 
 
 def lookup_chosen() -> list:
@@ -82,4 +89,7 @@ def set_focus_names(names):
 
 def settings() -> dict:
     return {"sites": [{"key": s.key, "label": s.label, "color": s.color, "on": is_on(s.key)} for s in SOURCES.values()],
-            "lookup_sites": lookup_chosen(), "lookup_order": list(LOOKUP_ORDER)}
+            "lookup_sites": lookup_chosen(), "lookup_order": list(LOOKUP_ORDER),
+            "lookup_info": {k: {"label": label(k), "color": LOOKUP_ONLY[k][1] if k in LOOKUP_ONLY else SOURCES[k].color,
+                                "on": is_on(k) or k in LOOKUP_ONLY, "lookup_only": k in LOOKUP_ONLY}
+                            for k in LOOKUP_ORDER}}

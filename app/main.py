@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "75"   # shown beside the title, so you can tell which version is running
+VERSION = "76"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -113,12 +113,14 @@ class SiteSettings(BaseModel):
     sites: Optional[dict[str, bool]] = None      # site key: switched on
     lookup_sites: Optional[list[str]] = None     # the sites Link Finder searches
     downloads: Optional[bool] = None              # the Bandcamp Downloads button
+    discogs_token: Optional[str] = None           # lets Link Finder search Discogs ("" to remove)
 
 
 @app.get("/api/settings")
 def get_settings():
     return dict(sites.settings(), fallback=lookup.fallback_pref(), soundcloud=lookup.follows_status(),
-                downloads={"on": lookup.downloads_on(), "fan": lookup.collection_fan()})
+                downloads={"on": lookup.downloads_on(), "fan": lookup.collection_fan()},
+                discogs={"token": bool(lookup.discogs_token()), "from_env": bool(os.environ.get("DISCOGS_TOKEN"))})
 
 
 @app.put("/api/settings")
@@ -133,6 +135,8 @@ def put_settings(body: SiteSettings):
         sites.set_lookup_sites(body.lookup_sites)
     if body.downloads is not None:
         lookup.set_downloads_on(body.downloads)
+    if body.discogs_token is not None:
+        lookup.set_discogs_token(body.discogs_token)
     lookup.sites_changed()
     return get_settings()
 

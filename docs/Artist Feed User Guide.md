@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 75. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 76. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -182,7 +182,7 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 
 ### Downloads
 
-The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It appears once your Bandcamp username is set in the Link Finder panel. It is optional: untick **Show the Downloads button** in Settings to remove it. While it is off, purchases aren't watched for downloads and any waiting count is dropped, so switching it back on starts fresh. Link Finder still uses your purchases either way.
+The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It needs your Bandcamp username, set in the Link Finder panel, and is off until you tick **Show the Downloads button** in Settings. While it is off the button stays in place, greyed out, and hovering over it says how to turn it on; purchases aren't watched for downloads and any waiting count is dropped, so switching it on starts fresh. Link Finder still uses your purchases either way.
 
 - Two things are counted: a purchase made since the app first read your collection, and a pre-order whose release date has come. A pre-order is not counted when you buy it, only when it comes out.
 - Point at the button to see the list of releases. Click it to open your Bandcamp collection in a new tab, where the download links are; the count goes back to zero.
@@ -239,7 +239,7 @@ The **Settings** button (top right, beside Tracked Artists and Link Finder) open
 
 **Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one site has to stay on.
 
-**Link Finder searches.** Tick the sites Link Finder looks on. A track found on a site higher in the list is preferred: Bandcamp first, then SoundCloud, then YouTube. YouTube starts unticked. Saved answers stay as they were, except that a link on a site you have unticked gives way to the next best one. When you tick a site, rows saved as not found are searched again the next time they are looked up; when the newly ticked site is YouTube, only YouTube is looked at for them, and only for the artists ticked for it.
+**Link Finder searches.** Tick the sites Link Finder looks on. A track found on a site higher in the list is preferred: Bandcamp first, then Beatport, then SoundCloud, then YouTube, then Discogs. YouTube, Beatport and Discogs start unticked. Saved answers stay as they were, except that a link on a site you have unticked gives way to the next best one. When you tick a site, rows saved as not found are searched again the next time they are looked up; when the newly ticked sites are only YouTube, Beatport or Discogs, only those are looked at for them (YouTube only for the artists ticked for it).
 
 **Your SoundCloud account.** Many SoundCloud profiles share a name. Enter your SoundCloud username and press **Save and read follows**: the profiles your account follows are then preferred whenever a profile has to be picked by its name, by Find missing links in Tracked Artists and by Link Finder when a track isn't on SoundCloud. A followed profile is found even when SoundCloud's search doesn't list it. The line beside the button says how many profiles were read and when. The list is read again every 12 hours, so a profile you follow later is picked up within half a day (press the button to read it now). Your follows must be public. Clear the box and press the button to stop using it.
 
@@ -251,7 +251,18 @@ Link Finder only looks on YouTube for the rows ticked in the **YouTube search** 
 
 - For a ticked artist, it first looks through the uploads of the YouTube channels you track for ticked rows, then runs a YouTube search for the artist and title.
 - For a ticked label, it looks through the uploads of the label's channel, which needs to be in the label's YouTube cell. Labels aren't searched by name, because a tracklist doesn't say which label a track is on.
-- YouTube comes third: it is only looked at when the track wasn't found on Bandcamp or SoundCloud.
+- YouTube comes after Bandcamp, Beatport and SoundCloud: it is only looked at when the track wasn't found on SoundCloud.
+
+### Beatport and Discogs
+
+Both are optional extra places for Link Finder to look, and both start switched off: tick them under **Link Finder searches** in Settings. Neither has a feed or a column in Tracked Artists.
+
+- **Beatport** is searched for any track that wasn't found on Bandcamp, before SoundCloud, since it is a place to buy the track. An exact match there is the answer (shown as Beatport track) and beats a partial match on Bandcamp; a partial match is kept as Beatport · check match, behind a track found on SoundCloud. The link opens the track's Beatport page.
+- **Discogs** is the last resort: it is only searched when the track itself wasn't found on Bandcamp, Beatport, SoundCloud or YouTube. It can turn up releases that exist only on vinyl. Link Finder asks Discogs for releases by the artist with that track, opens the track lists of up to three of them, and links the release the track is on (the note says its formats, such as Vinyl). A release found there comes before an artist page. Discogs only answers signed-in apps, so it needs a free personal access token: on discogs.com go to Settings → Developers → **Generate new token**, then paste it into the box that appears in Settings when Discogs is ticked (or set `DISCOGS_TOKEN` in `docker-compose.yml`).
+
+**How long they add (estimates).** Beatport: one search per track not found on Bandcamp, at most one request every 1.5 seconds, so roughly 1.5 to 3 seconds per track, about 3 to 5 minutes for 100 tracks that aren't on Bandcamp. Discogs: one search plus up to three track lists, at most one request a second (Discogs allows 60 a minute), so roughly 2 to 5 seconds per track, and only for tracks found nowhere else. Tracks answered from your purchases, your feed or saved results cost nothing either way, searches are kept for a week and Discogs track lists for 30 days. These are estimates, not measurements.
+
+Beatport has no public search for apps, so Link Finder reads its search page the way a browser does. If Beatport blocks that or changes the page, the step says "Beatport search unavailable" and the lookup carries on without it.
 
 ## Link Finder
 
@@ -272,6 +283,9 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | Bandcamp · check match | A partial match. Worth a click before you trust it. |
 | SoundCloud track | Not on Bandcamp, but found on SoundCloud under a profile whose name fits. The link is the track itself. |
 | YouTube video | Not found on Bandcamp or SoundCloud, but on YouTube: among the uploads of a channel you track, or by a YouTube search for an artist ticked for it. Only when YouTube is ticked for Link Finder in Settings. |
+| Beatport track | Not on Bandcamp, but on Beatport with the title and artist both matching. The link is the track's Beatport page. Only when Beatport is ticked for Link Finder in Settings. |
+| Beatport · check match | A partial match on Beatport. Worth a click before you trust it. |
+| Discogs release | Not found on any other site, but on a release listed on Discogs (often vinyl-only). The link is that release; the note gives its formats. Only when Discogs is ticked and a token is set. |
 | SoundCloud artist page | The track was not found. This is the artist's (or remixer's) profile. |
 | Bandcamp artist page | The track was not found. This is the artist's (or remixer's) Bandcamp page. |
 | SoundCloud search | No profile matched. The link opens a SoundCloud search. |
@@ -279,7 +293,7 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | Link you set | You entered this link yourself. |
 | Error | The search could not finish. Run the list again to retry. |
 
-The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". Each of those rows has \*\*Skip\*\* and \*\*Add link\*\*. Skip stops the search for that track at once (or before it starts) and moves on; it is marked Skipped and nothing is saved for it, so it is searched for next time unless you add a link. Add link sets the link you already know, and that track is not searched. A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
+The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". Each of those rows has \*\*Skip\*\* and \*\*Add link\*\*. Skip stops the search for that track at once (or before it starts) and moves on; it is marked Skipped and nothing is saved for it, so it is searched for next time unless you add a link. Add link sets the link you already know, and that track is not searched. A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp, Beatport or Discogs match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
 
 ### Options in the panel
 
@@ -439,6 +453,9 @@ Add or change lines under `environment:`, then run `docker compose up -d --build
 | `DEEP_READ_EXTRA_SECONDS` | 1 | Extra gap between background page reads |
 | `SOUNDCLOUD_USER` | unset | Your SoundCloud username, whose followed profiles are preferred (also set in Settings, which wins) |
 | `SOUNDCLOUD_CLIENT_ID` | unset | Supply your own SoundCloud key instead of the automatic one |
+| `DISCOGS_TOKEN` | unset | Discogs personal access token for Link Finder (also set in Settings, which wins) |
+| `BEATPORT_GAP_SECONDS` | 1.5 | Gap between Link Finder's requests to Beatport |
+| `DISCOGS_GAP_SECONDS` | 1.1 | Gap between Link Finder's requests to Discogs (Discogs allows 60 a minute) |
 
 ### Wording and colours
 
@@ -571,6 +588,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 76 | Link Finder can also search Beatport (after Bandcamp) and Discogs (last resort, finds vinyl-only releases; needs a token), both off until ticked in Settings. The Downloads button is off by default and shows greyed out, with a tooltip, until switched on. |
 | 75 | The Downloads button is optional: Settings has a Show the Downloads button switch. Off, purchases aren't watched for downloads. |
 | 74 | List view: a + beside each SoundCloud track opens its related tracks underneath (three at first, Show 5 more adds five at a time), read only when clicked. |
 | 73 | SoundCloud's extra reading stops at tracks already saved, and skips the All and Popular tabs when the track list was complete, so later refreshes of quiet profiles take a few requests instead of twenty. |

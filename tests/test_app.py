@@ -182,6 +182,27 @@ related_calls = []
 def handler(request: httpx.Request) -> httpx.Response:
     host, path = request.url.host, request.url.path
     calls["requests"] = calls.get("requests", 0) + 1
+    if host == "www.beatport.com" and path == "/search/tracks":
+        q = request.url.params.get("q", "")
+        tracks = [{"track_id": 501, "track_name": "Deep Groove", "mix_name": "Original Mix", "slug": "deep-groove",
+                   "artists": [{"artist_id": 1, "artist_name": "Beat Artist"}], "remixers": [],
+                   "release": {"release_id": 9, "release_name": "Deep Groove EP"}, "label": {"label_name": "BP Label"},
+                   "publish_date": "2024-03-01"}] if "Deep Groove" in q else [
+                  {"track_id": 502, "track_name": "Late Tune", "mix_name": "Extended Mix", "artists": [{"artist_name": "Beat Artist"}],
+                   "release": {"release_name": "Late"}, "publish_date": "2025-01-01"}] if "Late Tune" in q else []
+        data = {"props": {"pageProps": {"dehydratedState": {"queries": [{"state": {"data": {"data": tracks}}}]}}}}
+        return httpx.Response(200, text='<html><script id="__NEXT_DATA__" type="application/json">' + json.dumps(data) + "</script></html>")
+    if host == "api.discogs.com":
+        if request.headers.get("Authorization") != "Discogs token=dg-secret":
+            return httpx.Response(401)
+        if path == "/database/search":
+            ok = request.url.params.get("artist") == "Wax Only"
+            return httpx.Response(200, json={"results": [{"id": 77, "title": "Wax Only - Pressed EP", "type": "release"}] if ok else []})
+        if path == "/releases/77":
+            return httpx.Response(200, json={"title": "Pressed EP", "year": 2019, "uri": "https://www.discogs.com/release/77-Wax-Only-Pressed-EP",
+                                             "artists": [{"name": "Wax Only"}], "formats": [{"name": "Vinyl"}],
+                                             "tracklist": [{"title": "Side Tune", "type_": "track"}, {"title": "Pressed Tune", "type_": "track"}]})
+        return httpx.Response(404)
     if host == "nightferry.bandcamp.com":
         pages = {"/music": GRID,
                  "/album/first": FIRST,
@@ -1808,6 +1829,8 @@ def test_new_purchases_to_download(client):
                 return
         raise AssertionError("still reading")
     calls.pop("collection_fail", None)
+    assert client.get("/api/settings").json()["downloads"]["on"] is False      # off until switched on
+    client.put("/api/settings", json={"downloads": True})
     read_purchases()
     if not client.get("/api/collection").json()["complete"]:
         read_purchases()
@@ -1992,3 +2015,59 @@ def test_related_tracks_on_request(client):
     assert [t["track"] for t in more["tracks"]] == ["Rel 3", "Rel 4", "Rel 5", "Rel 6", "Rel 7"]
     assert len(related_calls) == 1                         # read once, then handed out from the saved copy
     assert client.get("/api/related/abc").status_code == 400
+
+
+def test_beatport_and_discogs_in_link_finder(client):
+    from app import lookup
+    lookup.BEATPORT_GAP = lookup.DISCOGS_GAP = 0
+    st = client.get("/api/settings").json()
+    assert st["lookup_order"] == ["bandcamp", "beatport", "soundcloud", "youtube", "discogs"]
+    assert "beatport" not in st["lookup_sites"] and "discogs" not in st["lookup_sites"]          # off until ticked
+    assert st["lookup_info"]["discogs"] == {"label": "Discogs", "color": "#c9b98f", "on": True, "lookup_only": True}
+
+    def run(text):
+        j = client.post("/api/lookup?fresh=true", content=("Artist\tTitle\n" + text).encode()).json()
+        for _ in range(300):
+            time.sleep(0.02)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                return {r["title"]: r for r in got["rows"]}
+        raise AssertionError("lookup never finished")
+    try:
+        client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud", "beatport", "discogs"]})
+        rows = run("Beat Artist\tDeep Groove\nWax Only\tPressed Tune")
+        bp = rows["Deep Groove"]
+        assert (bp["status"], bp["site"], bp["url"], bp["release"], bp["year"]) == (
+            "beatport", "Beatport", "https://www.beatport.com/track/deep-groove/501", "Deep Groove EP", "2024")
+        assert rows["Pressed Tune"]["status"] == "soundcloud_search"          # just a SoundCloud search link
+        assert any("add a Discogs access token" in x for x in rows["Pressed Tune"]["steps"])
+        client.put("/api/settings", json={"discogs_token": "dg-secret"})
+        assert client.get("/api/settings").json()["discogs"]["token"] is True
+        dg = run("Wax Only\tPressed Tune")["Pressed Tune"]
+        assert (dg["status"], dg["url"], dg["release"], dg["year"]) == (
+            "discogs", "https://www.discogs.com/release/77-Wax-Only-Pressed-EP", "Pressed EP", "2019")
+        assert "Vinyl" in dg["note"]
+        # Discogs unticked: the saved answer falls back to the SoundCloud link without searching again
+        client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"]})
+        before = calls["requests"]
+        j = client.post("/api/lookup", content=b"Artist\tTitle\nWax Only\tPressed Tune").json()
+        for _ in range(100):
+            time.sleep(0.02)
+            got = client.get(f"/api/lookup/{j['id']}").json()
+            if got["finished"]:
+                break
+        assert got["rows"][0]["status"] == "soundcloud_search" and calls["requests"] == before
+        # ticked later: a saved not-found answer is looked up on Beatport alone
+        def plain_run(text):
+            j = client.post("/api/lookup", content=("Artist\tTitle\n" + text).encode()).json()
+            for _ in range(300):
+                time.sleep(0.02)
+                got = client.get(f"/api/lookup/{j['id']}").json()
+                if got["finished"]:
+                    return got["rows"][0]
+        assert plain_run("Beat Artist\tLate Tune")["status"] == "soundcloud_search"
+        client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud", "beatport"]})
+        late = plain_run("Beat Artist\tLate Tune")
+        assert (late["status"], late["url"]) == ("beatport", "https://www.beatport.com/track/late-tune/502")
+    finally:
+        client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"], "discogs_token": ""})
