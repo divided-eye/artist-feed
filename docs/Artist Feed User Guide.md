@@ -4,7 +4,7 @@ Oct 21, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 80. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 81. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -246,7 +246,7 @@ To find rows quickly, type in **Filter rows** (it matches names, pages and statu
 
 Each artist belongs on one row. Save is refused, with a message on every row involved, when two rows have the same page, or share a name (any of the names in their Artist cells). Both usually happen after **Import CSV**, which adds the file's rows as new rows rather than updating the ones you have: move the new pages into the existing row and delete the extra one. Two rows for one artist would leave Link Finder using whichever it finds first. If two rows really are different artists who share a name (in different genres, say), press **Different artists, keep both** on one of them and save. That is remembered, and both rows then say "Shares its name with another row". Link Finder still can't tell them apart by name, so give the right link with Edit when it picks the wrong one. Renaming one of them ends it.
 
-Labels work the same way as artists: add the label's Bandcamp page as a row. A release that reaches the feed through both an artist's page and a label's page is shown once.
+Labels work the same way as artists: add the label's Bandcamp page as a row. A release that reaches the feed through both an artist's page and a label's page is shown once. Some artists' pages show a release that is sold from another page, usually the label's: that copy has no tracks and nothing to buy. The app links and plays the page that sells it instead, whether or not you track that page, and Link Finder gives that page too.
 
 ### Adding many at once
 
@@ -630,6 +630,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 81 | A release shown on an artist's Bandcamp page but sold from another page (a label's), with no tracks and nothing to buy, now links and plays the page that sells it, in the feed and in Link Finder. Releases already saved without tracks are read again once. |
 | 80 | Display settings: text size (90% to 150%) and colour scheme (Dark, Light, High contrast or Match this device), kept per browser or device. |
 | 79 | Show the Downloads button moved from Settings to Link Finder, beside your Bandcamp username, and takes effect straight away. |
 | 78 | Beatport and Discogs are listed under Sites in Settings (Link Finder only, experimental), both off by default; switching one on also ticks it for Link Finder. Discogs results link the release's main page. Notes that both lookups may be unreliable. |

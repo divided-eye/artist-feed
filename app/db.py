@@ -134,6 +134,13 @@ def migrate(c):
                        ("checked_at", "TEXT NOT NULL DEFAULT ''")):
         if cols and name not in cols:
             c.execute(f"ALTER TABLE collection_items ADD COLUMN {name} {kind}")
+    # Once: Bandcamp releases saved with no tracks are read again, so one that is only shown on an
+    # artist's page and sold from another (a label's) gets linked to the page that sells it.
+    tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if {"kv", "tracks", "accounts"} <= tables and not c.execute("SELECT 1 FROM kv WHERE key='reread_trackless'").fetchone():
+        c.execute("UPDATE posts SET detailed=0 WHERE id IN (SELECT p.id FROM posts p JOIN accounts a ON a.id=p.account_id"
+                  " WHERE a.source='bandcamp' AND NOT EXISTS(SELECT 1 FROM tracks t WHERE t.post_id=p.id))")
+        c.execute("INSERT OR REPLACE INTO kv(key, value) VALUES('reread_trackless', '1')")
     cols = {r[1] for r in c.execute("PRAGMA table_info(artists)")}
     if cols and "aliases" not in cols:
         c.execute("ALTER TABLE artists ADD COLUMN aliases TEXT NOT NULL DEFAULT ''")
@@ -267,7 +274,7 @@ def save_result(account, result):
                 "INSERT INTO posts(account_id, external_id, title, url, image, kind, author,"
                 " published_at, first_seen, label, release, embed, posted_at, detailed)"
                 " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(account_id, external_id) DO UPDATE SET title=excluded.title,"
+                "ON CONFLICT(account_id, external_id) DO UPDATE SET title=excluded.title, url=excluded.url,"
                 " image=COALESCE(excluded.image, image),"
                 " author=COALESCE(excluded.author, author),"
                 " published_at=COALESCE(excluded.published_at, published_at),"

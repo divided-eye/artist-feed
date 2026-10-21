@@ -2085,3 +2085,56 @@ def test_beatport_and_discogs_in_link_finder(client):
         assert (late["status"], late["url"]) == ("beatport", "https://www.beatport.com/track/late-tune/502")
     finally:
         client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"], "discogs_token": ""})
+
+
+def test_a_release_sold_from_another_page_links_to_that_page(client):
+    """herbalistekmusic.bandcamp.com/album/52-blue shows a release with no tracks and nothing to buy;
+    its head links Observatory Records' page, which sells it."""
+    import asyncio
+    from app import db, lookup
+    from app.sources import SOURCES
+    real_url = "https://observatory-records.bandcamp.com/album/52-blue"
+    shell = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra={"byArtist": {"name": "Herbalistek"}},
+                    head=f'<link rel="canonical" href="{real_url}">')
+    tralbum = {"id": 777, "item_type": "album", "artist": "Herbalistek",
+               "trackinfo": [{"title": "52 Blue", "duration": 300, "track_id": 7001},
+                             {"title": "Deep Water", "duration": 280, "track_id": 7002}]}
+    real = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra={"byArtist": {"name": "Herbalistek"},
+                                                                     "publisher": {"name": "Observatory Records"}}).replace(
+        "</head>", "</head><body><script data-tralbum='" + json.dumps(tralbum) + "'></script></body>").replace(
+        "<head>", '<head><meta name="bc-page-properties" content=\'{"item_type":"a","item_id":777}\'>')
+    grid = ('<html><body><p id="band-name-location"><span class="title">Herbalistek</span></p><ol id="music-grid">'
+            '<li><a href="/album/52-blue"><p class="title">52 Blue</p></a></li></ol></body></html>')
+    plain = release("Other", "01 Jan 2026 00:00:00 GMT", head='<link rel="canonical" href="https://someone.bandcamp.com/album/other">')
+
+    def site(request):
+        host, path = request.url.host, request.url.path
+        if host == "herbalistekmusic.bandcamp.com":
+            return httpx.Response(200, text={"/music": grid, "/album/52-blue": shell}.get(path, ""))
+        if host == "observatory-records.bandcamp.com" and path == "/album/52-blue":
+            return httpx.Response(200, text=real)
+        return httpx.Response(404)
+
+    assert parse_release(shell, "https://herbalistekmusic.bandcamp.com/album/52-blue")["sold_at"] == real_url
+    assert parse_release(real, real_url)["sold_at"] is None                    # has tracks: it is the real page
+    assert parse_release(plain, "https://someone.bandcamp.com/album/other")["sold_at"] is None   # its own address
+
+    account = {"id": 987655, "url": "https://herbalistekmusic.bandcamp.com", "meta": {}}
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
+            got = await SOURCES["bandcamp"].fetch(c, account, set())
+            page = await lookup.get_release(lookup.Net(c), "https://herbalistekmusic.bandcamp.com/album/52-blue")
+            return got, page
+    try:
+        got, page = asyncio.run(go())
+    finally:
+        db.execute("DELETE FROM kv WHERE key='bandcamp_unread:987655'")
+        db.execute("DELETE FROM web_cache WHERE kind='release' AND key LIKE '%52-blue'")
+    post, = got.posts
+    assert post.external_id == "https://herbalistekmusic.bandcamp.com/album/52-blue"   # still known by where it is listed
+    assert post.url == real_url and post.embed == "album=777"
+    assert [t.title for t in post.tracks] == ["52 Blue", "Deep Water"] and post.label == "Observatory Records"
+    # Link Finder gives the page that sells it
+    assert page["url"] == real_url and [t["title"] for t in page["tracks"]] == ["52 Blue", "Deep Water"]
+    assert lookup.release_result(page, "bandcamp", "", "")["url"] == real_url

@@ -551,8 +551,9 @@ def page_index():
     return _pages["index"]
 
 
-PAGE_FORMAT = 3   # 2: also keeps track names that are only written out in the description
+PAGE_FORMAT = 4   # 2: also keeps track names that are only written out in the description
                   # 3: a track page's album is also read from the player data
+                  # 4: a page with no tracks that is sold from another page gives that page
 
 
 def needs_rereading(saved, url) -> bool:
@@ -564,7 +565,10 @@ def needs_rereading(saved, url) -> bool:
     if v < 2 and "/album/" in url and len(saved.get("tracks") or []) <= 1:
         return True
     # A track page saved without its album: an older version may simply not have seen it.
-    return v < 3 and "/track/" in url and not saved.get("release_url")
+    if v < 3 and "/track/" in url and not saved.get("release_url"):
+        return True
+    # A page with no tracks may only show a release that another page sells.
+    return v < 4 and not saved.get("tracks")
 
 
 def album_of(rel, url):
@@ -572,8 +576,9 @@ def album_of(rel, url):
     return (rel or {}).get("release_url") or url
 
 
-async def get_release(net, url):
-    """A release or track page, reduced to what matching needs. Remembered for six months."""
+async def get_release(net, url, follow=True):
+    """A release or track page, reduced to what matching needs. Remembered for six months.
+    A page that only shows a release sold from another page (a label's) gives that page."""
     saved = cache_get("release", url, 180)
     if saved is not None and not needs_rereading(saved, url):
         return saved or None
@@ -585,12 +590,18 @@ async def get_release(net, url):
             cache_put("release", url, {})
         return None
     rel = parse_release(r.text, url)
+    if rel["sold_at"] and follow:
+        real = await get_release(net, rel["sold_at"], follow=False)
+        if real:
+            data = {**real, "asked": url}
+            cache_put("release", url, data)
+            return data
     data = {"url": rel["url"], "asked": url, "title": rel["title"] or "", "artist": rel["author"] or "",
             "year": (rel["published_at"] or "")[:4], "release": rel["release"] or "",
             "release_url": rel["release_url"] or "", "label": rel["label"] or "",
             "tracks": [{"title": t.title, "artist": t.artist or ""} for t in rel["tracks"] or []]
                       + [{"title": t, "artist": "", "listed": True} for t in rel["listed_tracks"]],
-            "v": PAGE_FORMAT}
+            "v": PAGE_FORMAT if not rel["sold_at"] else PAGE_FORMAT - 1}   # the other page unread: try again next time
     cache_put("release", url, data)
     _index_release(page_index(), data)
     return data

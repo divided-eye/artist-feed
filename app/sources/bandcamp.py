@@ -220,13 +220,32 @@ def parse_search(html: str) -> list:
     return out
 
 
+def _sold_elsewhere(soup, url):
+    """A release shown on an artist's page but sold from another page (usually its label's).
+    Bandcamp gives such a page no tracks and nothing to buy, and points to the real one in a
+    <link> in its head: the canonical address, or the same /album/ path on the other page."""
+    here = urlparse(url)
+    for tag in soup.find_all("link", href=True):
+        href = _clean(tag["href"])
+        there = urlparse(href)
+        if there.scheme not in ("http", "https") or not there.netloc \
+                or there.netloc.lower() == here.netloc.lower():
+            continue
+        if not re.fullmatch(r"/(album|track)/[^/]+", there.path):
+            continue
+        rels = [r.lower() for r in (tag.get("rel") or [])]
+        if "canonical" in rels or there.path == here.path.rstrip("/"):
+            return href
+    return None
+
+
 def parse_release(html: str, url: str) -> dict:
     """Title, date, cover and artist from a single album/track page."""
     soup = BeautifulSoup(html, "lxml")
     out = {"url": _clean(url), "title": None, "image": None, "author": None,
            "published_at": None, "is_release": False,
            "label": None, "release": None, "embed": None, "tracks": None, "posted_at": None,
-           "release_url": None, "listed_tracks": []}
+           "release_url": None, "listed_tracks": [], "sold_at": None}
     ld_tracks, publisher, texts = [], None, []
 
     for script in soup.find_all("script", type="application/ld+json"):
@@ -279,6 +298,8 @@ def parse_release(html: str, url: str) -> dict:
                             _clean(urljoin(url, link)) if link else None))
     if tracks or ld_tracks:
         out["tracks"] = tracks or ld_tracks
+    else:
+        out["sold_at"] = _sold_elsewhere(soup, url)
     # A track page names its album in the player data too, sometimes only there.
     album_link = tralbum.get("album_url")
     if not out["release_url"] and "/track/" in out["url"] and isinstance(album_link, str) and album_link.strip():
@@ -416,9 +437,18 @@ class Bandcamp(Source):
         for i, it in enumerate(new[:MAX_NEW]):
             if i:
                 await asyncio.sleep(PAUSE)
+            url = it["url"]
             try:
-                page = await self._get(client, it["url"])
-                rel = parse_release(page.text, it["url"])
+                page = await self._get(client, url)
+                rel = parse_release(page.text, url)
+                if rel["sold_at"]:
+                    # Shown here but sold from another page: link and play that one instead, so
+                    # the feed shows one copy and its link is a page where the release can be bought.
+                    url = rel["sold_at"]
+                    real = parse_release((await self._get(client, url)).text, url)
+                    if real["is_release"] or real["tracks"]:
+                        rel = {**real, "author": real["author"] or rel["author"],
+                               "published_at": real["published_at"] or rel["published_at"]}
             except pace.Busy:
                 break     # a lookup is running or Bandcamp asked for a pause: keep what loaded, stop for now
             except Exception:
@@ -426,10 +456,10 @@ class Bandcamp(Source):
                 continue  # try again on a later refresh
             fails.pop(it["url"], None)
             result.posts.append(Post(
-                external_id=it["url"], url=it["url"],
+                external_id=it["url"], url=url,
                 title=rel["title"] or it["title"],
                 image=rel["image"] or it["image"],
-                kind=_kind(it["url"]),
+                kind=_kind(url),
                 author=rel["author"] or it["author"],
                 published_at=rel["published_at"], posted_at=rel["posted_at"],
                 label=rel["label"], release=rel["release"] or rel["title"] or it["title"],
