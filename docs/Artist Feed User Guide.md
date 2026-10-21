@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 77. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 78. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -274,7 +274,7 @@ Each row has a **Rescan** checkbox. Tick it and press Find missing links to sear
 
 The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes, the Downloads switch and a box for your SoundCloud username. Nothing changes until you press **Save** at the top of the panel. The button lights up when there is something to save, and the words beside it say **Unsaved changes**, then **Saved** once it is done. Pressing **Close** (or Escape) with changes not yet saved asks before dropping them.
 
-**Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one site has to stay on.
+**Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one of Bandcamp, SoundCloud and YouTube has to stay on. **Beatport** and **Discogs** are listed here too, marked Link Finder only and experimental: they have no feed, start switched off, and switching one on also ticks it for Link Finder (see Beatport and Discogs below).
 
 **Link Finder searches.** Tick the sites Link Finder looks on. A track found on a site higher in the list is preferred: Bandcamp first, then Beatport, then SoundCloud, then YouTube, then Discogs. YouTube, Beatport and Discogs start unticked. Saved answers stay as they were, except that a link on a site you have unticked gives way to the next best one. When you tick a site, rows saved as not found are searched again the next time they are looked up; when the newly ticked sites are only YouTube, Beatport or Discogs, only those are looked at for them (YouTube only for the artists ticked for it).
 
@@ -292,10 +292,12 @@ Link Finder only looks on YouTube for the rows ticked in the **YouTube search** 
 
 ### Beatport and Discogs
 
-Both are optional extra places for Link Finder to look, and both start switched off: tick them under **Link Finder searches** in Settings. Neither has a feed or a column in Tracked Artists.
+Both are optional extra places for Link Finder to look, and both start switched off: switch them on under **Sites** in Settings, which also ticks them under **Link Finder searches** (untick them there to keep the site on but stop searching it), then press Save. Neither has a feed or a column in Tracked Artists.
+
+**Both are experimental.** They were built without access to the real Beatport and Discogs sites and tested only against stand-in copies, so their results may be unreliable: a track that is there may not be found, a match may be the wrong track or release, and either site can stop answering if it changes how it works. Check their links before relying on them, and treat a Beatport · check match or Discogs result as a lead rather than an answer.
 
 - **Beatport** is searched for any track that wasn't found on Bandcamp, before SoundCloud, since it is a place to buy the track. An exact match there is the answer (shown as Beatport track) and beats a partial match on Bandcamp; a partial match is kept as Beatport · check match, behind a track found on SoundCloud. The link opens the track's Beatport page.
-- **Discogs** is the last resort: it is only searched when the track itself wasn't found on Bandcamp, Beatport, SoundCloud or YouTube. It can turn up releases that exist only on vinyl. Link Finder asks Discogs for releases by the artist with that track, opens the track lists of up to three of them, and links the release the track is on (the note says its formats, such as Vinyl). A release found there comes before an artist page. Discogs only answers signed-in apps, so it needs a free personal access token: on discogs.com go to Settings → Developers → **Generate new token**, then paste it into the box that appears in Settings when Discogs is ticked and press Save (or set `DISCOGS_TOKEN` in `docker-compose.yml`). Remove token, beside the box, takes a saved token out.
+- **Discogs** is the last resort: it is only searched when the track itself wasn't found on Bandcamp, Beatport, SoundCloud or YouTube. It can turn up releases that exist only on vinyl. Link Finder asks Discogs for releases by the artist with that track, opens the track lists of up to three of them, and links that release's main page on Discogs, the one that gathers all its pressings and versions (a release with no main page is linked directly; the note says its formats, such as Vinyl). A release found there comes before an artist page. Discogs only answers signed-in apps, so it needs a free personal access token: on discogs.com go to Settings → Developers → **Generate new token**, then paste it into the box that appears in Settings when Discogs is switched on and press Save (or set `DISCOGS_TOKEN` in `docker-compose.yml`). Remove token, beside the box, takes a saved token out.
 
 **How long they add (estimates).** Beatport: one search per track not found on Bandcamp, at most one request every 1.5 seconds, so roughly 1.5 to 3 seconds per track, about 3 to 5 minutes for 100 tracks that aren't on Bandcamp. Discogs: one search plus up to three track lists, at most one request a second (Discogs allows 60 a minute), so roughly 2 to 5 seconds per track, and only for tracks found nowhere else. Tracks answered from your purchases, your feed or saved results cost nothing either way, searches are kept for a week and Discogs track lists for 30 days. These are estimates, not measurements.
 
@@ -322,7 +324,7 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | YouTube video | Not found on Bandcamp or SoundCloud, but on YouTube: among the uploads of a channel you track, or by a YouTube search for an artist ticked for it. Only when YouTube is ticked for Link Finder in Settings. |
 | Beatport track | Not on Bandcamp, but on Beatport with the title and artist both matching. The link is the track's Beatport page. Only when Beatport is ticked for Link Finder in Settings. |
 | Beatport · check match | A partial match on Beatport. Worth a click before you trust it. |
-| Discogs release | Not found on any other site, but on a release listed on Discogs (often vinyl-only). The link is that release; the note gives its formats. Only when Discogs is ticked and a token is set. |
+| Discogs release | Not found on any other site, but on a release listed on Discogs (often vinyl-only). The link is the release's main page; the note gives its formats. Only when Discogs is switched on and a token is set. Experimental: may be wrong. |
 | SoundCloud artist page | The track was not found. This is the artist's (or remixer's) profile. |
 | Bandcamp artist page | The track was not found. This is the artist's (or remixer's) Bandcamp page. |
 | SoundCloud search | No profile matched. The link opens a SoundCloud search. |
@@ -544,6 +546,7 @@ View, column widths, page width and Hide no-preview tracks are stored in the bro
 
 - **Neither site is an official integration.** If Bandcamp or SoundCloud changes its pages, that part stops updating until the app is fixed. Everything already collected stays.
 - **Built without access to the real sites.** The app's logic is tested on stand-in pages. How it behaves on the real sites is known only from real use. Reading purchases, the feed, the players and most lookups have been seen working; SoundCloud track search and the address guess for unlisted tracks have not been confirmed.
+- **Beatport and Discogs lookups are experimental.** Neither has been tried against the real site. Beatport is read the way a browser reads its search page and may be blocked; Discogs answers through its API but which release is picked is untested. Results from either may be missing or wrong.
 - **Bandcamp limits how fast it can be read.** The first read of a large purchase history takes hours, and a lookup of a track that is nowhere can take two to three minutes.
 - **Bandcamp's player cannot be started or controlled by the app.** One extra click is needed, and there is no shared volume control.
 - **Pre-orders.** Only the released tracks of a pre-order can be played. Bandcamp's player shows one of those whichever track you pick.
@@ -625,6 +628,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 78 | Beatport and Discogs are listed under Sites in Settings (Link Finder only, experimental), both off by default; switching one on also ticks it for Link Finder. Discogs results link the release's main page. Notes that both lookups may be unreliable. |
 | 77 | Settings has a Save button: changes take effect when you press it, the words beside it say Unsaved changes or Saved, and Close asks before dropping unsaved changes. The SoundCloud username and Discogs token are saved with it too; Read follows now and Remove token replace their own save buttons. |
 | 76 | Link Finder can also search Beatport (after Bandcamp) and Discogs (last resort, finds vinyl-only releases; needs a token), both off until ticked in Settings. The Downloads button is off by default and shows greyed out, with a tooltip, until switched on. |
 | 75 | The Downloads button is optional: Settings has a Show the Downloads button switch. Off, purchases aren't watched for downloads. |

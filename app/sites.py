@@ -7,7 +7,8 @@ are kept, so switching it back on brings everything back.
 Link Finder searches the sites ticked for it, in a fixed order of preference: Bandcamp, then
 Beatport, then SoundCloud, then YouTube, then Discogs. YouTube is off for Link Finder until you tick
 it, and even then is only searched for the artists and labels ticked for it in Tracked Artists.
-Beatport and Discogs are only used by Link Finder (they have no feed), and are off until ticked.
+Beatport and Discogs are only used by Link Finder (they have no feed). They are listed with the
+sites too, switched off until switched on; switched off, Link Finder never uses them.
 """
 import json
 
@@ -16,7 +17,7 @@ from .sources import SOURCES
 
 LOOKUP_ORDER = ("bandcamp", "beatport", "soundcloud", "youtube", "discogs")     # first found wins, in this order
 LOOKUP_DEFAULT = ("bandcamp", "soundcloud")
-# Sites Link Finder can search that aren't feed sites: always "on", used only when ticked for it.
+# Sites Link Finder can search that aren't feed sites: off until switched on.
 LOOKUP_ONLY = {"beatport": ("Beatport", "#01ff95"), "discogs": ("Discogs", "#c9b98f")}
 
 
@@ -32,7 +33,21 @@ def _load(key, default):
     return value if isinstance(value, list) else list(default)
 
 
+def _extra_on() -> list:
+    """The Link Finder-only sites switched on."""
+    return _load("extra_sites_on", [])
+
+
+def upgrade():
+    """At start-up: in v76 ticking Beatport or Discogs for Link Finder was enough to use it, so
+    the ones ticked then start switched on."""
+    if db.kv_get("extra_sites_on") is None:
+        db.kv_set("extra_sites_on", json.dumps([k for k in lookup_chosen() if k in LOOKUP_ONLY]))
+
+
 def is_on(key: str) -> bool:
+    if key in LOOKUP_ONLY:
+        return key in _extra_on()
     return key in SOURCES and key not in _load("sites_off", [])
 
 
@@ -43,6 +58,11 @@ def enabled() -> list:
 
 
 def set_on(key: str, on: bool):
+    if key in LOOKUP_ONLY:
+        extra = set(_extra_on())
+        extra.add(key) if on else extra.discard(key)
+        db.kv_set("extra_sites_on", json.dumps(sorted(extra)))
+        return
     if key not in SOURCES:
         raise ValueError(f"Unknown site '{key}'.")
     off = set(_load("sites_off", []))
@@ -55,7 +75,7 @@ def set_on(key: str, on: bool):
 def lookup_sites() -> list:
     """The sites Link Finder searches, best first: ticked for it, and switched on."""
     chosen = set(_load("lookup_sites", LOOKUP_DEFAULT))
-    return [k for k in LOOKUP_ORDER if k in chosen and (is_on(k) or k in LOOKUP_ONLY)]
+    return [k for k in LOOKUP_ORDER if k in chosen and is_on(k)]
 
 
 def lookup_chosen() -> list:
@@ -88,8 +108,11 @@ def set_focus_names(names):
 
 
 def settings() -> dict:
-    return {"sites": [{"key": s.key, "label": s.label, "color": s.color, "on": is_on(s.key)} for s in SOURCES.values()],
+    return {"sites": [{"key": s.key, "label": s.label, "color": s.color, "on": is_on(s.key), "lookup_only": False}
+                      for s in SOURCES.values()]
+                     + [{"key": k, "label": name, "color": color, "on": is_on(k), "lookup_only": True}
+                        for k, (name, color) in LOOKUP_ONLY.items()],
             "lookup_sites": lookup_chosen(), "lookup_order": list(LOOKUP_ORDER),
             "lookup_info": {k: {"label": label(k), "color": LOOKUP_ONLY[k][1] if k in LOOKUP_ONLY else SOURCES[k].color,
-                                "on": is_on(k) or k in LOOKUP_ONLY, "lookup_only": k in LOOKUP_ONLY}
+                                "on": is_on(k), "lookup_only": k in LOOKUP_ONLY}
                             for k in LOOKUP_ORDER}}

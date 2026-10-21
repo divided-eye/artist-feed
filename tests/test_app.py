@@ -200,7 +200,7 @@ def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"results": [{"id": 77, "title": "Wax Only - Pressed EP", "type": "release"}] if ok else []})
         if path == "/releases/77":
             return httpx.Response(200, json={"title": "Pressed EP", "year": 2019, "uri": "https://www.discogs.com/release/77-Wax-Only-Pressed-EP",
-                                             "artists": [{"name": "Wax Only"}], "formats": [{"name": "Vinyl"}],
+                                             "master_id": 700, "artists": [{"name": "Wax Only"}], "formats": [{"name": "Vinyl"}],
                                              "tracklist": [{"title": "Side Tune", "type_": "track"}, {"title": "Pressed Tune", "type_": "track"}]})
         return httpx.Response(404)
     if host == "nightferry.bandcamp.com":
@@ -2018,12 +2018,26 @@ def test_related_tracks_on_request(client):
 
 
 def test_beatport_and_discogs_in_link_finder(client):
-    from app import lookup
+    from app import lookup, sites
     lookup.BEATPORT_GAP = lookup.DISCOGS_GAP = 0
     st = client.get("/api/settings").json()
     assert st["lookup_order"] == ["bandcamp", "beatport", "soundcloud", "youtube", "discogs"]
     assert "beatport" not in st["lookup_sites"] and "discogs" not in st["lookup_sites"]          # off until ticked
-    assert st["lookup_info"]["discogs"] == {"label": "Discogs", "color": "#c9b98f", "on": True, "lookup_only": True}
+    assert st["lookup_info"]["discogs"] == {"label": "Discogs", "color": "#c9b98f", "on": False, "lookup_only": True}
+    extra = {x["key"]: x for x in st["sites"] if x["lookup_only"]}
+    assert set(extra) == {"beatport", "discogs"} and not any(x["on"] for x in extra.values())   # off by default
+    assert "beatport" not in [x["key"] for x in client.get("/api/sources").json()]                # no feed, no chip
+    client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud", "beatport"]})
+    assert "beatport" not in sites.lookup_sites()                   # ticked, but the site is switched off
+    st = client.put("/api/settings", json={"sites": {"beatport": True, "discogs": True}}).json()
+    assert st["lookup_info"]["beatport"]["on"] and st["lookup_info"]["discogs"]["on"]
+    assert "beatport" in sites.lookup_sites()
+    from app import db
+    db.execute("DELETE FROM kv WHERE key = 'extra_sites_on'")
+    client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud", "discogs"]})
+    sites.upgrade()                                                 # from v76: ticked means switched on
+    assert sites.is_on("discogs") and not sites.is_on("beatport")
+    client.put("/api/settings", json={"sites": {"beatport": True}})
 
     def run(text):
         j = client.post("/api/lookup?fresh=true", content=("Artist\tTitle\n" + text).encode()).json()
@@ -2045,7 +2059,7 @@ def test_beatport_and_discogs_in_link_finder(client):
         assert client.get("/api/settings").json()["discogs"]["token"] is True
         dg = run("Wax Only\tPressed Tune")["Pressed Tune"]
         assert (dg["status"], dg["url"], dg["release"], dg["year"]) == (
-            "discogs", "https://www.discogs.com/release/77-Wax-Only-Pressed-EP", "Pressed EP", "2019")
+            "discogs", "https://www.discogs.com/master/700", "Pressed EP", "2019")
         assert "Vinyl" in dg["note"]
         # Discogs unticked: the saved answer falls back to the SoundCloud link without searching again
         client.put("/api/settings", json={"lookup_sites": ["bandcamp", "soundcloud"]})

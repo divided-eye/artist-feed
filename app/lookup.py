@@ -2324,17 +2324,19 @@ async def _discogs(net, path, params=None):
 
 
 async def discogs_release(net, rid) -> dict:
-    saved = cache_get("dg_release", str(rid), 30)
+    saved = cache_get("dg_release2", str(rid), 30)
     if saved is not None:
         return saved
     data = await _discogs(net, f"/releases/{int(rid)}")
     keep = {"title": data.get("title") or "", "year": str(data.get("year") or "")[:4] if data.get("year") else "",
             "uri": data.get("uri") or f"https://www.discogs.com/release/{rid}",
+            # The main release page (Discogs' "master"), which gathers every pressing of it.
+            "master": f"https://www.discogs.com/master/{int(data['master_id'])}" if data.get("master_id") else "",
             "artists": _names(data.get("artists"), "name"),
             "formats": [f.get("name") for f in data.get("formats") or [] if isinstance(f, dict) and f.get("name")],
             "tracks": [{"title": t.get("title") or "", "artists": _names(t.get("artists"), "name") + _names(t.get("extraartists"), "name")}
                        for t in data.get("tracklist") or [] if isinstance(t, dict) and t.get("type_", "track") == "track"]}
-    cache_put("dg_release", str(rid), keep)
+    cache_put("dg_release2", str(rid), keep)
     return keep
 
 
@@ -2377,7 +2379,7 @@ async def discogs_step(net, artist, title, steps):
     rel = hit["rel"]
     formats = ", ".join(dict.fromkeys(rel["formats"]))
     steps.append(f'Discogs: "{hit["title"]}" on "{rel["title"]}"' + (f" ({formats})" if formats else ""))
-    return {"status": "discogs", "site": "Discogs", "url": rel["uri"], "release": rel["title"], "year": rel["year"],
+    return {"status": "discogs", "site": "Discogs", "url": rel.get("master") or rel["uri"], "release": rel["title"], "year": rel["year"],
             "found": f'{", ".join(rel["artists"]) or artist} — {hit["title"]}',
             "note": "On Discogs" + (f" ({formats})" if formats else "") + ("" if verdict == "bandcamp" else "; check match")}
 

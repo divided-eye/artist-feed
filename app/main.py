@@ -17,7 +17,7 @@ from . import db, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "77"   # shown beside the title, so you can tell which version is running
+VERSION = "78"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -34,6 +34,7 @@ async def lifespan(app):
     db.conn()
     lookup.rekey_old_answers()
     lookup.rekey_known()
+    sites.upgrade()
     task = None
     if os.environ.get("DISABLE_SCHEDULER") != "1":
         task = asyncio.create_task(refresh.scheduler())

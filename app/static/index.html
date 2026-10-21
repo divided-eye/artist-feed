@@ -443,12 +443,12 @@
         <button class="btn" type="button" id="settingsClose">Close</button></div></header>
     <section>
       <h3>Sites</h3>
-      <p class="hint">A site switched off is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, and Link Finder doesn't use it. The pages you track there are kept, so switching it back on brings them back.</p>
+      <p class="hint">A site switched off is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, and Link Finder doesn't use it. The pages you track there are kept, so switching it back on brings them back. <b>Beatport</b> and <b>Discogs</b> have no feed: they are extra places for Link Finder to look, Beatport for a track to buy and Discogs for releases found nowhere else (often vinyl-only), linking the release's main page. Both start switched off, and both are experimental: they were built without access to the real sites, so their results may be missing or wrong. Check their links before relying on them.</p>
       <div id="siteToggles" class="toggles"></div>
     </section>
     <section>
       <h3>Link Finder searches</h3>
-      <p class="hint">Tick the sites Link Finder looks on. A track found on one higher in the list is preferred: Bandcamp, then Beatport, then SoundCloud, then YouTube, then Discogs. Beatport and Discogs are off until ticked; Discogs is a last resort, searched only when the track wasn't found elsewhere, and can turn up vinyl-only releases. YouTube is only searched for the artists and labels ticked in the <b>YouTube search</b> column of Tracked Artists (for a label, the uploads of its channel you track there are looked through).</p>
+      <p class="hint">Tick the sites Link Finder looks on. A track found on one higher in the list is preferred: Bandcamp, then Beatport, then SoundCloud, then YouTube, then Discogs. Beatport and Discogs need switching on above first; Discogs is a last resort, searched only when the track wasn't found elsewhere, and can turn up vinyl-only releases. YouTube is only searched for the artists and labels ticked in the <b>YouTube search</b> column of Tracked Artists (for a label, the uploads of its channel you track there are looked through).</p>
       <div id="lookupToggles" class="toggles"></div>
       <div class="toggles" id="discogsRow" hidden>
         <input type="password" id="discogsToken" placeholder="Discogs access token" spellcheck="false" autocomplete="off" aria-label="Discogs personal access token">
@@ -2093,7 +2093,15 @@ function drawSettings() {
   const dlBox = box(st.downloads.on, "Show the Downloads button", null, on => { st.downloads.on = on; });
   $("downloadsToggle").replaceChildren(dlBox, ...(st.downloads.on && !st.downloads.fan
     ? [el("span", { class: "hint", text: "Set your Bandcamp username in Link Finder for the button to appear." })] : []));
-  $("siteToggles").replaceChildren(...st.sites.map(x => box(x.on, x.label, x.color, on => { x.on = on; })));
+  $("siteToggles").replaceChildren(...st.sites.map(x => {
+    const lab = box(x.on, x.lookup_only ? el("span", {}, x.label, " ", el("span", { class: "order", text: "Link Finder only · experimental" })) : x.label, x.color, on => {
+      x.on = on;
+      if (on && x.lookup_only && !st.lookup_sites.includes(x.key)) st.lookup_sites = [...st.lookup_sites, x.key];  // switching it on means using it
+    });
+    if (x.key === "beatport") lab.title = "Beatport: a place to buy tracks. Link Finder looks there after Bandcamp. Off by default. Experimental: results may be missing or wrong.";
+    if (x.key === "discogs") lab.title = "Discogs: releases found nowhere else, often vinyl-only; links the release's main page. Link Finder's last resort; needs a free access token. Off by default. Experimental: results may be missing or wrong.";
+    return lab;
+  }));
   const siteOn = key => { const x = st.sites.find(y => y.key === key); return x ? x.on : st.lookup_info[key].on; };
   const chosen = new Set(st.lookup_sites);
   $("lookupToggles").replaceChildren(...st.lookup_order.map((key, i) => {
