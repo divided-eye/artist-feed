@@ -1,10 +1,10 @@
 # Artist Feed: User Guide
 
-Oct 16, 2026
+Oct 21, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 79. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 80. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -272,7 +272,9 @@ Each row has a **Rescan** checkbox. Tick it and press Find missing links to sear
 
 ## Settings
 
-The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes and a box for your SoundCloud username. Nothing changes until you press **Save** at the top of the panel. The button lights up when there is something to save, and the words beside it say **Unsaved changes**, then **Saved** once it is done. Pressing **Close** (or Escape) with changes not yet saved asks before dropping them.
+The **Settings** button (top right, beside Tracked Artists and Link Finder) opens the display choices, two lists of checkboxes and a box for your SoundCloud username. Nothing changes until you press **Save** at the top of the panel. The button lights up when there is something to save, and the words beside it say **Unsaved changes**, then **Saved** once it is done. Pressing **Close** (or Escape) with changes not yet saved asks before dropping them.
+
+**Display.** How the app looks: **Text size** makes everything larger or smaller (90% to 150%), and **Colour scheme** picks **Dark** (the default), **Light**, **High contrast** (black and white with yellow highlights and thicker outlines) or **Match this device**, which follows the light or dark setting of the computer or phone. They take effect when you press Save. Each browser or device keeps its own choice, so a phone can be set differently from a computer, and they are not part of the saved data.
 
 **Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one of Bandcamp, SoundCloud and YouTube has to stay on. **Beatport** and **Discogs** are listed here too, marked Link Finder only and experimental: they have no feed, start switched off, and switching one on also ticks it for Link Finder (see Beatport and Discogs below).
 
@@ -332,7 +334,7 @@ The **Link Finder** button opens a panel that takes a tracklist and returns one 
 | Link you set | You entered this link yourself. |
 | Error | The search could not finish. Run the list again to retry. |
 
-The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". Each of those rows has \*\*Skip\*\* and \*\*Add link\*\*. Skip stops the search for that track at once (or before it starts) and moves on; it is marked Skipped and nothing is saved for it, so it is searched for next time unless you add a link. Add link sets the link you already know, and that track is not searched. A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp, Beatport or Discogs match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
+The note under each result says where it came from, for example "In your purchases" or "Matched by name only". **What was tried** lists every step and what it found. While a lookup runs, rows not yet answered have a soft blue tint, and the row being searched pulses and reads "Searching now…". Each of those rows has **Skip** and **Add link**. Skip stops the search for that track at once (or before it starts) and moves on; it is marked Skipped and nothing is saved for it, so it is searched for next time unless you add a link. Add link sets the link you already know, and that track is not searched. A row whose link is a guess (a SoundCloud profile picked by name alone, or a partial Bandcamp, Beatport or Discogs match) is marked Needs review and tinted red. It stays that way after the lookup finishes, until you press Looks right, which keeps the link as one you set, or correct it with Edit.
 
 ### Options in the panel
 
@@ -362,7 +364,7 @@ The **Saved results** tab in Link Finder lists every track looked up so far, new
 
 The filter **Searched in the last lookup** shows only the tracks the latest lookup had to search for (not the ones answered from what was already saved), and keeps showing them after the lookup finishes, so you have one list of new links to review. It starts again each time you press a Look up button; Search again on a row adds that row to it.
 
-Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are, and so is a symbol written into a word, as in "∑1", "Myca$h" or "Mor£"), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column. A track saved under a name that doesn't match your list exactly (saved before versions had entries of their own, or typed without brackets) shows the closest entry, marked "closest in your list": the one with the same words, or the only version of that title. \*\*Edit spelling\*\* (or Add spelling) under the title lets you type how the artist and title should be written; it is saved to your list for that track, and Remove takes the track out of your list.
+Each track is listed under the tidied form of its name: lower case, no accents or punctuation (ø is read as o; letters of other alphabets, such as Cyrillic or Chinese, are kept as they are, and so is a symbol written into a word, as in "∑1", "Myca$h" or "Mor£"), and no describing tags or status notes such as "(WIP)" or "(forth. Label)". That is the form tracks are matched by. A version keeps its own entry, shown in square brackets, so "Temperature" and "Temperature (River Dub Edit)" are saved separately. What you typed is shown beneath when it differs; tracks saved before version 40 only have the tidied form. Your spelling of the artist and of the title each have their own column. A track saved under a name that doesn't match your list exactly (saved before versions had entries of their own, or typed without brackets) shows the closest entry, marked "closest in your list": the one with the same words, or the only version of that title. **Edit spelling** (or Add spelling) under the title lets you type how the artist and title should be written; it is saved to your list for that track, and Remove takes the track out of your list.
 
 Each row has Edit, Search again and Forget, plus Looks right on rows marked for review. Forget opens a choice of what to forget: Saved answer (the track is searched for next time), List entry (takes that track out of your imported list; on a row marked "closest in your list" it is called Closest list entry), or Both. Only the choices that apply to the row are shown.
 
@@ -628,6 +630,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 80 | Display settings: text size (90% to 150%) and colour scheme (Dark, Light, High contrast or Match this device), kept per browser or device. |
 | 79 | Show the Downloads button moved from Settings to Link Finder, beside your Bandcamp username, and takes effect straight away. |
 | 78 | Beatport and Discogs are listed under Sites in Settings (Link Finder only, experimental), both off by default; switching one on also ticks it for Link Finder. Discogs results link the release's main page. Notes that both lookups may be unreliable. |
 | 77 | Settings has a Save button: changes take effect when you press it, the words beside it say Unsaved changes or Saved, and Close asks before dropping unsaved changes. The SoundCloud username and Discogs token are saved with it too; Read follows now and Remove token replace their own save buttons. |

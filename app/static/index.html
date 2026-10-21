@@ -5,14 +5,59 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Artist Feed</title>
 <link rel="icon" href="/favicon">
+<script>
+// Display settings (text size, colour scheme) are kept in this browser, and applied before the page draws.
+const DISPLAY_DEFAULT = { size: "100", theme: "dark" };
+function readDisplay() {
+  try { return Object.assign({}, DISPLAY_DEFAULT, JSON.parse(localStorage.getItem("display") || "{}")); } catch { return { ...DISPLAY_DEFAULT }; }
+}
+function applyDisplay(d) {
+  const root = document.documentElement;
+  const theme = d.theme === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : d.theme;
+  if (theme === "dark") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", theme);
+  root.style.zoom = d.size === "100" ? "" : String(Number(d.size) / 100);
+}
+applyDisplay(readDisplay());
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { if (readDisplay().theme === "system") applyDisplay(readDisplay()); });
+</script>
 <style>
   :root {
     --bg: #0f1012; --panel: #17191d; --panel-2: #1f2227; --line: #2a2e35;
     --text: #eceef1; --muted: #8d95a1; --accent: #d9f25c; --danger: #ff6b6b;
+    --accent-ink: #d9f25c;          /* the accent as text or an outline */
+    --on-accent: #14160a;           /* text on an accent background */
+    --header-bg: rgba(15,16,18,.92); --hover-line: #444a55; --overlay: rgba(15,16,18,.82); --overlay-line: rgba(255,255,255,.18);
+    --played: #6f7783; --letter: #4a505b; --warn: #e6b450; --ok: #9be28f; --sc: #ff9a66; --page-tag: #7fc8dd;
+    --review: #ff8f8f; --why: #ff9c9c; --removed-bg: #2b2023; --removed-text: #8a7a7d; --nostream: #6d6d6d;
+    --shadow: rgba(0,0,0,.4); --scrim: rgba(0,0,0,.5); --playing-row: rgba(217,242,92,.09); --error-row: rgba(255,107,107,.07);
+    color-scheme: dark;
     --radius: 10px;
     --page: 1280px;   /* chosen page width */
     --fit: 0px;       /* width the list needs; the page grows to this when the window allows */
   }
+  /* Colour schemes (Settings → Display). Dark is the default above. */
+  :root[data-theme="light"] {
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #eceff3; --line: #d3d8df;
+    --text: #15181d; --muted: #586170; --accent: #c8e33d; --danger: #c62828;
+    --accent-ink: #4b5a00; --on-accent: #14160a;
+    --header-bg: rgba(245,246,248,.94); --hover-line: #a7afba; --overlay: rgba(255,255,255,.9); --overlay-line: rgba(0,0,0,.15);
+    --played: #8b929c; --letter: #c3c8cf; --warn: #8f5f00; --ok: #2e7d32; --sc: #c2410c; --page-tag: #1d6a80;
+    --review: #b42318; --why: #b42318; --removed-bg: #fbe9ea; --removed-text: #976a70; --nostream: #9aa0a8;
+    --shadow: rgba(0,0,0,.12); --scrim: rgba(0,0,0,.3); --playing-row: rgba(150,180,0,.16); --error-row: rgba(198,40,40,.07);
+    color-scheme: light;
+  }
+  :root[data-theme="contrast"] {
+    --bg: #000000; --panel: #000000; --panel-2: #1c1c1c; --line: #ffffff;
+    --text: #ffffff; --muted: #e2e2e2; --accent: #ffff00; --danger: #ff6a6a;
+    --accent-ink: #ffff00; --on-accent: #000000;
+    --header-bg: #000000; --hover-line: #ffff00; --overlay: rgba(0,0,0,.92); --overlay-line: #ffffff;
+    --played: #c4c4c4; --letter: #5c5c5c; --warn: #ffd34d; --ok: #7dff7d; --sc: #ffb07f; --page-tag: #8de4ff;
+    --review: #ff8a8a; --why: #ffa3a3; --removed-bg: #3a0000; --removed-text: #ffb8b8; --nostream: #c4c4c4;
+    --shadow: transparent; --scrim: rgba(0,0,0,.75); --playing-row: rgba(255,255,0,.2); --error-row: rgba(255,106,106,.18);
+    color-scheme: dark;
+  }
+  :root[data-theme="contrast"] .card, :root[data-theme="contrast"] .btn, :root[data-theme="contrast"] .chip { border-width: 2px; }
+  :root[data-theme="contrast"] .card.played > .art, :root[data-theme="contrast"] .card.played > .info { opacity: .7; }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body { background: var(--bg); color: var(--text);
@@ -21,36 +66,36 @@
   button { cursor: pointer; }
   a { color: inherit; text-decoration: none; }
 
-  header { position: sticky; top: 0; z-index: 5; background: rgba(15,16,18,.92);
+  header { position: sticky; top: 0; z-index: 5; background: var(--header-bg);
     backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
   .bar { max-width: max(var(--page), var(--fit)); margin: 0 auto; padding: 12px 16px; display: flex;
     flex-wrap: wrap; gap: 10px 14px; align-items: center; }
   h1 { font-size: 17px; margin: 0 6px 0 0; letter-spacing: .02em; font-weight: 700; }
-  h1 span { color: var(--accent); }
+  h1 span { color: var(--accent-ink); }
   h1 small { color: var(--muted); font-size: 11px; font-weight: 400; margin-left: 4px; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip { border: 1px solid var(--line); background: transparent; border-radius: 999px;
     padding: 5px 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
-  .chip[aria-pressed="true"] { background: var(--panel-2); color: var(--text); border-color: #444a55; }
+  .chip[aria-pressed="true"] { background: var(--panel-2); color: var(--text); border-color: var(--hover-line); }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
   select, input[type=text], input[type=password] { background: var(--panel); border: 1px solid var(--line);
     border-radius: 8px; padding: 7px 10px; min-width: 0; }
-  input[type=text]:focus, input[type=password]:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=text]:focus, input[type=password]:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 1px; }
   .spacer { flex: 1; }
   .actions { display: flex; gap: 10px; margin-left: auto; }
   .row2 { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }      /* stays at the right edge, also when the bar wraps */
-  .btn[aria-pressed="true"] { background: var(--accent); color: #14160a; border-color: var(--accent); }
+  .btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; }
   .btn:hover { background: var(--panel-2); }
-  .btn.primary { background: var(--accent); color: #14160a; border-color: var(--accent); font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
   #saveBtn.clean { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 400; }
   .btn.small { padding: 3px 8px; font-size: 13px; }
   a.btn { color: inherit; text-decoration: none; display: inline-flex; align-items: center; }
-  .dlcount { margin-left: 7px; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: #14160a;
+  .dlcount { margin-left: 7px; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--on-accent);
            font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
   .dlicon { margin-right: 7px; flex: none; }
   #downloadsBtn.has { border-color: var(--accent); }
-  #downloadsBtn:not(.has) { color: #8d95a1; }
+  #downloadsBtn:not(.has) { color: var(--muted); }
   #downloadsBtn:not(.has) .dlicon { opacity: .5; }
   #downloadsBtn.off { opacity: .45; cursor: default; }
   #downloadsBtn.off:hover { background: transparent; }
@@ -63,34 +108,34 @@
   @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
     overflow: hidden; display: flex; flex-direction: column; transition: transform .12s, border-color .12s; }
-  .card:hover { transform: translateY(-2px); border-color: #444a55; }
+  .card:hover { transform: translateY(-2px); border-color: var(--hover-line); }
   .card { position: relative; }
   .card.playing { border-color: var(--accent); }
   /* listened to: dimmed, so what is new stands out; full strength again on hover or while playing */
   .card.played > .art, .card.played > .info { opacity: .45; transition: opacity .15s; }
   .card.played:hover > *, .card.played.playing > * { opacity: 1; }
-  .list tbody tr.played td { color: #6f7783; }
+  .list tbody tr.played td { color: var(--played); }
   .list tbody tr.played td.t, .list tbody tr.played td.site a { opacity: .6; }
   .list tbody tr.played.playing td.t { opacity: 1; color: var(--text); }
   .card.is-hidden, .list tbody tr.is-hidden td { opacity: .4; }
   .card.is-hidden { border-style: dashed; }
   .hidebtn { position: absolute; top: 8px; right: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 50%; padding: 0;
-    display: grid; place-items: center; font-size: 12px; background: rgba(15,16,18,.82); color: var(--text);
-    border: 1px solid rgba(255,255,255,.18); opacity: 0; transition: opacity .12s, background .12s; }
+    display: grid; place-items: center; font-size: 12px; background: var(--overlay); color: var(--text);
+    border: 1px solid var(--overlay-line); opacity: 0; transition: opacity .12s, background .12s; }
   .card:hover .hidebtn, .hidebtn:focus-visible { opacity: 1; }
-  .hidebtn:hover { background: var(--danger); color: #14160a; border-color: var(--danger); }
+  .hidebtn:hover { background: var(--danger); color: var(--on-accent); border-color: var(--danger); }
   @media (hover: none) { .hidebtn { opacity: 1; } }
   .list td.hide { padding: 4px 6px; text-align: center; }
   .rowhide { border: 0; background: transparent; color: var(--muted); padding: 2px 6px; border-radius: 6px; font-size: 12px; }
   .rowhide:hover { color: var(--danger); background: var(--panel-2); }
-  .list tbody tr.playing td, .list tbody tr.playing:hover td { background: rgba(217,242,92,.09); }
-  tr.playing .rowplay { background: var(--accent); color: #14160a; border-color: var(--accent); }
+  .list tbody tr.playing td, .list tbody tr.playing:hover td { background: var(--playing-row); }
+  tr.playing .rowplay { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .art { aspect-ratio: 1; background: var(--panel-2); position: relative; display: grid; place-items: center;
-    color: #4a505b; font-size: 44px; font-weight: 700; border: 0; padding: 0; width: 100%; }
+    color: var(--letter); font-size: 44px; font-weight: 700; border: 0; padding: 0; width: 100%; }
   .playdot { position: absolute; right: 10px; bottom: 10px; z-index: 1; width: 40px; height: 40px; border-radius: 50%;
-    background: rgba(15,16,18,.82); color: var(--text); display: grid; place-items: center; font-size: 15px;
-    border: 1px solid rgba(255,255,255,.18); transition: background .12s, color .12s, transform .12s; }
-  .art:hover .playdot, .art:focus-visible .playdot { background: var(--accent); color: #14160a; transform: scale(1.08); }
+    background: var(--overlay); color: var(--text); display: grid; place-items: center; font-size: 15px;
+    border: 1px solid var(--overlay-line); transition: background .12s, color .12s, transform .12s; }
+  .art:hover .playdot, .art:focus-visible .playdot { background: var(--accent); color: var(--on-accent); transform: scale(1.08); }
   .title a:hover { text-decoration: underline; }
   .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .badge { position: absolute; left: 8px; top: 8px; font-size: 11px; font-weight: 600; padding: 2px 8px;
@@ -132,15 +177,15 @@
   .list th.hidehead .thb { cursor: default; padding: 9px 4px; text-align: center; }
   .res td.spellform input { width: 100%; min-width: 9em; background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 5px 7px; font: inherit; }
-  .res td small.guess { color: #e6b450; }
+  .res td small.guess { color: var(--warn); }
   .res td .forget { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding: 6px; border: 1px dashed var(--line); border-radius: 6px; }
   .res td .forget small { margin: 0; }
   .sortbtn { all: unset; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; }
   .sortbtn:hover, th[aria-sort] .sortbtn { color: var(--text); }
-  .sortbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .sortbtn:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; border-radius: 3px; }
   .sortbtn .arrow { font-size: .7em; }
   .list th .thb:hover, .list th[aria-sort] .thb { color: var(--text); }
-  .list th .thb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .list th .thb:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
   .list td { padding: 7px 10px; border-right: 0; vertical-align: middle; }
   .list tr:last-child td { border-bottom: 0; }
   .list tbody tr:hover td { background: var(--panel-2); }
@@ -152,12 +197,12 @@
   .list td.site a:hover { color: var(--text); }
   .rowplay { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg);
     display: grid; place-items: center; font-size: 11px; color: var(--text); padding: 0; }
-  .rowplay:hover { background: var(--accent); color: #14160a; border-color: var(--accent); }
-  .rowplay.nostream { border: 2px dashed #6d6d6d; color: #6d6d6d; background: transparent; font-size: 12px; }
-  .rowplay.nostream:hover { background: #6d6d6d; color: #474747; border-style: solid; }
+  .rowplay:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .rowplay.nostream { border: 2px dashed var(--nostream); color: var(--nostream); background: transparent; font-size: 12px; }
+  .rowplay.nostream:hover { background: var(--nostream); color: var(--bg); border-style: solid; }
 
   #dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--panel);
-    border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.4); }
+    border-top: 1px solid var(--line); box-shadow: 0 -8px 24px var(--shadow); }
   .dock-in { max-width: 900px; margin: 0 auto; padding: 8px 16px 10px; }
   .dock-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; min-width: 0; }
   #dockTitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -165,7 +210,7 @@
   @media (max-width: 600px) { #dockHint { display: none; } }
   #dockFrame iframe { display: block; width: 100%; border: 0; border-radius: 6px; background: var(--panel-2); }
 
-  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9; }
+  .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 9; }
   /* the Link Finder panel: a slow light-blue pulse */
   @keyframes lookup-glow {
     0%, 100% { box-shadow: 0 0 18px 2px rgba(125, 200, 255, .22), -1px 0 0 rgba(125, 200, 255, .35); }
@@ -186,7 +231,7 @@
   aside h2 { font-size: 16px; margin: 0; flex: 1; }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px 0; }
   .hint { color: var(--muted); font-size: 13px; padding: 8px 16px 12px; }
-  .unsaved { color: #e6b450; font-size: 13px; }
+  .unsaved { color: var(--warn); font-size: 13px; }
   .table-wrap { overflow: auto; flex: 1; border-top: 1px solid var(--line); }
   table { border-collapse: collapse; width: 100%; min-width: 720px; }
   th { position: sticky; top: 0; z-index: 1; background: var(--panel-2); text-align: left; font-size: 12px;
@@ -195,13 +240,13 @@
   td.num, td.act { width: 1%; color: var(--muted); font-size: 12px; padding: 9px 10px; text-align: right; border-right: 1px solid var(--line); }
   td.act { padding: 4px; border-right: 0; }
   td.state { font-size: 12px; color: var(--muted); padding: 9px 10px; min-width: 170px; border-right: 0; }
-  td.state .warn { color: #e6b450; display: block; }
+  td.state .warn { color: var(--warn); display: block; }
   td.state .bad { color: var(--danger); display: block; }
   td.state .dim { display: block; }
   td.state .btn { margin-top: 6px; }
   td input[type=text] { width: 100%; border: 0; border-radius: 0; background: transparent; padding: 9px 10px; }
-  td input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg); }
-  tr.has-error td { background: rgba(255,107,107,.07); }
+  td input[type=text]:focus { outline: 2px solid var(--accent-ink); outline-offset: -2px; background: var(--bg); }
+  tr.has-error td { background: var(--error-row); }
   .bulk { border-top: 1px solid var(--line); padding: 10px 16px 14px; }
   .bulk label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
   .bulk-row { display: flex; gap: 8px; align-items: flex-end; }
@@ -223,20 +268,20 @@
   table.reltable .rowplay { font-size: 11px; }
   table.reltable a { color: inherit; text-decoration: none; }
   table.reltable a:hover { text-decoration: underline; }
-  table.reltable tr.playing td { color: var(--accent); }
+  table.reltable tr.playing td { color: var(--accent-ink); }
   table.reltable .n { text-align: right; }
   table.reltable .rowplay { width: 22px; height: 22px; }
   .relfoot { padding: 6px 0 2px; font-size: 12px; }
   td.focus { text-align: center; }
   /* checkbox cells: centred both ways, whatever the row's height */
   td.focus, td.rescan, td.ytlook { vertical-align: middle; }
-  td.state .checknow { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+  td.state .checknow { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--accent-ink); font: inherit; cursor: pointer; }
   td.state .checknow:hover { text-decoration: underline; }
   td.state .checknow:disabled { color: var(--muted); cursor: default; text-decoration: none; }
   td.focus input, td.rescan input, td.ytlook input { display: block; margin: 0 auto; }
   /* a row marked for removal: kept (and undoable) until Save */
-  #artistTable tr.removed td { background: #2b2023; color: #8a7a7d; }
-  #artistTable tr.removed td input[type=text] { color: #8a7a7d; text-decoration: line-through; }
+  #artistTable tr.removed td { background: var(--removed-bg); color: var(--removed-text); }
+  #artistTable tr.removed td input[type=text] { color: var(--removed-text); text-decoration: line-through; }
   .undo { font-size: 12px; padding: 3px 8px; }
   /* the artist table: fixed columns sized in script, so they can be dragged and the name always fits */
   #artistTable { table-layout: fixed; width: auto; min-width: 0; }
@@ -250,7 +295,7 @@
   #lookupText { display: block; width: calc(100% - 32px); margin: 0 16px 12px; height: 96px; resize: vertical;
     background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
     font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
-  #lookupText:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #lookupText:focus { outline: 2px solid var(--accent-ink); outline-offset: 1px; }
   .res td { padding: 7px 10px; border-right: 0; vertical-align: top; font-size: 14px; }
   .res td.n { color: var(--muted); text-align: right; width: 1%; }
   aside .pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -269,8 +314,8 @@
   .res tr.review td { background: rgba(255, 107, 107, .10); }
   .res tr.review td:first-child { box-shadow: inset 3px 0 0 rgba(255, 107, 107, .85); }
   .res tr.review:hover td { background: rgba(255, 107, 107, .14); }
-  .tag.review { color: #ff8f8f; border-color: #8a3a3a; background: rgba(255, 107, 107, .12); font-weight: 600; }
-  .res td .why { display: block; color: #ff9c9c; font-size: 12px; margin-top: 2px; }
+  .tag.review { color: var(--review); border-color: color-mix(in srgb, currentColor 45%, transparent); background: rgba(255, 107, 107, .12); font-weight: 600; }
+  .res td .why { display: block; color: var(--why); font-size: 12px; margin-top: 2px; }
   .res td.link .rowbtns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .res td.link .rowbtns .btn { margin-top: 0; }
   /* rows a running lookup hasn't answered yet: a soft blue wash; the one being searched breathes */
@@ -280,21 +325,21 @@
   .res tr.waiting.now td:first-child, #artistTable tr.waiting.now td:first-child { box-shadow: inset 3px 0 0 rgba(125, 200, 255, 1); }
   @keyframes row-wait { 0%, 100% { background: rgba(125, 200, 255, .10); } 50% { background: rgba(125, 200, 255, .22); } }
   @media (prefers-reduced-motion: reduce) { .res tr.waiting.now td, #artistTable tr.waiting.now td { animation: none; } }
-  .res td.link a { color: var(--accent); word-break: break-all; }
+  .res td.link a { color: var(--accent-ink); word-break: break-all; }
   .res td.link a:hover { text-decoration: underline; }
   .res td small { display: block; color: var(--muted); font-size: 12px; }
   .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-  .tag.ok { color: #9be28f; border-color: #3d6b3a; } .tag.check { color: #e6b450; border-color: #6b5626; }
-  .tag.sc { color: #ff9a66; border-color: #6b3a22; } .tag.bad { color: var(--danger); border-color: #6b2c2c; }
+  .tag.ok { color: var(--ok); border-color: color-mix(in srgb, currentColor 45%, transparent); } .tag.check { color: var(--warn); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+  .tag.sc { color: var(--sc); border-color: color-mix(in srgb, currentColor 45%, transparent); } .tag.bad { color: var(--danger); border-color: color-mix(in srgb, currentColor 45%, transparent); }
   dialog#settings { background: var(--panel, #17191d); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
     padding: 0; width: min(560px, calc(100vw - 32px)); }
-  dialog#settings::backdrop { background: rgba(0,0,0,.55); }
+  dialog#settings::backdrop { background: var(--scrim); }
   .settings-in { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
   .settings-in header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .settings-actions { display: flex; align-items: center; gap: 8px; }
   .settings-in .settings-actions .hint { margin: 0; }
   #settingsSave.clean { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 400; }
-  #settingsSaved.ok { color: var(--accent); }
+  #settingsSaved.ok { color: var(--accent-ink); }
   .settings-in .btn:disabled { opacity: .45; cursor: default; }
   .settings-in h2 { margin: 0; font-size: 18px; } .settings-in h3 { margin: 0 0 4px; font-size: 14px; }
   .settings-in .hint { padding: 0; margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.45; }
@@ -308,13 +353,13 @@
   #artistQ { width: 170px; }
   #artistTable th .sortbtn { display: inline-flex; align-items: center; gap: 6px; }
   .rowcount { color: var(--muted); font-size: 13px; }
-  .tag.wait { color: var(--muted); } .tag.mine { color: var(--accent); border-color: #5d6a25; }
+  .tag.wait { color: var(--muted); } .tag.mine { color: var(--accent-ink); border-color: color-mix(in srgb, currentColor 45%, transparent); }
   .res td.link .btn { margin-top: 4px; }
   .res td.link { min-width: 230px; }
   .linkform { display: grid; gap: 6px; }
   .linkform input { width: 100%; padding: 5px 8px; font-size: 13px; }
   .linkform .rowline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .linkform .rowline input { width: 78px; } .tag.page { color: #7fc8dd; border-color: #2d5562; }
+  .linkform .rowline input { width: 78px; } .tag.page { color: var(--page-tag); border-color: color-mix(in srgb, currentColor 45%, transparent); }
   .res details { margin-top: 3px; } .res summary { color: var(--muted); font-size: 12px; cursor: pointer; }
   .res details ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
   .tools.second { padding-top: 8px; } .tools.second input[type=text] { width: 170px; }
@@ -326,7 +371,7 @@
   input[type=date].on { border-color: var(--accent); }
   .colwrap { position: relative; }
   .colmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 8; width: 250px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 8px; padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+    border-radius: 8px; padding: 10px; box-shadow: 0 10px 30px var(--shadow); }
   .colmenu-hint { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
   .colmenu ul { list-style: none; margin: 0 0 10px; padding: 0; }
   .colmenu li { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
@@ -334,10 +379,10 @@
   .colmenu li button { all: unset; cursor: pointer; width: 24px; height: 24px; text-align: center; border-radius: 5px; color: var(--muted); }
   .colmenu li button:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
   .colmenu li button:disabled { opacity: .3; cursor: default; }
-  .colmenu li button:focus-visible { outline: 2px solid var(--accent); }
+  .colmenu li button:focus-visible { outline: 2px solid var(--accent-ink); }
   .list th.dragging { opacity: .45; }
-  .list th.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
-  .list th.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
+  .list th.drop-before { box-shadow: inset 3px 0 0 var(--accent-ink); }
+  .list th.drop-after { box-shadow: inset -3px 0 0 var(--accent-ink); }
   .list th[draggable=true] .thb { cursor: grab; }
   label.opt { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
   [hidden] { display: none !important; }
@@ -442,6 +487,22 @@
       <div class="settings-actions"><span class="hint" id="settingsSaved" role="status"></span>
         <button class="btn primary clean" type="button" id="settingsSave" title="Nothing changed yet">Save</button>
         <button class="btn" type="button" id="settingsClose">Close</button></div></header>
+    <section>
+      <h3>Display</h3>
+      <p class="hint">How the app looks in this browser. Each browser or device keeps its own choice.</p>
+      <div class="toggles">
+        <label class="opt">Text size
+          <select id="dispSize" aria-label="Text size">
+            <option value="90">Smaller (90%)</option><option value="100">Standard (100%)</option><option value="115">Larger (115%)</option>
+            <option value="130">Large (130%)</option><option value="150">Largest (150%)</option>
+          </select></label>
+        <label class="opt">Colour scheme
+          <select id="dispTheme" aria-label="Colour scheme">
+            <option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option>
+            <option value="system">Match this device</option>
+          </select></label>
+      </div>
+    </section>
     <section>
       <h3>Sites</h3>
       <p class="hint">A site switched off is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, and Link Finder doesn't use it. The pages you track there are kept, so switching it back on brings them back. <b>Beatport</b> and <b>Discogs</b> have no feed: they are extra places for Link Finder to look, Beatport for a track to buy and Discogs for releases found nowhere else (often vinyl-only), linking the release's main page. Both start switched off, and both are experimental: they were built without access to the real sites, so their results may be missing or wrong. Check their links before relying on them.</p>
@@ -2068,7 +2129,9 @@ function settingsBody() {
   return body;
 }
 const scChanged = () => !!setSaved && $("scMe").value.trim() !== (setSaved.soundcloud.user || "");
-const settingsDirty = () => !!setSaved && (Object.keys(settingsBody()).length > 0 || scChanged());
+const displayDraft = () => ({ size: $("dispSize").value, theme: $("dispTheme").value });
+const displayChanged = () => { const d = displayDraft(), s = readDisplay(); return d.size !== s.size || d.theme !== s.theme; };
+const settingsDirty = () => !!setSaved && (Object.keys(settingsBody()).length > 0 || scChanged() || displayChanged());
 function markSettings() {
   const dirty = settingsDirty();
   $("settingsSave").classList.toggle("clean", !dirty);
@@ -2080,6 +2143,8 @@ async function renderSettings() {
   setSaved = await api("/api/settings");
   setDraft = copy(setSaved);
   $("discogsToken").value = "";
+  const shown = readDisplay();
+  $("dispSize").value = shown.size; $("dispTheme").value = shown.theme;
   renderFollows(setSaved.soundcloud, true);
   drawSettings();
 }
@@ -2152,6 +2217,11 @@ async function saveSettings() {
       $("discogsToken").value = "";
     }
     if (scChanged()) await readFollows($("scMe").value.trim());
+    if (displayChanged()) {
+      const d = displayDraft();
+      try { localStorage.setItem("display", JSON.stringify(d)); } catch {}
+      applyDisplay(d);
+    }
     drawSettings();
     $("settingsSaved").textContent = "Saved"; $("settingsSaved").classList.add("ok");
     if (body.sites || body.lookup_sites) await sitesChanged();
@@ -2169,6 +2239,7 @@ $("scMeRead").onclick = async () => {
   catch (x) { $("scMeStatus").textContent = x.message; $("scMeStatus").classList.add("error"); }
   finally { markSettings(); }
 };
+for (const id of ["dispSize", "dispTheme"]) $(id).addEventListener("change", markSettings);
 for (const id of ["scMe", "discogsToken"]) {
   $(id).addEventListener("input", markSettings);
   $(id).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); saveSettings(); } });
