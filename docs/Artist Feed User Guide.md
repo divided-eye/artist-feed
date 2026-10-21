@@ -4,7 +4,7 @@ Oct 16, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 78. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 79. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -219,7 +219,7 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 
 ### Downloads
 
-The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It needs your Bandcamp username, set in the Link Finder panel, and is off until you tick **Show the Downloads button** in Settings. While it is off the button stays in place, greyed out, and hovering over it says how to turn it on; purchases aren't watched for downloads and any waiting count is dropped, so switching it on starts fresh. Link Finder still uses your purchases either way.
+The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It needs your Bandcamp username, set in the Link Finder panel, and is off until you tick **Show the Downloads button**, right beside the username box in Link Finder. While it is off the button stays in place, greyed out, and hovering over it says how to turn it on; purchases aren't watched for downloads and any waiting count is dropped, so switching it on starts fresh. Link Finder still uses your purchases either way.
 
 - Two things are counted: a purchase made since the app first read your collection, and a pre-order whose release date has come. A pre-order is not counted when you buy it, only when it comes out.
 - Point at the button to see the list of releases. Click it to open your Bandcamp collection in a new tab, where the download links are; the count goes back to zero.
@@ -272,7 +272,7 @@ Each row has a **Rescan** checkbox. Tick it and press Find missing links to sear
 
 ## Settings
 
-The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes, the Downloads switch and a box for your SoundCloud username. Nothing changes until you press **Save** at the top of the panel. The button lights up when there is something to save, and the words beside it say **Unsaved changes**, then **Saved** once it is done. Pressing **Close** (or Escape) with changes not yet saved asks before dropping them.
+The **Settings** button (top right, beside Tracked Artists and Link Finder) opens two lists of checkboxes and a box for your SoundCloud username. Nothing changes until you press **Save** at the top of the panel. The button lights up when there is something to save, and the words beside it say **Unsaved changes**, then **Saved** once it is done. Pressing **Close** (or Escape) with changes not yet saved asks before dropping them.
 
 **Sites.** Switch a site off and it is gone from the app: no button for it at the top, no column in Tracked Artists, no checks for new posts, its posts left out of the feed, and Link Finder doesn't use it. This goes further than the site buttons at the top, which only narrow what the feed shows. The pages you track there are kept (saving Tracked Artists leaves them alone), so switching the site back on brings everything back. At least one of Bandcamp, SoundCloud and YouTube has to stay on. **Beatport** and **Discogs** are listed here too, marked Link Finder only and experimental: they have no feed, start switched off, and switching one on also ticks it for Link Finder (see Beatport and Discogs below).
 
@@ -336,7 +336,7 @@ The note under each result says where it came from, for example "In your purchas
 
 ### Options in the panel
 
-- **Your Bandcamp username.** Lets the app read your public collection page. Your purchases are checked before anything is searched.
+- **Your Bandcamp username.** Lets the app read your public collection page. Your purchases are checked before anything is searched. Beside it, **Show the Downloads button** switches the Downloads button (top right) on or off; it takes effect straight away and starts off.
 - **If a track isn't found, link to the artist's…** Chooses between SoundCloud profile first or Bandcamp page first. Changing it re-points results on screen and saved results without searching again.
 - **Search again for saved results.** Normally a track looked up before is answered from the saved result. Tick this to run every step again, for example after a track has been released or bought. Search again for not-found rows only keeps the saved answers for tracks that were found and searches again just for the rows saved as not found. Each row of a finished lookup also has its own Search again button.
 
@@ -628,6 +628,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 79 | Show the Downloads button moved from Settings to Link Finder, beside your Bandcamp username, and takes effect straight away. |
 | 78 | Beatport and Discogs are listed under Sites in Settings (Link Finder only, experimental), both off by default; switching one on also ticks it for Link Finder. Discogs results link the release's main page. Notes that both lookups may be unreliable. |
 | 77 | Settings has a Save button: changes take effect when you press it, the words beside it say Unsaved changes or Saved, and Close asks before dropping unsaved changes. The SoundCloud username and Discogs token are saved with it too; Read follows now and Remove token replace their own save buttons. |
 | 76 | Link Finder can also search Beatport (after Bandcamp) and Discogs (last resort, finds vinyl-only releases; needs a token), both off until ticked in Settings. The Downloads button is off by default and shows greyed out, with a tooltip, until switched on. |

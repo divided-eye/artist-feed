@@ -317,7 +317,8 @@
   .linkform .rowline input { width: 78px; } .tag.page { color: #7fc8dd; border-color: #2d5562; }
   .res details { margin-top: 3px; } .res summary { color: var(--muted); font-size: 12px; cursor: pointer; }
   .res details ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
-  .tools.second { padding-top: 8px; } .tools.second input { width: 170px; }
+  .tools.second { padding-top: 8px; } .tools.second input[type=text] { width: 170px; }
+  #downloadsOnLabel { margin-left: 8px; }
   .tools.second select { padding: 4px 8px; font-size: 13px; }
   .pair { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .range { display: inline-flex; gap: 6px; align-items: center; }
@@ -458,11 +459,6 @@
       <p class="hint" id="discogsHelp" hidden>Discogs only lets signed-in apps search it: make a free personal access token at discogs.com → Settings → Developers → <b>Generate new token</b>, and paste it here, then press <b>Save</b>.</p>
     </section>
     <section>
-      <h3>Bandcamp downloads</h3>
-      <p class="hint">The <b>Downloads</b> button counts purchases waiting to be downloaded from Bandcamp (new purchases, and pre-orders once they come out) and opens your collection. It needs your Bandcamp username, set in Link Finder. Off by default. Switched off, the button is greyed out and purchases aren't watched for it; Link Finder still uses your purchases.</p>
-      <div id="downloadsToggle" class="toggles"></div>
-    </section>
-    <section>
       <h3>Your SoundCloud account</h3>
       <p class="hint">Many SoundCloud profiles share a name. Enter your SoundCloud username and the profiles you follow there are preferred whenever a profile has to be picked by name: by <b>Find missing links</b> in Tracked Artists, and by Link Finder when a track isn't on SoundCloud. The list is read again every 12 hours. Your follows must be public.</p>
       <div class="toggles">
@@ -524,6 +520,7 @@
     <label class="opt" for="fanName">Your Bandcamp username</label>
     <input type="text" id="fanName" placeholder="username" spellcheck="false" autocomplete="off">
     <button class="btn small" id="fanSync">Read purchases</button>
+    <label class="opt" id="downloadsOnLabel" title="The Downloads button (top right) counts Bandcamp purchases and pre-orders ready to download, and opens your collection. Off by default. Switched off, it stays greyed out and purchases aren't watched for it; Link Finder still uses your purchases either way."><input type="checkbox" id="downloadsOn"> Show the Downloads button</label>
     <div class="spacer"></div>
     <span class="pair">
       <label class="opt" for="fallbackPref">If a track isn't found, link to the artist's</label>
@@ -1556,6 +1553,7 @@ let statusTimer = null;
 // Purchases ready to download: a count on the Downloads button. Opening Bandcamp clears it.
 function showDownloads(d) {
   const b = $("downloadsBtn");
+  if (d && document.activeElement !== $("downloadsOn")) $("downloadsOn").checked = d.on !== false;
   b.hidden = !d;
   if (b.hidden) return;
   const off = d.on === false || !d.fan;            // greyed out, with a tooltip saying how to turn it on
@@ -1565,7 +1563,7 @@ function showDownloads(d) {
     $("downloadsCount").hidden = true;
     b.classList.remove("has");
     b.title = d.on === false
-      ? "Downloads is switched off. Turn it on in Settings → Bandcamp downloads to see when your Bandcamp purchases and pre-orders are ready to download."
+      ? "Downloads is switched off. Turn it on in Link Finder (tick Show the Downloads button, beside your Bandcamp username) to see when your Bandcamp purchases and pre-orders are ready to download."
       : "Set your Bandcamp username in Link Finder to use Downloads.";
     return;
   }
@@ -1975,6 +1973,11 @@ $("fallbackPref").onchange = async e => {
   if (lookupJob) { editingRow = null; renderLookup(await api(`/api/lookup/${lookupJob.id}`)); }   // rows on screen follow the choice
 };
 $("fanDeep").onclick = async () => { await api("/api/collection/tracklists", { method: "POST" }); setTimeout(loadFan, 400); };
+$("downloadsOn").onchange = async e => {
+  const on = e.target.checked;
+  try { await api("/api/settings", { method: "PUT", body: { downloads: on } }); pollStatus(); }
+  catch (x) { e.target.checked = !on; $("fanStatus").textContent = x.message; }
+};
 $("fanSync").onclick = async () => {
   try { await api("/api/collection", { method: "POST", body: { fan: $("fanName").value } }); } catch (x) { $("fanStatus").textContent = x.message; return; }
   setTimeout(loadFan, 400);
@@ -2059,7 +2062,6 @@ function settingsBody() {
   for (const x of setDraft.sites) if (setSaved.sites.find(y => y.key === x.key)?.on !== x.on) sitesNow[x.key] = x.on;
   if (Object.keys(sitesNow).length) body.sites = sitesNow;
   if (pickedSites(setDraft).join() !== pickedSites(setSaved).join()) body.lookup_sites = pickedSites(setDraft);
-  if (setDraft.downloads.on !== setSaved.downloads.on) body.downloads = setDraft.downloads.on;
   const token = $("discogsToken").value.trim();
   if (token) body.discogs_token = token;
   else if (setDraft.dropToken) body.discogs_token = "";
@@ -2090,9 +2092,6 @@ function drawSettings() {
     return el("label", { class: extra.disabled ? "off" : "" }, input,
       color ? el("span", { class: "dot", style: `background:${color}` }) : null, label);
   };
-  const dlBox = box(st.downloads.on, "Show the Downloads button", null, on => { st.downloads.on = on; });
-  $("downloadsToggle").replaceChildren(dlBox, ...(st.downloads.on && !st.downloads.fan
-    ? [el("span", { class: "hint", text: "Set your Bandcamp username in Link Finder for the button to appear." })] : []));
   $("siteToggles").replaceChildren(...st.sites.map(x => {
     const lab = box(x.on, x.lookup_only ? el("span", {}, x.label, " ", el("span", { class: "order", text: "Link Finder only · experimental" })) : x.label, x.color, on => {
       x.on = on;
@@ -2155,7 +2154,6 @@ async function saveSettings() {
     if (scChanged()) await readFollows($("scMe").value.trim());
     drawSettings();
     $("settingsSaved").textContent = "Saved"; $("settingsSaved").classList.add("ok");
-    if ("downloads" in body) pollStatus();
     if (body.sites || body.lookup_sites) await sitesChanged();
   } catch (x) {
     $("settingsError").textContent = x.message;
