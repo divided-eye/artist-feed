@@ -29,7 +29,7 @@ What it does not do:
 
 ## Installing, running and updating
 
-There are two ways to run the app. **Docker** is the recommended one: Docker Desktop is a free program that runs the app in its own sealed-off space, with everything it needs included, and starts it again whenever the computer starts. You don't need to learn Docker to use it; the few commands below are all there is. If you would rather not install Docker, see **Running without Docker** further down.
+There are two ways to run the app. **Docker** is the recommended one: Docker Desktop is a free program that runs the app in its own sealed-off space, with everything it needs included, and starts it again whenever the computer starts. You don't need to learn Docker to use it; the few commands below are all there is. If you would rather not install Docker, see **Running without Docker** further down. The app runs on Windows and on a Mac; the steps below are written for Windows, and **On a Mac** lists what differs.
 
 Whichever way you choose, the app runs on your own computer, and you use it in your web browser at http://localhost:8080. Other devices on your home network can open it at `http://<your computer's address>:8080`.
 
@@ -45,7 +45,7 @@ Docker Desktop is free for personal use. It needs a 64-bit Windows 10 or 11, or 
 
 1. Get the app's files. Either download them from GitHub with Git (`git clone https://github.com/divided-eye/artist-feed.git`, see Keeping it in Git), or unzip the zip you were given. Put the folder somewhere permanent, such as `Documents\artist-feed`.
 2. Open that folder in File Explorer and check it directly contains `docker-compose.yml`. ("Extract all" on Windows often adds an extra outer folder; if so, go one level in.)
-3. Open a terminal in that folder: in File Explorer, click the address bar, type `powershell` and press Enter. On a Mac, open Terminal and type ` cd  ` followed by the folder's path.
+3. Open a terminal in that folder: in File Explorer, click the address bar, type `powershell` and press Enter. On a Mac, open Terminal, type `cd` and a space, drag the folder onto the Terminal window and press Enter.
 4. Make sure Docker Desktop is running, then type `docker compose up -d --build` and press Enter. The first time takes a few minutes while it downloads and builds; later starts take seconds. When it finishes, it prints that the container is started.
 5. Open http://localhost:8080 in your browser. Click **Tracked Artists**, add a few artists, and press **Save changes**.
 
@@ -110,7 +110,7 @@ pip install -r requirements.txt
 
 The first line makes a private Python environment for the app in a `.venv` folder, the second switches to it, and the third installs the libraries the app needs. If PowerShell refuses the second line because running scripts is disabled, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, answer Y, and try again.
 
-On a Mac the same steps are `python3 -m venv .venv`, `source .venv/bin/activate` and `pip install -r requirements.txt`.
+On a Mac the steps differ slightly; see **On a Mac** below.
 
 **Starting it**, each time, in PowerShell in the app's folder:
 
@@ -124,6 +124,43 @@ Then open http://localhost:8080. Leave the window open while you use the app; cl
 **Where things are.** Your data is saved in the `data` folder inside the app's folder, the same as with Docker, so you can switch between the two ways and keep everything. The settings in `docker-compose.yml` don't apply; set them in PowerShell before starting instead, for example `$env:REFRESH_MINUTES = "30"`.
 
 **Updating** works as with Docker (`git pull`, or a new folder with your `data` folder copied in), then run `pip install -r requirements.txt` again in case the libraries changed, and start the app as above.
+
+### On a Mac
+
+Artist Feed runs on a Mac the same way it runs on Windows, on both Apple silicon (M1 and later) and Intel Macs. Everything above applies, with these differences.
+
+**Docker Desktop.** On docker.com, pick the download that matches your Mac: **Apple silicon** or **Intel chip**. Apple menu → **About This Mac** shows which, next to Chip or Processor. Open the downloaded `.dmg`, drag Docker into Applications, open it from there and allow the permissions it asks for. There is no WSL step; that is Windows only. Docker Desktop supports the current version of macOS and the two before it.
+
+**Getting the files.** Either download the zip from the GitHub page (**Code** → **Download ZIP**; Safari unzips it into Downloads by itself) and move the folder somewhere permanent such as `Documents/artist-feed`, or use Git: the first time you type `git` in Terminal, macOS offers to install Apple's command line tools, which include it. Then run `git clone https://github.com/divided-eye/artist-feed.git` in the folder you want it in.
+
+**Opening a terminal in the app's folder.** Open Terminal (in Applications → Utilities, or press Cmd+Space and type Terminal). Type `cd` and a space, drag the app's folder from Finder onto the Terminal window to fill in its path, and press Enter. Every command in this guide, `docker compose …` and `git …`, is typed there exactly as written. Where the guide says PowerShell, read Terminal.
+
+**Starting with the computer.** In Docker Desktop's Settings, under General, tick **Start Docker Desktop when you sign in to your computer**.
+
+**Other devices on your network.** The first time, macOS may ask whether Docker may accept incoming network connections. Allow it if you want to open the app from a phone or another computer. Your Mac's address is in System Settings → Wi-Fi → **Details** beside the connected network (or System Settings → Network for a cable).
+
+**Sleep.** The app only checks for new posts while the Mac is awake. When it wakes, the app catches up, as after any time switched off.
+
+**Keys.** For a hard refresh, use Cmd+Shift+R in Chrome or Firefox, or Cmd+Option+R in Safari, instead of Ctrl+Shift+R. To stop the app in a Terminal window, press Control+C (Control, not Command).
+
+**Running without Docker.** Install Python 3.12 from python.org/downloads (the macOS installer); the Python that comes with Apple's command line tools is too old to rely on. Then, in Terminal in the app's folder, run once:
+
+```
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+and to start it each time:
+
+```
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
+
+Settings are set with `export` before starting, instead of `$env:`, for example `export REFRESH_MINUTES=30`.
+
+These are the standard Docker and Python steps for macOS, and everything the app uses is available for both kinds of Mac, but the app itself hasn't been tried on a Mac yet.
 
 ## Using the feed
 
