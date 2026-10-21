@@ -10,7 +10,7 @@ import os
 import re
 from datetime import datetime
 from email.utils import parsedate_to_datetime
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -245,7 +245,7 @@ def parse_release(html: str, url: str) -> dict:
     out = {"url": _clean(url), "title": None, "image": None, "author": None,
            "published_at": None, "is_release": False,
            "label": None, "release": None, "embed": None, "tracks": None, "posted_at": None,
-           "release_url": None, "listed_tracks": [], "sold_at": None}
+           "release_url": None, "listed_tracks": [], "sold_at": None, "placeholder": False}
     ld_tracks, publisher, texts = [], None, []
 
     for script in soup.find_all("script", type="application/ld+json"):
@@ -300,6 +300,8 @@ def parse_release(html: str, url: str) -> dict:
         out["tracks"] = tracks or ld_tracks
     else:
         out["sold_at"] = _sold_elsewhere(soup, url)
+        # No tracks and nothing physical either: a release shown here that can't be bought here.
+        out["placeholder"] = not tralbum.get("packages")
     # A track page names its album in the player data too, sometimes only there.
     album_link = tralbum.get("album_url")
     if not out["release_url"] and "/track/" in out["url"] and isinstance(album_link, str) and album_link.strip():
@@ -370,6 +372,15 @@ def parse_release(html: str, url: str) -> dict:
     return out
 
 
+NOT_FOR_SALE = "Not for sale on this page"
+
+
+def _same_words(a, b):
+    from ..lookup import norm                  # (imported here: lookup imports this module)
+    a, b = norm(a or ""), norm(b or "")
+    return bool(a and b) and (a == b or a in b or b in a)
+
+
 class Bandcamp(Source):
     key = "bandcamp"
     label = "Bandcamp"
@@ -406,6 +417,25 @@ class Bandcamp(Source):
         r.raise_for_status()
         return r
 
+    async def _seller(self, client, url, title, artist):
+        """A release with no tracks and nothing to buy that doesn't say where it is sold: one Bandcamp
+        search for the same title and artist, on another page. Returns that page, or None."""
+        if not title:
+            return None
+        try:
+            r = await self._get(client, "https://bandcamp.com/search?" + urlencode(
+                {"q": f"{artist or ''} {title}".strip(), "item_type": "a"}))
+        except pace.Busy:
+            raise
+        except Exception:
+            return None
+        here = urlparse(url).netloc.lower()
+        for c in parse_search(r.text):
+            if c["type"] in ("album", "") and urlparse(c["url"]).netloc.lower() != here \
+                    and _same_words(c["name"], title) and (not artist or _same_words(c["artist"], artist)):
+                return c["url"]
+        return None
+
     async def fetch(self, client, account, known_ids):
         base = account["url"]
         r = await self._get(client, base + "/music")
@@ -441,12 +471,15 @@ class Bandcamp(Source):
             try:
                 page = await self._get(client, url)
                 rel = parse_release(page.text, url)
+                if rel["placeholder"] and not rel["sold_at"]:
+                    rel["sold_at"] = await self._seller(client, url, rel["title"] or it["title"],
+                                                        rel["author"] or it["author"] or result.display_name)
                 if rel["sold_at"]:
                     # Shown here but sold from another page: link and play that one instead, so
                     # the feed shows one copy and its link is a page where the release can be bought.
-                    url = rel["sold_at"]
-                    real = parse_release((await self._get(client, url)).text, url)
-                    if real["is_release"] or real["tracks"]:
+                    real = parse_release((await self._get(client, rel["sold_at"])).text, rel["sold_at"])
+                    if real["tracks"] or (real["is_release"] and not real["placeholder"]):
+                        url = rel["sold_at"]
                         rel = {**real, "author": real["author"] or rel["author"],
                                "published_at": real["published_at"] or rel["published_at"]}
             except pace.Busy:
@@ -463,7 +496,8 @@ class Bandcamp(Source):
                 author=rel["author"] or it["author"],
                 published_at=rel["published_at"], posted_at=rel["posted_at"],
                 label=rel["label"], release=rel["release"] or rel["title"] or it["title"],
-                embed=rel["embed"], tracks=rel["tracks"]))
+                embed=rel["embed"], tracks=rel["tracks"],
+                note=NOT_FOR_SALE if rel["placeholder"] else None))
         db.kv_set(fail_key, json.dumps(fails))
         unreadable = sum(1 for n in fails.values() if n >= GIVE_WAY_AFTER)
         left = len(new) - len(result.posts) - unreadable

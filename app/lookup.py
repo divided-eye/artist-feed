@@ -551,9 +551,10 @@ def page_index():
     return _pages["index"]
 
 
-PAGE_FORMAT = 4   # 2: also keeps track names that are only written out in the description
+PAGE_FORMAT = 5   # 2: also keeps track names that are only written out in the description
                   # 3: a track page's album is also read from the player data
                   # 4: a page with no tracks that is sold from another page gives that page
+                  # 5: a page with no tracks and nothing to buy is marked (a placeholder)
 
 
 def needs_rereading(saved, url) -> bool:
@@ -568,7 +569,7 @@ def needs_rereading(saved, url) -> bool:
     if v < 3 and "/track/" in url and not saved.get("release_url"):
         return True
     # A page with no tracks may only show a release that another page sells.
-    return v < 4 and not saved.get("tracks")
+    return v < 5 and not saved.get("tracks")
 
 
 def album_of(rel, url):
@@ -599,6 +600,7 @@ async def get_release(net, url, follow=True):
     data = {"url": rel["url"], "asked": url, "title": rel["title"] or "", "artist": rel["author"] or "",
             "year": (rel["published_at"] or "")[:4], "release": rel["release"] or "",
             "release_url": rel["release_url"] or "", "label": rel["label"] or "",
+            "placeholder": rel["placeholder"],
             "tracks": [{"title": t.title, "artist": t.artist or ""} for t in rel["tracks"] or []]
                       + [{"title": t, "artist": "", "listed": True} for t in rel["listed_tracks"]],
             "v": PAGE_FORMAT if not rel["sold_at"] else PAGE_FORMAT - 1}   # the other page unread: try again next time
@@ -639,6 +641,8 @@ def match_in_release(artist, title, rel):
     if not cands and rel.get("title"):              # no track list on the page: go by its title
         cands = [{"name": rel["title"], "artists": extra, "context": around}]
     verdict, cand = best_candidate(artist, title, cands)
+    if verdict == "bandcamp" and rel.get("placeholder"):
+        verdict = "bandcamp_check"      # nothing to buy there: only a fallback, to be checked
     return verdict, (cand or {}).get("name", "")
 
 
@@ -646,7 +650,7 @@ def release_result(rel, verdict, found, source):
     """The link to give for a matched page: the album when the page is a track on one."""
     return {"status": verdict, "site": "Bandcamp", "url": rel.get("release_url") or rel["url"],
             "release": rel.get("release") or rel.get("title") or "", "year": rel.get("year") or "",
-            "found": found, "note": source}
+            "found": found, "note": source + ("; nothing to buy on this page" if rel.get("placeholder") else "")}
 
 
 # ---------- Bandcamp: search ----------
@@ -731,8 +735,12 @@ async def search_step(net, artist, title, steps):
         try:    # the page itself gives the album a track is on, and the release date
             rel = await get_release(net, cand["url"])
             if rel:
-                out.update(url=rel.get("release_url") or out["url"], release=rel.get("release") or out["release"],
+                out.update(url=rel.get("release_url") or rel.get("url") or out["url"], release=rel.get("release") or out["release"],
                            year=rel.get("year") or out["year"])
+                if rel.get("placeholder"):             # nothing to buy there: keep looking
+                    out["note"] += "; nothing to buy on this page"
+                    if verdict == "bandcamp":
+                        verdict = out["status"] = "bandcamp_check"
         except Blocked:
             raise
         except Exception:

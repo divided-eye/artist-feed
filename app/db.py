@@ -117,7 +117,7 @@ def conn() -> sqlite3.Connection:
 ADDED_POST_COLUMNS = {
     "label": "TEXT", "release": "TEXT", "embed": "TEXT",
     "detailed": "INTEGER NOT NULL DEFAULT 0", "posted_at": "TEXT",
-    "hidden": "INTEGER NOT NULL DEFAULT 0",
+    "hidden": "INTEGER NOT NULL DEFAULT 0", "note": "TEXT",
 }
 # Raise this when the sources start collecting something new: posts stored with
 # a lower number are re-read (a few per refresh) to pick it up.
@@ -272,8 +272,8 @@ def save_result(account, result):
         for p in result.posts:
             c.execute(
                 "INSERT INTO posts(account_id, external_id, title, url, image, kind, author,"
-                " published_at, first_seen, label, release, embed, posted_at, detailed)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                " published_at, first_seen, label, release, embed, posted_at, detailed, note)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(account_id, external_id) DO UPDATE SET title=excluded.title, url=excluded.url,"
                 " image=COALESCE(excluded.image, image),"
                 " author=COALESCE(excluded.author, author),"
@@ -281,9 +281,9 @@ def save_result(account, result):
                 " label=COALESCE(excluded.label, label),"
                 " release=COALESCE(excluded.release, release),"
                 " embed=COALESCE(excluded.embed, embed),"
-                " posted_at=COALESCE(excluded.posted_at, posted_at), detailed=excluded.detailed",
+                " posted_at=COALESCE(excluded.posted_at, posted_at), detailed=excluded.detailed, note=excluded.note",
                 (account["id"], p.external_id, p.title, p.url, p.image, p.kind, p.author,
-                 p.published_at, seen, p.label, p.release, p.embed, p.posted_at, DETAIL_VERSION))
+                 p.published_at, seen, p.label, p.release, p.embed, p.posted_at, DETAIL_VERSION, p.note))
             if p.tracks is not None:
                 post_id = c.execute("SELECT id FROM posts WHERE account_id=? AND external_id=?",
                                     (account["id"], p.external_id)).fetchone()[0]
@@ -475,7 +475,7 @@ def feed(source=None, artist_id=None, limit=60, offset=0, q=None, more=None):
         "(SELECT COALESCE(GROUP_CONCAT(title, ' '), '') FROM tracks WHERE post_id=p.id)"], more)
     sql = (
         "SELECT p.id, p.title, p.url, p.image, p.kind, p.author, p.published_at, p.first_seen,"
-        " p.label, p.release, p.embed, p.hidden, a.source, a.avatar, a.display_name,"
+        " p.label, p.release, p.embed, p.hidden, p.note, a.source, a.avatar, a.display_name,"
         " EXISTS(SELECT 1 FROM played WHERE post_id=p.id) AS played,"
         " ar.id AS artist_id, ar.name AS artist,"
         " (SELECT COUNT(*) FROM tracks WHERE post_id=p.id) AS track_count,"
@@ -505,7 +505,7 @@ def tracks(source=None, artist_id=None, q=None, sort="date", direction="desc",
         f"SELECT p.id AS post_id, t.id AS track_id, {T_ARTIST} AS artist, {T_LABEL} AS label,"
         f" {T_RELEASE} AS release, {T_TRACK} AS track, t.duration, t.position,"
         f" t.ext_id AS track_ext_id, {WHEN} AS released, p.published_at, {POSTED} AS posted,"
-        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind, p.hidden AS release_hidden,"
+        " COALESCE(t.url, p.url) AS url, p.url AS post_url, p.embed, p.image, p.kind, p.hidden AS release_hidden, p.note,"
         f" EXISTS(SELECT 1 FROM hidden_tracks h WHERE h.post_id=p.id AND h.track={TRACK_KEY}) AS track_hidden,"
         f" (p.hidden OR EXISTS(SELECT 1 FROM hidden_tracks h WHERE h.post_id=p.id AND h.track={TRACK_KEY})) AS hidden,"
         " COALESCE(t.ext_id, t.title, '') AS track_key,"

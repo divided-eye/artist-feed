@@ -142,6 +142,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     border-radius: 999px; color: #fff; z-index: 1; }
   .info { padding: 10px 12px 12px; min-width: 0; }
   .title { font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .sub.note, td small.note { color: var(--warn); }
   .sub { color: var(--muted); font-size: 13px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .empty { text-align: center; color: var(--muted); padding: 80px 16px; }
   .empty b { color: var(--text); display: block; font-size: 18px; margin-bottom: 6px; }
@@ -718,6 +719,9 @@ function closePlayer() {
   document.querySelectorAll(".playing").forEach(n => n.classList.remove("playing"));
 }
 
+// What a card's note means, in its tooltip.
+const NOTE_TIPS = { "Not for sale on this page": "This page shows the release but has no tracks and nothing to buy, and doesn't say where it is sold. A Bandcamp search didn't find the page that sells it." };
+
 function card(p) {
   const s = src(p.source), link = safeUrl(p.url) || "#";
   const who = p.author && p.author.toLowerCase() !== p.artist.toLowerCase() ? `${p.artist} · ${p.author}` : p.artist;
@@ -737,7 +741,8 @@ function card(p) {
   node.append(art, el("div", { class: "info" },
     el("div", { class: "title" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", text: p.title })),
     el("div", { class: "sub", text: [who, p.label].filter(Boolean).join(" · ") }),
-    el("div", { class: "sub", text: [size, clock(p.duration), when].filter(Boolean).join(" · ") })));
+    el("div", { class: "sub", text: [size, clock(p.duration), when].filter(Boolean).join(" · ") }),
+    p.note ? el("div", { class: "sub note", text: p.note, title: NOTE_TIPS[p.note] || null }) : null));
   return node;
 }
 
@@ -1001,7 +1006,9 @@ function listRow(r) {
       : el("a", { class: "rowplay", href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${name} on ${s.label}`, text: "↗" })),
     relCell(r, it, name),
     ...colOrder.filter(k => !colHidden.has(k)).map(k => ({
-      artist: () => cell(r.artist, "t"), label: () => cell(r.label, "t dim"), release: () => cell(r.release, "t"), track: () => cell(r.track, "t"),
+      artist: () => cell(r.artist, "t"), label: () => cell(r.label, "t dim"), release: () => r.note
+        ? el("td", { class: "t", title: `${r.release || ""} (${r.note})` }, r.release || "", el("small", { class: "note", text: " · " + r.note }))
+        : cell(r.release, "t"), track: () => cell(r.track, "t"),
       duration: () => el("td", { class: "n dim", text: clock(r.duration) }),
       date: () => el("td", { class: "n dim", text: (r.published_at || "").slice(0, 4), title: r.published_at ? "Released " + r.published_at.slice(0, 10) : null }),
       released: () => el("td", { class: "n dim", text: (r.published_at || "").slice(0, 10), title: r.published_at ? "Release date given by the artist" : "No release date given" }),

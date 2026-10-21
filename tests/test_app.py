@@ -2138,3 +2138,59 @@ def test_a_release_sold_from_another_page_links_to_that_page(client):
     # Link Finder gives the page that sells it
     assert page["url"] == real_url and [t["title"] for t in page["tracks"]] == ["52 Blue", "Deep Water"]
     assert lookup.release_result(page, "bandcamp", "", "")["url"] == real_url
+
+
+def test_a_release_with_nothing_to_buy_and_no_link_is_searched_for_once_then_noted(client):
+    """A page showing a release with no tracks, nothing to buy and no link to where it is sold."""
+    import asyncio
+    from app import db, lookup
+    from app.sources import SOURCES
+    from app.sources.bandcamp import NOT_FOR_SALE
+    by = {"byArtist": {"name": "Herbalistek"}}
+    found_shell = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra=by)
+    lost_shell = release("Lost One", "20 Jan 2026 00:00:00 GMT", ld_extra=by)
+    tralbum = {"id": 778, "item_type": "album", "trackinfo": [{"title": "52 Blue", "duration": 300, "track_id": 7101}]}
+    real = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra={**by, "publisher": {"name": "Observatory Records"}}).replace(
+        "</head>", "</head><body><script data-tralbum='" + json.dumps(tralbum) + "'></script></body>")
+    grid = ('<html><body><p id="band-name-location"><span class="title">Herbalistek</span></p><ol id="music-grid">'
+            '<li><a href="/album/52-blue"><p class="title">52 Blue</p></a></li>'
+            '<li><a href="/album/lost-one"><p class="title">Lost One</p></a></li></ol></body></html>')
+    searches = []
+
+    def site(request):
+        host, path = request.url.host, request.url.path
+        if host == "herbalist.bandcamp.com":
+            return httpx.Response(200, text={"/music": grid, "/album/52-blue": found_shell, "/album/lost-one": lost_shell}.get(path, ""))
+        if host == "bandcamp.com" and path == "/search":
+            searches.append(request.url.params["q"])
+            if "52 Blue" in request.url.params["q"]:
+                return httpx.Response(200, text="<ul>" + result("52 Blue", "https://herbalist.bandcamp.com/album/52-blue", "by Herbalistek", kind="ALBUM")
+                                      + result("52 Blue", "https://observatory.bandcamp.com/album/52-blue", "by Herbalistek", kind="ALBUM") + "</ul>")
+            return httpx.Response(200, text="<ul></ul>")
+        if host == "observatory.bandcamp.com" and path == "/album/52-blue":
+            return httpx.Response(200, text=real)
+        return httpx.Response(404)
+
+    assert parse_release(found_shell, "https://herbalist.bandcamp.com/album/52-blue")["placeholder"]
+    assert not parse_release(real, "https://observatory.bandcamp.com/album/52-blue")["placeholder"]
+    account = {"id": 987656, "url": "https://herbalist.bandcamp.com", "meta": {}}
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(site)) as c:
+            got = await SOURCES["bandcamp"].fetch(c, account, set())
+            page = await lookup.get_release(lookup.Net(c), "https://herbalist.bandcamp.com/album/lost-one")
+            return got, page
+    try:
+        got, page = asyncio.run(go())
+    finally:
+        db.execute("DELETE FROM kv WHERE key='bandcamp_unread:987656'")
+        db.execute("DELETE FROM web_cache WHERE key LIKE '%herbalist%'")
+    blue, lost = got.posts
+    assert searches == ["Herbalistek 52 Blue", "Herbalistek Lost One"]                  # once each
+    assert blue.url == "https://observatory.bandcamp.com/album/52-blue" and blue.note is None
+    assert [t.title for t in blue.tracks] == ["52 Blue"] and blue.label == "Observatory Records"
+    assert lost.url == "https://herbalist.bandcamp.com/album/lost-one" and lost.note == NOT_FOR_SALE
+    # Link Finder: such a page is only a fallback to check, and says why
+    assert page["placeholder"]
+    assert lookup.match_in_release("Herbalistek", "Lost One", page)[0] == "bandcamp_check"
+    assert "nothing to buy" in lookup.release_result(page, "bandcamp_check", "", "Found on the artist's page")["note"]

@@ -38,6 +38,7 @@ class Post:
     release: Optional[str] = None       # the album/EP this belongs to
     embed: Optional[str] = None         # what the site's embeddable player needs (see index.html)
     tracks: Optional[list] = None       # list of Track; None = leave stored tracks alone
+    note: Optional[str] = None          # something to know about it, shown on its card ("Not for sale on this page")
 
 
 @dataclass
