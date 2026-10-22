@@ -23,7 +23,6 @@ Artist Feed is a small web app that runs on your own computer and does two jobs.
 
 What it does not do:
 
-- Instagram is not included. The app is built so that another site can be added as one file, but none has been.
 - It has no login. Anyone who can reach it on your network can use and change it.
 - It does not download or store audio. Listening uses each site's own embedded player.
 
@@ -567,7 +566,7 @@ View, column widths, page width and Hide no-preview tracks are stored in the bro
 - **Labels that never name the artist.** A label release whose title, address and track list do not name the artist is not matched, because accepting title-only matches would give wrong links for common titles.
 - **Label is often blank in the feed.** On Bandcamp it is filled in when a release sits on a label's page. On SoundCloud it appears only when the uploader entered it.
 - **Excel may store a title such as "02" as the number 2.** Format the cell as text if a numeric title is not matching.
-- **No Instagram, no login, no "mark as unheard".**
+- **No login, no "mark as unheard".**
 - YouTube has only been tested against stand-in copies of its pages. Its channel feed holds the 15 newest videos, has no running times and includes Shorts. Its search page is not an official interface and may change, or ask for a sign-in or a cookie choice in some countries; if it stops answering, YouTube search steps say so and the rest of the lookup carries on.
 
 ## FAQ
