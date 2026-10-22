@@ -4,7 +4,7 @@ Oct 21, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 83. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 84. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -640,6 +640,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 84 | Not for sale on this page is only shown when the Bandcamp page itself says the release has no tracks, so a page the app couldn't fully read is no longer marked. |
 | 83 | Workspaces: named groups of artists, each with a checkbox column in Tracked Artists and a choice in the new workspace menu at the top (Focus becomes the first). Import follows adds the artists and labels a SoundCloud account or Bandcamp fan follows. Find missing links searches only the rows shown while the table is filtered, and each row has its own Find links. |
 | 82 | A Bandcamp release with no tracks and nothing to buy that doesn't say where it is sold: the feed searches Bandcamp once for the page that sells it, else marks the card Not for sale on this page. Link Finder keeps looking past such a page and gives it only as a last resort, marked Needs review. |
 | 81 | A release shown on an artist's Bandcamp page but sold from another page (a label's), with no tracks and nothing to buy, now links and plays the page that sells it, in the feed and in Link Finder. Releases already saved without tracks are read again once. |

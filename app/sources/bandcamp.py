@@ -300,8 +300,10 @@ def parse_release(html: str, url: str) -> dict:
         out["tracks"] = tracks or ld_tracks
     else:
         out["sold_at"] = _sold_elsewhere(soup, url)
-        # No tracks and nothing physical either: a release shown here that can't be bought here.
-        out["placeholder"] = not tralbum.get("packages")
+        # No tracks and nothing physical either, and the page says so itself ("0 track album"):
+        # a release shown here that can't be bought here.
+        out["placeholder"] = not tralbum.get("packages") and bool(
+            re.match(r"\s*0 track album", _meta(soup, "og:description") or "", re.I))
     # A track page names its album in the player data too, sometimes only there.
     album_link = tralbum.get("album_url")
     if not out["release_url"] and "/track/" in out["url"] and isinstance(album_link, str) and album_link.strip():

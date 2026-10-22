@@ -2148,8 +2148,9 @@ def test_a_release_with_nothing_to_buy_and_no_link_is_searched_for_once_then_not
     from app.sources import SOURCES
     from app.sources.bandcamp import NOT_FOR_SALE
     by = {"byArtist": {"name": "Herbalistek"}}
-    found_shell = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra=by)
-    lost_shell = release("Lost One", "20 Jan 2026 00:00:00 GMT", ld_extra=by)
+    zero = '<meta property="og:description" content="0 track album">'
+    found_shell = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra=by, head=zero)
+    lost_shell = release("Lost One", "20 Jan 2026 00:00:00 GMT", ld_extra=by, head=zero)
     tralbum = {"id": 778, "item_type": "album", "trackinfo": [{"title": "52 Blue", "duration": 300, "track_id": 7101}]}
     real = release("52 Blue", "20 Jan 2026 00:00:00 GMT", ld_extra={**by, "publisher": {"name": "Observatory Records"}}).replace(
         "</head>", "</head><body><script data-tralbum='" + json.dumps(tralbum) + "'></script></body>")
@@ -2174,6 +2175,7 @@ def test_a_release_with_nothing_to_buy_and_no_link_is_searched_for_once_then_not
 
     assert parse_release(found_shell, "https://herbalist.bandcamp.com/album/52-blue")["placeholder"]
     assert not parse_release(real, "https://observatory.bandcamp.com/album/52-blue")["placeholder"]
+    assert not parse_release(release("No List", "20 Jan 2026 00:00:00 GMT"), "https://x.bandcamp.com/album/no-list")["placeholder"]   # unknown: not marked
     account = {"id": 987656, "url": "https://herbalist.bandcamp.com", "meta": {}}
 
     async def go():
