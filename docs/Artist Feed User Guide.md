@@ -28,9 +28,19 @@ What it does not do:
 
 ## Installing, running and updating
 
-There are two ways to run the app. **Docker** is the recommended one: Docker Desktop is a free program that runs the app in its own sealed-off space, with everything it needs included, and starts it again whenever the computer starts. You don't need to learn Docker to use it; the few commands below are all there is. If you would rather not install Docker, see **Running without Docker** further down. The app runs on Windows and on a Mac; the steps below are written for Windows, and **On a Mac** lists what differs.
+There are three ways to run the app, compared under Which way to choose. **Docker** is the recommended one: Docker Desktop is a free program that runs the app in its own sealed-off space, with everything it needs included, and starts it again whenever the computer starts. You don't need to learn Docker to use it; the few commands below are all there is. If you would rather not install Docker, see The desktop app or **Running without Docker** further down. The app runs on Windows and on a Mac; the steps below are written for Windows, and **On a Mac** lists what differs.
 
 Whichever way you choose, the app runs on your own computer, and you use it in your web browser at http://localhost:8080. Other devices on your home network can open it at `http://<your computer's address>:8080`.
+
+### Which way to choose
+
+There are three ways to run Artist Feed. All three keep the same kind of data, so you can move between them later.
+
+- **Docker (recommended, and the easiest to keep up to date).** Updating is two commands (see *Updating to a new version*), your data stays where it is, the app starts by itself with the computer, and every new feature arrives here first. The price is installing Docker Desktop once and typing a few commands.
+- **The desktop app (an .exe).** No Docker, no browser and, once you have the .exe, no commands: double-click **ArtistFeed.exe** and it opens in its own window. It is a separate version of the app written for desktops, with the same features. Each feature reaches it after the Docker version, and updating means swapping in a newly built .exe. See *The desktop app* below.
+- **Running without Docker (Python).** The Docker version's own code, run with Python instead. For people who don't want Docker but don't mind leaving a terminal window open. See *Running without Docker*.
+
+If you are not sure, choose Docker. Choose the desktop app if typing commands is the bigger obstacle and you are happy to fetch a new .exe now and then.
 
 ### Installing Docker Desktop (once)
 
@@ -53,6 +63,20 @@ From then on the app starts by itself whenever Docker Desktop starts. To make Do
 If the page doesn't open: check Docker Desktop is running and the app is listed under **Containers** with a green dot. `docker compose logs --tail 50`, run in the app's folder, shows its latest messages. If another program already uses port 8080, change `8080:8000` in `docker-compose.yml` to, say, `8090:8000`, run `docker compose up -d` again and open http://localhost:8090.
 
 ### Updating to a new version
+
+**The quick way (with Git).** If the app's folder came from `git clone` (see *Keeping it in Git*), updating is two commands. Open PowerShell, go to the app's folder, then fetch the new version and rebuild:
+
+```powershell
+cd "C:\Users\you\Documents\artist-feed"
+git pull
+docker compose up -d --build
+```
+
+`cd` (change directory) moves PowerShell into a folder, so the next commands act on that folder. Replace the path with your own app folder, the one that contains `docker-compose.yml`. Keep the double quotes; they matter when the path has spaces in it. To find the path, open the folder in File Explorer and click the address bar: the path it shows is what goes after `cd`. Or type `cd` and a space in PowerShell, drag the folder from File Explorer onto the PowerShell window, and press Enter. If PowerShell is already open in the app's folder, as when you open it from that folder's address bar, skip the `cd` line.
+
+`git pull` downloads the new version's files, and `docker compose up -d --build` rebuilds and restarts the app with them. Your data folder is never touched. When it finishes, reload the page and check the version number beside the title.
+
+**Without Git**, follow these steps:
 
 1. (Without Git; with Git, see Keeping it in Git below.) Unzip the new version to a **new** folder. Do not unzip over the old one.
 2. Check that the folder you are in directly contains `docker-compose.yml`. "Extract all" on Windows often adds an extra outer folder.
@@ -123,6 +147,36 @@ Then open http://localhost:8080. Leave the window open while you use the app; cl
 **Where things are.** Your data is saved in the `data` folder inside the app's folder, the same as with Docker, so you can switch between the two ways and keep everything. The settings in `docker-compose.yml` don't apply; set them in PowerShell before starting instead, for example `$env:REFRESH_MINUTES = "30"`.
 
 **Updating** works as with Docker (`git pull`, or a new folder with your `data` folder copied in), then run `pip install -r requirements.txt` again in case the libraries changed, and start the app as above.
+
+### The desktop app (no Docker)
+
+Artist Feed also comes as a desktop program: **ArtistFeed.exe** on Windows (and versions for Mac and Linux). It does what the Docker version does, with the feed, Tracked Artists, Link Finder and Settings, in a window of its own instead of a browser tab. Its code is in its own repository, **divided-eye/artist-feed-desktop** on GitHub. It is the same app rebuilt for desktops, so each new feature comes to it after the Docker version.
+
+**Getting the .exe without any commands.** GitHub can build it for you:
+
+1. Sign in to GitHub and open the **artist-feed-desktop** repository.
+2. Click **Actions**, then **Build** in the list on the left, then **Run workflow** → **Run workflow**.
+3. Wait for the run to finish with a green tick; this takes a few minutes. Click the run.
+4. Under **Artifacts** at the bottom, download **ArtistFeed-windows** (or **ArtistFeed-mac-apple-silicon**, **ArtistFeed-mac-intel** or **ArtistFeed-linux**) and unzip it.
+5. Put **ArtistFeed.exe** in a folder of its own that you will keep, such as `C:\Users\you\Apps\ArtistFeed`, and double-click it. You can pin it to the taskbar or make a shortcut to it like any program.
+
+The .exe isn't signed, so the first time Windows SmartScreen asks whether to run it: click **More info**, then **Run anyway**. On a Mac, right-click the app and choose **Open** the first time. GitHub keeps each run's downloads for 90 days.
+
+**Building it yourself instead (once you have Git).** Install the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10` in PowerShell, or from dotnet.microsoft.com), then in PowerShell:
+
+```powershell
+git clone https://github.com/divided-eye/artist-feed-desktop.git
+cd artist-feed-desktop
+dotnet publish src/ArtistFeed.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+```
+
+The finished **ArtistFeed.exe** is in the `publish` folder. Copy it to your own folder as in step 5. It runs on computers without .NET installed.
+
+**Your data.** The desktop app keeps its data in its own place, not in the app's folder: `%APPDATA%\ArtistFeed` on Windows (paste that into File Explorer's address bar to open it). **Settings → Your data** shows the exact path. To bring over your artists, feed and saved lookups from the Docker version, stop it first (`docker compose stop`), then choose **Settings → Your data → Import from the web version…** and pick the Docker version's `data\feed.db`. It takes over the next time you open the desktop app. Don't run both versions on one data file at the same time.
+
+**Updating the desktop app.** Get a new .exe (run the **Build** workflow again, or run `git pull` and the same `dotnet publish` line in the `artist-feed-desktop` folder). Close the app, copy the new **ArtistFeed.exe** over the old one in your folder, and open it again. Your data isn't in that folder, so nothing is lost.
+
+**Which is easier to maintain?** Docker. Its update is `git pull` plus one rebuild command, it restarts by itself, and it gets new features first. The desktop app saves you Docker and the terminal day to day, but each update means fetching and swapping a new .exe yourself.
 
 ### On a Mac
 
