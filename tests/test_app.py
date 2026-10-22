@@ -1903,17 +1903,18 @@ def test_refresh_progress_estimate(client):
 def test_focus_feed_and_marked_rows(client):
     client.put("/api/table", json={"rows": []})
     client.put("/api/table", json={"rows": [
-        {"name": "Night Ferry", "cells": {"bandcamp": "nightferry"}, "focus": True},
+        {"name": "Night Ferry", "cells": {"bandcamp": "nightferry"}, "focus": True},     # the older form still works
         {"name": "Solo", "cells": {"bandcamp": "solo"}}]})
     wait(client)
     rows = {r["name"]: r for r in client.get("/api/table").json()}
-    assert rows["Night Ferry"]["focus"] and not rows["Solo"]["focus"]
+    assert rows["Night Ferry"]["groups"] == ["focus"] and rows["Solo"]["groups"] == []
     assert [a["name"] for a in client.get("/api/artists").json() if a["focus"]] == ["Night Ferry"]
     everyone = client.get("/api/feed").json()
     focused = client.get("/api/feed?focus=1").json()
     assert focused and len(focused) < len(everyone) and {p["artist_id"] for p in focused} == {rows["Night Ferry"]["id"]}
+    assert client.get("/api/feed?workspace=focus").json() == focused
     # nobody ticked: the Focus Feed is empty, not everyone
-    client.put("/api/table", json={"rows": [dict(r, focus=False) for r in client.get("/api/table").json()]})
+    client.put("/api/table", json={"rows": [dict(r, groups=[]) for r in client.get("/api/table").json()]})
     assert client.get("/api/feed?focus=1").json() == []
     # a row marked for removal (with errors elsewhere still pointing at the right row numbers)
     rows = client.get("/api/table").json()
@@ -2194,3 +2195,83 @@ def test_a_release_with_nothing_to_buy_and_no_link_is_searched_for_once_then_not
     assert page["placeholder"]
     assert lookup.match_in_release("Herbalistek", "Lost One", page)[0] == "bandcamp_check"
     assert "nothing to buy" in lookup.release_result(page, "bandcamp_check", "", "Found on the artist's page")["note"]
+
+
+def test_workspaces(client):
+    """Named groups of artists, each its own filter; Focus is the first."""
+    from app import sites
+    client.put("/api/table", json={"rows": []})
+    assert client.get("/api/workspaces").json() == [{"id": "focus", "name": "Focus", "count": 0}]
+    spaces = [{"id": "focus", "name": "Focus"}, {"id": "w1", "name": "Deep dubstep"}, {"id": "w2", "name": "Labels"}]
+    r = client.put("/api/table", json={"workspaces": spaces, "rows": [
+        {"name": "Night Ferry", "cells": {"bandcamp": "nightferry"}, "groups": ["w1", "focus"]},
+        {"name": "Solo", "cells": {"bandcamp": "solo"}, "groups": ["w1", "w2", "gone"]}]})
+    assert r.status_code == 200 and [w["name"] for w in r.json()["workspaces"]] == ["Focus", "Deep dubstep", "Labels"]
+    wait(client)
+    rows = {x["name"]: x for x in client.get("/api/table").json()}
+    assert rows["Night Ferry"]["groups"] == ["focus", "w1"] and rows["Solo"]["groups"] == ["w1", "w2"]   # unknown ids dropped
+    assert [w["count"] for w in client.get("/api/workspaces").json()] == [1, 2, 1]
+    assert sites.focus_names() == {"night ferry"}                    # kept for older versions reading this database
+    ids = lambda q: {p["artist_id"] for p in client.get("/api/feed?" + q).json()}
+    assert ids("workspace=w1") == {rows["Night Ferry"]["id"], rows["Solo"]["id"]}
+    assert ids("workspace=w2") == {rows["Solo"]["id"]}
+    assert {t["artist_id"] for t in client.get("/api/tracks?workspace=w2").json()} == {rows["Solo"]["id"]}
+    assert client.get("/api/feed?workspace=nope").json() == []
+    # renamed and one removed: members follow the id; leaving workspaces out keeps them as they are
+    table = client.get("/api/table").json()
+    client.put("/api/table", json={"workspaces": [{"id": "w2", "name": "Label pages"}, {"id": "focus", "name": "Focus"}], "rows": table})
+    assert [(w["name"], w["count"]) for w in client.get("/api/workspaces").json()] == [("Label pages", 1), ("Focus", 1)]
+    client.put("/api/table", json={"rows": client.get("/api/table").json()})
+    assert [w["name"] for w in client.get("/api/workspaces").json()] == ["Label pages", "Focus"]
+    # names must be there and differ
+    bad = client.put("/api/table", json={"workspaces": [{"id": "a", "name": "X"}, {"id": "b", "name": " x "}], "rows": table})
+    assert bad.status_code == 400 and "Two workspaces" in bad.json()["detail"]
+    assert client.put("/api/table", json={"workspaces": [{"id": "a", "name": " "}], "rows": table}).status_code == 400
+    client.put("/api/table", json={"workspaces": [{"id": "focus", "name": "Focus"}], "rows": []})
+
+
+def test_reading_follows(client):
+    """Who a SoundCloud account or a Bandcamp fan follows, marked when already tracked."""
+    client.put("/api/table", json={"rows": [{"name": "Night Ferry", "cells": {"bandcamp": "nightferry", "soundcloud": "riverirvine"}}]})
+    blob = {"fan_data": {"fan_id": 55}, "following_bands_data": {"sequence": ["1", "2"], "last_token": "t1"},
+            "item_cache": {"following_bands": {
+                "1": {"band_id": 1, "name": "Night Ferry", "url_hints": {"subdomain": "nightferry", "custom_domain": None}},
+                "2": {"band_id": 2, "name": "Deep Label", "url_hints": {"subdomain": "deeplabel"}}}}}
+    asked = []
+
+    def site(request):
+        host, path = request.url.host, request.url.path
+        if host == "bandcamp.com" and path == "/fanperson":
+            return httpx.Response(200, text=f"<html><div id='pagedata' data-blob='{json.dumps(blob)}'></div></html>")
+        if host == "bandcamp.com" and path == "/nobody":
+            return httpx.Response(404)
+        if host == "bandcamp.com" and path == "/api/fancollection/1/following_bands":
+            body = json.loads(request.content)
+            asked.append(body["older_than_token"])
+            assert body["fan_id"] == 55
+            if body["older_than_token"] == "t1":
+                return httpx.Response(200, json={"followeers": [
+                    {"name": "Custom Domain Act", "url_hints": {"subdomain": "cda", "custom_domain": "music.cda.net"}},
+                    {"name": "Deep Label", "url_hints": {"subdomain": "deeplabel"}}], "more_available": True, "last_token": "t2"})
+            return httpx.Response(200, json={"followeers": [], "more_available": False, "last_token": None})
+        return handler(request)
+
+    before = refresh.make_client
+    refresh.make_client = lambda: httpx.AsyncClient(transport=httpx.MockTransport(site), follow_redirects=True)
+    try:
+        sc = client.post("/api/follows", json={"site": "soundcloud", "user": "https://soundcloud.com/MeFan"}).json()
+        bc = client.post("/api/follows", json={"site": "bandcamp", "user": "fanperson"}).json()
+        missing = client.post("/api/follows", json={"site": "bandcamp", "user": "nobody"})
+        bad = client.post("/api/follows", json={"site": "youtube", "user": "x"})
+    finally:
+        refresh.make_client = before
+    assert [(f["name"], f["handle"], f["tracked"]) for f in sc["items"]] == [
+        ("River", "riverirvine", True), ("Someone Else", "someone", False), ("Hidden Act", "hidden-act-music", False)]
+    assert [(f["name"], f["handle"], f["tracked"]) for f in bc["items"]] == [
+        ("Night Ferry", "nightferry.bandcamp.com", True), ("Deep Label", "deeplabel.bandcamp.com", False),
+        ("Custom Domain Act", "music.cda.net", False)]                      # each once, read to the end
+    assert asked == ["t1", "t2"]
+    assert missing.status_code == 400 and "No Bandcamp fan page" in missing.json()["detail"]
+    assert bad.status_code == 400
+    assert set(client.get("/api/follows").json()) == {"soundcloud", "bandcamp"}
+    client.put("/api/table", json={"rows": []})

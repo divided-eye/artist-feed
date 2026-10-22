@@ -4,7 +4,7 @@ Oct 21, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 82. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 83. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -172,9 +172,11 @@ The feed shows everything collected from your tracked artists, newest first. It 
 - **List** shows one row per track: artist, track, duration, year, release, posted date, release date, label and site. It opens sorted by Posted, newest first.
 - The app remembers which view you last used.
 
-### Focus Feed
+### Workspaces
 
-The **Focus Feed** button, beside Grid | List, shows only the artists ticked in the **Focus** column of Tracked Artists: a short list of the ones you want to follow most closely, out of everyone you track. Click it again (or Clear filters) to show everyone. The other filters still apply on top of it. Tick or untick Focus in Tracked Artists, then Save changes.
+A workspace is a group of artists with its own name, such as Focus, Labels or Deep dubstep. The **workspace menu** at the top, beside Search, shows only the artists in the one you pick, with how many each holds; **Every artist** (or Clear filters) shows everyone again. The other filters still apply on top of it, and Export Feed exports what is shown.
+
+Workspaces are set up in Tracked Artists. Press **Workspaces** to add one, rename it, move it up or down, or remove it (its artists stay tracked). Each workspace gets a column of checkboxes left of the artist's name: tick the artists in it. An artist can be in several. Changes are kept when you press Save changes. **Focus** is there from the start and holds the artists you ticked for the Focus Feed in earlier versions.
 
 ### List view
 
@@ -236,13 +238,13 @@ The **Tracked Artists** button opens a table with one row per artist or label an
 - Leave the artist name empty and it is filled in from the page. If an artist goes by other names, add them after the first, separated by commas: "Night Ferry, NF, Nightferry". The first name is the one shown in the feed. Link Finder treats all of them as the same artist, so a track listed under any of the names matches their releases and falls back to their pages. Put a name that contains a comma in double quotes. Type other names in the table itself; in the paste box, commas separate the name from the links.
 - Copy rows from Excel or Google Sheets and paste them into any cell. They fill the table from that cell onward, in the order name, Bandcamp, SoundCloud.
 - Nothing changes until you press **Save changes**. If any row has a problem, nothing is saved and that row shows the reason.
-- The ✕ at the end of a row marks it for removal: the row turns a dark red-grey, its text is struck through, and an Undo button takes the ✕'s place. Nothing is removed until you Save, which stops tracking those artists and removes their posts after asking you to confirm. A new row that was never saved goes at once. The Focus column, left of the artist's name, picks the artists shown by the Focus Feed button.
+- The ✕ at the end of a row marks it for removal: the row turns a dark red-grey, its text is struck through, and an Undo button takes the ✕'s place. Nothing is removed until you Save, which stops tracking those artists and removes their posts after asking you to confirm. A new row that was never saved goes at once. Each workspace has a column of checkboxes left of the artist's name (see Workspaces).
 - **Export CSV** downloads the saved list. **Import CSV** adds a file's rows to the table for you to review and save.
 - After a save, rows are sorted by artist name, or by the column you sorted on.
 
 The Status column shows how many posts each artist has, and any problem reading one of their pages. Click **Check now** beside the count to read that artist's pages straight away, without waiting for the next refresh or refreshing everyone; the count and any problems update when it finishes.
 
-To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, Ticked for YouTube search, Ticked for Focus, and Marked for removal. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
+To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, Ticked for YouTube search, one for each workspace (In Focus, say), and Marked for removal. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
 
 Each artist belongs on one row. Save is refused, with a message on every row involved, when two rows have the same page, or share a name (any of the names in their Artist cells). Both usually happen after **Import CSV**, which adds the file's rows as new rows rather than updating the ones you have: move the new pages into the existing row and delete the extra one. Two rows for one artist would leave Link Finder using whichever it finds first. If two rows really are different artists who share a name (in different genres, say), press **Different artists, keep both** on one of them and save. That is remembered, and both rows then say "Shares its name with another row". Link Finder still can't tell them apart by name, so give the right link with Edit when it picks the wrong one. Renaming one of them ends it.
 
@@ -254,7 +256,7 @@ The box under the table takes a pasted list, one artist or label per line. A lin
 
 ### Find missing links
 
-**Find missing links** goes through every row that has an empty cell and looks for what is missing: the Bandcamp page, the SoundCloud profile, or the name when only a link was given. It works one row at a time at Bandcamp's pace, and the button reads Stop while it runs. As in a Link Finder lookup, the panel glows while it works, rows still to be searched have a blue tint, and the row being searched pulses.
+**Find missing links** goes through every row that has an empty cell (or, while the table is filtered, only the rows shown: the button then reads Find missing links (shown rows)) and looks for what is missing: the Bandcamp page, the SoundCloud profile, or the name when only a link was given. It works one row at a time at Bandcamp's pace, and the button reads Stop while it runs. As in a Link Finder lookup, the panel glows while it works, rows still to be searched have a blue tint, and the row being searched pulses.
 
 - Filled cells are highlighted in light blue italics. They are guesses matched on the name, so check them, especially for common names.
 - When a row already has one site's link, a page with the same address on the other site is preferred.
@@ -265,6 +267,14 @@ The box under the table takes a pasted list, one artist or label per line. A lin
 ### Rescan
 
 Each row has a **Rescan** checkbox. Tick it and press Find missing links to search that row's empty cells again, including ones you cleared. A guess you removed is not offered again for that cell, so a rescan returns the next best match or nothing. The box unticks itself after the run. Typing a link into a cleared cell also ends its "left empty" state.
+
+To search one row only, press **Find links** in its Status column. It appears on rows with something to look for.
+
+### Import follows
+
+**Import follows** adds the artists and labels an account follows. Pick SoundCloud or Bandcamp, enter the username (the one in Settings or Link Finder is filled in for you) and press **Read follows**. SoundCloud lists the profiles any account follows; Bandcamp lists the artists and labels a fan follows when the fan page is public. YouTube keeps subscriptions private, so it can't be read.
+
+The list shows everyone followed, with the ones already tracked or already in the table greyed out. Untick any you don't want (Select all ticks or unticks the rest), optionally choose a workspace to put them in, and press **Add to table**. Each becomes a new row, highlighted for review, or joins the row that already has that name. Nothing is tracked until you Save changes. Find missing links can then fill in their other sites.
 
 ### Clear All
 
@@ -630,6 +640,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 83 | Workspaces: named groups of artists, each with a checkbox column in Tracked Artists and a choice in the new workspace menu at the top (Focus becomes the first). Import follows adds the artists and labels a SoundCloud account or Bandcamp fan follows. Find missing links searches only the rows shown while the table is filtered, and each row has its own Find links. |
 | 82 | A Bandcamp release with no tracks and nothing to buy that doesn't say where it is sold: the feed searches Bandcamp once for the page that sells it, else marks the card Not for sale on this page. Link Finder keeps looking past such a page and gives it only as a last resort, marked Needs review. |
 | 81 | A release shown on an artist's Bandcamp page but sold from another page (a label's), with no tracks and nothing to buy, now links and plays the page that sells it, in the feed and in Link Finder. Releases already saved without tracks are read again once. |
 | 80 | Display settings: text size (90% to 150%) and colour scheme (Dark, Light, High contrast or Match this device), kept per browser or device. |

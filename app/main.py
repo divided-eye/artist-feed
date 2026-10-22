@@ -8,16 +8,17 @@ import re
 import sqlite3
 from contextlib import asynccontextmanager
 from typing import Optional
+import httpx
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import db, lookup, pace, refresh, saved, sites
+from . import db, follows, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "82"   # shown beside the title, so you can tell which version is running
+VERSION = "83"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -159,10 +160,45 @@ async def set_soundcloud_follows(body: FollowsIn):
     return lookup.follows_status()
 
 
+class FollowsReadIn(BaseModel):
+    site: str
+    user: str = ""
+
+
+@app.get("/api/follows")
+def follows_defaults():
+    """Usernames already given in Settings and Link Finder, to read follows from."""
+    return follows.defaults()
+
+
+@app.post("/api/follows")
+async def read_follows(body: FollowsReadIn):
+    """Who a SoundCloud account or Bandcamp fan follows, marked when already tracked. Nothing is saved."""
+    try:
+        return await follows.read(body.site, body.user)
+    except follows.FollowsError as e:
+        raise HTTPException(400, str(e))
+    except lookup.Blocked:
+        raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")
+    except SourceError as e:
+        raise HTTPException(400, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Couldn't reach the site ({type(e).__name__}).")
+
+
 @app.get("/api/artists")
 def artists():
-    focus = sites.focus_names()
-    return [dict(a, focus=lookup.norm(a["name"]) in focus) for a in db.list_artists()]
+    groups = sites.workspaces()
+    return [dict(a, groups=[w["id"] for w in groups if lookup.norm(a["name"]) in w["members"]],
+                 focus=any(w["id"] == "focus" and lookup.norm(a["name"]) in w["members"] for w in groups))
+            for a in db.list_artists()]
+
+
+@app.get("/api/workspaces")
+def get_workspaces():
+    """The workspaces, in order, with how many tracked artists each holds."""
+    names = {lookup.norm(r["name"]) for r in db.query("SELECT name FROM artists")}
+    return [{"id": w["id"], "name": w["name"], "count": len(names & set(w["members"]))} for w in sites.workspaces()]
 
 
 @app.post("/api/artists", status_code=201)
@@ -196,7 +232,8 @@ class TableRow(BaseModel):
     cells: dict[str, str] = {}
     youtube_lookup: Optional[bool] = None   # Link Finder may search YouTube for this artist or label
     keep_separate: bool = False             # shares a name with another row on purpose (different artists)
-    focus: bool = False                     # shown by the Focus Feed button
+    focus: bool = False                     # in the Focus workspace (older form of groups=["focus"])
+    groups: list[str] = []                  # the workspaces this artist is in, by id
     remove: bool = False                    # marked for removal (✕): stops being tracked, like a blank row
     skip: list[str] = []                 # cells cleared on purpose: "Find missing links" leaves them alone
     rejected: dict[str, list[str]] = {}  # guesses turned down, never offered again
@@ -218,13 +255,19 @@ def _same_name_ok() -> set:
         return set()
 
 
+class WorkspaceIn(BaseModel):
+    id: str
+    name: str
+
+
 class TableIn(BaseModel):
     rows: list[TableRow]
+    workspaces: Optional[list[WorkspaceIn]] = None   # the workspaces as they should be (names, order); None: unchanged
 
 
 def _table_rows():
     rows, remembered, on, youtube, same = [], _left_empty(), sites.enabled(), sites.youtube_names(), _same_name_ok()
-    focus = sites.focus_names()
+    groups = sites.workspaces()
     for a in db.list_artists():
         cells = {key: [] for key in on}
         problems = []
@@ -242,7 +285,7 @@ def _table_rows():
         shown = lookup.join_names([a["name"]] + lookup.split_names(a.get("aliases") or ""))
         rows.append({"id": a["id"], "name": shown, "post_count": a["post_count"],
                      "youtube_lookup": lookup.norm(a["name"]) in youtube,
-                     "focus": lookup.norm(a["name"]) in focus,
+                     "groups": [w["id"] for w in groups if lookup.norm(a["name"]) in w["members"]],
                      "same_name": lookup.norm(a["name"]) in same,
                      "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
                      "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
@@ -306,7 +349,18 @@ async def suggest_row(body: SuggestIn):
 async def save_table(body: TableIn):
     """Replace the whole artist list with the rows sent. Nothing changes unless every row is valid."""
     existing = {a["id"]: a for a in db.list_artists()}
-    errors, claimed, plan, remember, youtube, claimed_names, focus = [], {}, [], {}, set(), {}, set()
+    errors, claimed, plan, remember, youtube, claimed_names = [], {}, [], {}, set(), {}
+    groups = ([{"id": w.id.strip(), "name": w.name.strip()} for w in body.workspaces] if body.workspaces is not None
+              else [{"id": w["id"], "name": w["name"]} for w in sites.workspaces()])
+    seen_names = set()
+    for w in groups:
+        if not w["id"] or not w["name"]:
+            return JSONResponse({"detail": "Every workspace needs a name; nothing was saved.", "errors": []}, status_code=400)
+        if w["name"].casefold() in seen_names:
+            return JSONResponse({"detail": f'Two workspaces are called "{w["name"]}"; rename one. Nothing was saved.',
+                                 "errors": []}, status_code=400)
+        seen_names.add(w["name"].casefold())
+    members = {w["id"]: set() for w in groups}
     allowed = _same_name_ok()
     on = set(sites.enabled())
     for index, row in enumerate(body.rows):
@@ -348,8 +402,9 @@ async def save_table(body: TableIn):
                 "rejected": {k: list(dict.fromkeys(v))[:20] for k, v in row.rejected.items() if k in SOURCES and v}}
         if note["skip"] or note["rejected"]:
             remember[lookup.norm(plan[-1][1])] = note
-        if row.focus:
-            focus.add(lookup.norm(plan[-1][1]))
+        for gid in set(row.groups) | ({"focus"} if row.focus else set()):
+            if gid in members:
+                members[gid].add(lookup.norm(plan[-1][1]))
         if row.youtube_lookup:                      # every name the artist goes by
             youtube.update(lookup.norm(n) for n in [plan[-1][1]] + lookup.split_names(aliases))
     # Two rows for one artist (by any of their names) would leave Link Finder picking one of them:
@@ -382,13 +437,13 @@ async def save_table(body: TableIn):
     added = db.apply_table(keep, drop_accounts, renames, new_accounts, new_artists)
     db.kv_set("table_left_empty", json.dumps(remember))
     db.kv_set("same_name_ok", json.dumps(sorted(n for n in shared if n in allowed)))   # only names still shared
-    sites.set_focus_names(focus)
+    sites.set_workspaces([dict(w, members=members[w["id"]]) for w in groups])
     if any(r.youtube_lookup is not None for r in body.rows):       # sent only while YouTube is on
         sites.set_youtube_names(youtube)
     lookup.forget_aliases()
     if added:
         refresh.refresh_in_background(added)
-    return {"rows": _table_rows(), "added": len(added)}
+    return {"rows": _table_rows(), "added": len(added), "workspaces": get_workspaces()}
 
 
 @app.patch("/api/artists/{artist_id}")
@@ -424,7 +479,7 @@ def delete_account(account_id: int):
 def more_filters(year: Optional[str] = None, label: Optional[str] = None,
                  kind: Optional[str] = None, length: Optional[str] = None, hidden: Optional[str] = None,
                  preview: Optional[str] = None, since: Optional[str] = None, until: Optional[str] = None,
-                 date_by: Optional[str] = None, focus: Optional[str] = None):
+                 date_by: Optional[str] = None, focus: Optional[str] = None, workspace: Optional[str] = None):
     """The optional filters every view and the export accept. hidden=1 also shows hidden items;
     preview=1 leaves out tracks that can't be listened to yet; since/until (YYYY-MM-DD) keep a
     date range, by posted date (date_by=posted, the default) or release date (date_by=released)."""
@@ -432,12 +487,15 @@ def more_filters(year: Optional[str] = None, label: Optional[str] = None,
     return {"year": year, "label": label, "kind": kind, "length": length, "hidden": hidden == "1",
             "preview": preview == "1", "since": day(since), "until": day(until),
             "date_by": "released" if date_by == "released" else "posted",
-            "focus_ids": _focus_ids() if focus == "1" else None}
+            "focus_ids": _workspace_ids(workspace or ("focus" if focus == "1" else None))}
 
 
-def _focus_ids() -> list:
-    """The artists ticked in the Focus column (focus=1: the Focus Feed button)."""
-    names = sites.focus_names()
+def _workspace_ids(workspace) -> Optional[list]:
+    """The artists in a workspace (workspace=<id>; focus=1 is the Focus workspace). None: no workspace chosen."""
+    if not workspace:
+        return None
+    group = next((w for w in sites.workspaces() if w["id"] == workspace), None)
+    names = set(group["members"]) if group else set()
     return [r["id"] for r in db.query("SELECT id, name FROM artists") if lookup.norm(r["name"]) in names]
 
 

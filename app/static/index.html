@@ -249,6 +249,18 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   td input[type=text]:focus { outline: 2px solid var(--accent-ink); outline-offset: -2px; background: var(--bg); }
   tr.has-error td { background: var(--error-row); }
   .bulk { border-top: 1px solid var(--line); padding: 10px 16px 14px; }
+  .subpanel { margin: 10px 16px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); display: grid; gap: 8px; }
+  .subpanel[hidden] { display: none; }
+  .tools-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .subpanel .small { font-size: 13px; }
+  .subpanel .dim { color: var(--muted); }
+  .follows-list { max-height: 280px; overflow: auto; columns: 3 230px; column-gap: 18px; }
+  .follows-list label { display: flex; gap: 6px; align-items: baseline; break-inside: avoid; padding: 2px 0; font-size: 13px; }
+  .follows-list label.off { color: var(--muted); }
+  .follows-list small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #spacesList .space { display: flex; gap: 8px; align-items: center; margin: 2px 0; }
+  #spacesList .space input { width: 240px; }
+  #spacesList .space .dim { font-size: 13px; }
   .bulk label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
   .bulk-row { display: flex; gap: 8px; align-items: flex-end; }
   .bulk textarea { flex: 1; height: 84px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line);
@@ -274,6 +286,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   table.reltable .rowplay { width: 22px; height: 22px; }
   .relfoot { padding: 6px 0 2px; font-size: 12px; }
   td.focus { text-align: center; }
+  #artistTable th.ws { font-size: 12px; white-space: nowrap; }
   /* checkbox cells: centred both ways, whatever the row's height */
   td.focus, td.rescan, td.ytlook { vertical-align: middle; }
   td.state .checknow { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--accent-ink); font: inherit; cursor: pointer; }
@@ -396,7 +409,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <div class="chips" id="chips"></div>
     <select id="artistFilter" aria-label="Filter by artist"><option value="">All artists</option></select>
     <span class="clearable"><input type="text" id="search" placeholder="Search" aria-label="Search titles, artists, labels"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
-    <button class="btn" id="focusBtn" aria-pressed="false" title="Show only the artists ticked in the Focus column of Tracked Artists: a short list of the ones you follow most closely. Click again to show everyone.">Focus Feed</button>
+    <select id="workspaceSel" aria-label="Workspace" title="Show only the artists in one workspace. Workspaces are set up in Tracked Artists."></select>
     <div class="seg" role="group" aria-label="View">
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
@@ -538,7 +551,9 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   <div class="tools">
     <button class="btn" id="addRowBtn">Add row</button>
     <button class="btn" id="importBtn">Import CSV</button>
-    <button class="btn" id="fillBtn" title="Look for the Bandcamp page or SoundCloud profile that a row is missing">Find missing links</button>
+    <button class="btn" id="fillBtn" title="Look for the Bandcamp pages and SoundCloud profiles rows are missing. While the table is filtered, only the rows shown are searched; each row also has its own Find links.">Find missing links</button>
+    <button class="btn" id="followsBtn" aria-expanded="false" title="Add the artists and labels a SoundCloud account or Bandcamp fan follows">Import follows</button>
+    <button class="btn" id="spacesBtn" aria-expanded="false" title="Name the groups of artists you can show on their own (Focus is the first)">Workspaces</button>
     <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
     <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
     <button class="btn" id="clearAllBtn" title="Empty the whole table (nothing is removed until you save)">Clear All</button>
@@ -549,7 +564,33 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <button class="btn" id="revertBtn" hidden>Discard</button>
     <button class="btn primary" id="saveBtn">Save changes</button>
   </div>
-  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). A YouTube channel goes in the YouTube column; tick <b>YouTube search</b> on the rows Link Finder may look for on YouTube. <b>Find missing links</b> fills empty Bandcamp and SoundCloud cells with its best guess, shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
+  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). A YouTube channel goes in the YouTube column; tick <b>YouTube search</b> on the rows Link Finder may look for on YouTube. <b>Find missing links</b> fills empty Bandcamp and SoundCloud cells with its best guess (only in the rows shown while the table is filtered; <b>Find links</b> in a row's Status does just that row), shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
+  <div class="subpanel" id="followsPanel" hidden>
+    <div class="tools-row">
+      <select id="followsSite" aria-label="Site to read follows from"><option value="soundcloud">SoundCloud</option><option value="bandcamp">Bandcamp</option></select>
+      <input type="text" id="followsUser" placeholder="Username" aria-label="Username" spellcheck="false" autocomplete="off">
+      <button class="btn" id="followsRead">Read follows</button>
+      <span class="dim" id="followsStatus" aria-live="polite"></span>
+      <div class="spacer"></div>
+      <button class="btn" id="followsClose">Close</button>
+    </div>
+    <div class="dim small">The profiles a SoundCloud account follows, or the artists and labels a Bandcamp fan follows (the fan page must be public). Pick the ones to add: each becomes a row, or joins the row that already has that name. Nothing is tracked until you Save. YouTube keeps subscriptions private, so it can't be read.</div>
+    <div id="followsResult" hidden>
+      <div class="tools-row">
+        <label class="opt"><input type="checkbox" id="followsAll"> Select all</label>
+        <span class="dim" id="followsCount"></span>
+        <div class="spacer"></div>
+        <label class="opt">Also put them in <select id="followsSpace" aria-label="Workspace to put them in"></select></label>
+        <button class="btn primary" id="followsAdd">Add to table</button>
+      </div>
+      <div class="follows-list" id="followsList"></div>
+    </div>
+  </div>
+  <div class="subpanel" id="spacesPanel" hidden>
+    <div class="dim small">A workspace is a group of artists with its own name, such as Focus, Labels or Deep dubstep. Each gets a column of checkboxes in the table; tick the artists in it. Choose a workspace at the top of the page, beside Search, to show only its artists. An artist can be in several. Changes are kept when you Save.</div>
+    <div id="spacesList"></div>
+    <div class="tools-row"><button class="btn" id="spaceAdd">Add workspace</button><div class="spacer"></div><button class="btn" id="spacesClose">Done</button></div>
+  </div>
   <div class="table-wrap" id="artistWrap"><table id="artistTable"><colgroup id="artistCols"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
   <div class="bulk">
     <label for="bulkText">Paste a list to add: one artist or label per line. A name, a Bandcamp or SoundCloud link, or name, Bandcamp, SoundCloud separated by tabs or commas.</label>
@@ -621,7 +662,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
 <script>
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
-let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted", focus: false }, offset = 0, wasRefreshing = false;
+let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted", workspace: "" }, offset = 0, wasRefreshing = false;
 let hideNoPreview = false;      // a standing preference, kept in this browser; not cleared by "Clear filters"
 try { hideNoPreview = localStorage.getItem("hideNoPreview") === "1"; } catch {}
 let view = "grid", sort = { key: "posted", dir: "desc" }, playing = null;
@@ -756,8 +797,9 @@ function syncFilterControls() {
   $("fSince").value = filter.since; $("fUntil").value = filter.until; $("fDateBy").value = filter.dateBy;
   $("fSince").classList.toggle("on", !!filter.since); $("fUntil").classList.toggle("on", !!filter.until);
   $("fMax").classList.toggle("on", !!maxResults);
-  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden || filter.range || filter.focus);
-  $("focusBtn").setAttribute("aria-pressed", String(!!filter.focus));
+  $("clearFilters").hidden = !(EXTRA_FILTERS.some(k => filter[k]) || filter.source || filter.artist_id || filter.q.trim() || filter.hidden || filter.range || filter.workspace);
+  $("workspaceSel").value = filter.workspace;
+  $("workspaceSel").classList.toggle("on", !!filter.workspace);
 }
 
 async function loadFacets() {
@@ -780,7 +822,7 @@ function filterQuery(extra) {
   if (filter.q.trim()) q.set("q", filter.q.trim());
   for (const k of EXTRA_FILTERS) if (filter[k]) q.set(k, filter[k]);
   if (filter.hidden) q.set("hidden", "1");
-  if (filter.focus) q.set("focus", "1");
+  if (filter.workspace) q.set("workspace", filter.workspace);
   if (hideNoPreview) q.set("preview", "1");
   const [since, until] = dateRange();
   if (since) q.set("since", since);
@@ -806,10 +848,11 @@ const pageSize = size => maxResults ? Math.max(0, Math.min(size, maxResults - of
 function showEmpty(none) {
   $("empty").hidden = !none;
   if (!none) return;
-  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]) || filter.range || filter.focus;
-  if (filter.focus && artists.length && !artists.some(a => a.focus)) {
-    $("empty").replaceChildren(el("b", { text: "No artists in your Focus Feed yet" }),
-      "Tick the Focus box beside an artist in Tracked Artists, then Save.");
+  const filtered = filter.source || filter.artist_id || filter.q.trim() || EXTRA_FILTERS.some(k => filter[k]) || filter.range || filter.workspace;
+  const space = workspaces.find(w => w.id === filter.workspace);
+  if (space && artists.length && !space.count) {
+    $("empty").replaceChildren(el("b", { text: `No artists in ${space.name} yet` }),
+      `Tick the ${space.name} box beside an artist in Tracked Artists, then Save.`);
     return;
   }
   $("empty").replaceChildren(el("b", { text: !artists.length ? "No artists yet" : filtered ? "Nothing matches" : "Nothing here yet" }),
@@ -1155,6 +1198,21 @@ function renderChips() {
   $("chips").replaceChildren(make("", "All"), ...sources.map(s => make(s.key, s.label, s.color)));
 }
 
+// ---- workspaces: named groups of artists, each a filter for the feed ----
+let workspaces = [];                                // as saved: [{id, name, count}]
+async function loadWorkspaces() {
+  workspaces = await api("/api/workspaces");
+  renderWorkspaceSel();
+}
+function renderWorkspaceSel() {
+  const sel = $("workspaceSel");
+  sel.replaceChildren(el("option", { value: "", text: "Every artist" }),
+    ...workspaces.map(w => el("option", { value: w.id, text: `${w.name} (${w.count})` })));
+  if (!workspaces.some(w => w.id === filter.workspace)) filter.workspace = "";
+  sel.value = filter.workspace;
+  sel.classList.toggle("on", !!filter.workspace);
+}
+
 function renderArtists() {
   const sel = $("artistFilter"), keep = filter.artist_id;
   sel.replaceChildren(el("option", { value: "", text: "All artists" }),
@@ -1164,9 +1222,9 @@ function renderArtists() {
 }
 
 // ---- artist table ----
-let table = [], savedIds = [], dirty = false;
+let table = [], savedIds = [], dirty = false, spaces = [];   // spaces: the workspaces as being edited [{id, name}]
 const columns = () => ["name", ...sources.map(s => s.key)];
-const blankRow = () => ({ id: null, name: "", cells: {}, problems: [], errors: [], skip: [], rejected: {} });
+const blankRow = () => ({ id: null, name: "", cells: {}, groups: [], problems: [], errors: [], skip: [], rejected: {} });
 // A cell emptied on purpose is remembered: "Find missing links" leaves it alone unless the row's
 // Rescan box is ticked, and whatever was in it is never offered for that cell again.
 function noteCleared(row, col, was) {
@@ -1198,12 +1256,16 @@ function stateCell(row) {
       } }));
     return td;
   }
-  if (row.id === null) td.append(isBlank(row) ? "" : row.keep_separate ? "new · kept separate" : "new");
+  const findBtn = () => !row.removed && !isBlank(row) && openCells(row).length
+    ? el("button", { class: "checknow", type: "button", text: "Find links", disabled: filling,
+        title: "Look for this row's missing Bandcamp page or SoundCloud profile (only this row)",
+        onclick: () => fillMissing(row) }) : "";
+  if (row.id === null) td.append(isBlank(row) ? "" : row.keep_separate ? "new · kept separate" : "new", findBtn());
   else {
     td.append(row.post_count + " posts");
     td.append(el("button", { class: "checknow", type: "button", text: row.checking ? "checking…" : "Check now",
       disabled: !!row.checking, title: "Read this artist's pages now, without waiting for the next refresh",
-      onclick: e => checkNow(row, e.target.closest("tr")) }));
+      onclick: e => checkNow(row, e.target.closest("tr")) }), findBtn());
     if (row.same_name) td.append(el("span", { class: "dim", text: "Shares its name with another row (different artists)",
       title: "Saved as separate artists. Rename one to stop sharing the name." }));
     row.problems.forEach(m => td.append(el("span", { class: "warn", text: m })));
@@ -1227,11 +1289,16 @@ async function checkNow(row, tr) {
 function rowEl(row) {
   const tr = el("tr", { class: (row.errors.length ? "has-error" : "") + (row.removed ? " removed" : "") });
   tr.append(el("td", { class: "num", text: String(table.indexOf(row) + 1) }));
-  const focus = el("input", { type: "checkbox", "aria-label": "Show this artist in the Focus Feed",
-    title: "Show this artist in the Focus Feed" });
-  focus.checked = !!row.focus;
-  focus.addEventListener("change", () => { row.focus = focus.checked; setDirty(true); });
-  tr.append(el("td", { class: "focus" }, focus));
+  spaces.forEach(w => {
+    const box = el("input", { type: "checkbox", "aria-label": `In ${w.name}`, title: `In the ${w.name} workspace` });
+    box.checked = (row.groups || []).includes(w.id);
+    box.addEventListener("change", () => {
+      row.groups = (row.groups || []).filter(g => g !== w.id).concat(box.checked ? [w.id] : []);
+      setDirty(true);
+      if (!$("spacesPanel").hidden) renderSpaces();     // its artist counts
+    });
+    tr.append(el("td", { class: "focus" }, box));
+  });
   columns().forEach((col, c) => {
     const input = el("input", { type: "text", value: getCell(row, col), spellcheck: "false", autocomplete: "off",
       "aria-label": col === "name" ? "Artist name" : src(col).label,
@@ -1293,11 +1360,11 @@ function rowEl(row) {
 // Column widths in the artist table. The artist's name comes first: its column is as wide as the
 // longest name needs, and the site columns share what is left. Drag a heading's edge to set a width
 // yourself (remembered in this browser); double-click the edge to hand it back.
-const TCOL_FIXED = { num: 44, focus: 58, rescan: 66, act: 62, ytlook: 122 }, TCOL_MIN = 70;
+const TCOL_FIXED = { num: 44, rescan: 66, act: 62, ytlook: 122 }, TCOL_MIN = 70, WS_W = 92;
 let tcolW = {};
 try { tcolW = JSON.parse(localStorage.getItem("artistColumns") || "{}") || {}; } catch {}
 const hasYoutube = () => sources.some(s => s.key === "youtube");
-const tcolKeys = () => ["num", "focus", "name", ...sources.map(s => s.key), ...(hasYoutube() ? ["ytlook"] : []), "rescan", "state", "act"];
+const tcolKeys = () => ["num", ...spaces.map(w => "ws:" + w.id), "name", ...sources.map(s => s.key), ...(hasYoutube() ? ["ytlook"] : []), "rescan", "state", "act"];
 let measure;
 function nameWidth() {
   const sample = $("tbody").querySelector("input[type=text]");
@@ -1313,7 +1380,8 @@ function applyTableCols() {
   if (!room) return;                                   // drawer closed
   const sites = sources.map(s => s.key), w = { ...TCOL_FIXED };
   if (!hasYoutube()) delete w.ytlook;
-  const stateMin = 150, fixed = TCOL_FIXED.num + TCOL_FIXED.focus + TCOL_FIXED.rescan + TCOL_FIXED.act + (hasYoutube() ? TCOL_FIXED.ytlook : 0);
+  spaces.forEach(s => { w["ws:" + s.id] = WS_W; });
+  const stateMin = 150, fixed = TCOL_FIXED.num + spaces.length * WS_W + TCOL_FIXED.rescan + TCOL_FIXED.act + (hasYoutube() ? TCOL_FIXED.ytlook : 0);
   // The name is never cut short. When that leaves too little room, the other columns keep a
   // usable minimum and the table scrolls sideways instead.
   w.name = tcolW.name || nameWidth();
@@ -1365,7 +1433,8 @@ function renderTable() {
       tgrip(key, label));
   };
   $("thead").replaceChildren(el("tr", {}, el("th", { text: "#" }),
-    el("th", { text: "Focus", title: "Tick the artists to show in the Focus Feed (the button beside Grid | List): the ones you want to follow most closely" }),
+    ...spaces.map(w => el("th", { class: "ws", text: w.name || "(no name)",
+      title: `Tick the artists in the ${w.name} workspace. Choose ${w.name} at the top of the page, beside Search, to show only them.` })),
     head("name", "Artist"),
     ...sources.map(s => head(s.key, s.label, el("span", { class: "dot", style: `background:${s.color}` }))),
     ...(hasYoutube() ? [el("th", { text: "YouTube search", title: "Tick the artists and labels Link Finder may look for on YouTube (when YouTube is ticked for Link Finder in Settings)" })] : []),
@@ -1375,6 +1444,7 @@ function renderTable() {
   applyTableCols();
   applyTableView();
   paintFill();
+  fillLabel();
 }
 
 // ---- Tracked Artists: sorting and filtering (only what is shown; the list itself is unchanged) ----
@@ -1388,14 +1458,15 @@ const TSHOW = [["", "All rows", () => true],
   ["empty", "No posts yet", r => r.id !== null && !r.post_count],
   ["new", "New, not saved yet", r => r.id === null],
   ["youtube", "Ticked for YouTube search", r => !!r.youtube_lookup],
-  ["focus", "Ticked for Focus", r => !!r.focus],
   ["removed", "Marked for removal", r => !!r.removed]];
+// The workspaces' own filters go after the fixed ones.
+const tshow = () => [...TSHOW.slice(0, -1), ...spaces.map(w => ["ws:" + w.id, `In ${w.name}`, r => (r.groups || []).includes(w.id)]), TSHOW[TSHOW.length - 1]];
 function statusRank(row) {                          // problems first, then fewest posts
   return [hasIssue(row) ? 0 : isChecking(row) ? 1 : 2, row.id === null ? -1 : row.post_count || 0];
 }
 function rowMatches(row) {
   if (isBlank(row)) return true;                    // the empty row to type into always shows
-  const test = (TSHOW.find(x => x[0] === tview.show) || TSHOW[0])[2];
+  const test = (tshow().find(x => x[0] === tview.show) || TSHOW[0])[2];
   if (!test(row)) return false;
   const words = tview.q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
@@ -1425,7 +1496,7 @@ function orderTable() {
   table = [...rest, ...blanks];
 }
 function applyTableView() {
-  const opts = TSHOW.filter(x => x[0] !== "youtube" || hasYoutube());
+  const opts = tshow().filter(x => x[0] !== "youtube" || hasYoutube());
   const counted = table.filter(r => !isBlank(r));
   $("artistShow").replaceChildren(...opts.map(([key, label, test]) =>
     el("option", { value: key, text: `${label} (${counted.filter(test).length})` })));
@@ -1435,8 +1506,8 @@ function applyTableView() {
   $("artistQ").classList.toggle("on", !!tview.q.trim());
   [...$("tbody").children].forEach((tr, i) => { tr.hidden = !rowMatches(table[i]); });
 }
-$("artistQ").oninput = e => { tview.q = e.target.value; applyTableView(); };
-$("artistShow").onchange = e => { tview.show = e.target.value; applyTableView(); };
+$("artistQ").oninput = e => { tview.q = e.target.value; applyTableView(); fillLabel(); };
+$("artistShow").onchange = e => { tview.show = e.target.value; applyTableView(); fillLabel(); };
 
 // Fill in whatever each row is missing (the other site's page, or the name), one row at a time.
 let filling = false;
@@ -1454,12 +1525,21 @@ function paintFill() {
   });
 }
 
-async function fillMissing() {
-  if (filling) { filling = false; return; }           // the button reads "Stop" while running
-  const guessable = c => c === "name" || (src(c) && src(c).suggest);          // Find missing links can't guess every site
-  const open = r => columns().filter(c => guessable(c) && !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
-  const todo = table.filter(r => !isBlank(r) && !r.removed && open(r).length);
-  if (!todo.length) { $("fillStatus").textContent = "Nothing to look for. Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
+const guessable = c => c === "name" || (src(c) && src(c).suggest);          // Find missing links can't guess every site
+const openCells = r => columns().filter(c => guessable(c) && !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
+const tableFiltered = () => !!(tview.q.trim() || tview.show);
+// The rows Find missing links goes through: every row, or only those shown while the table is filtered.
+function fillLabel() {
+  if (!filling) $("fillBtn").textContent = tableFiltered() ? "Find missing links (shown rows)" : "Find missing links";
+}
+
+// only: one row's own Find links button. Otherwise every row, or the rows shown when the table is filtered.
+async function fillMissing(only = null) {
+  if (filling) { if (!only) filling = false; return; }   // the button reads "Stop" while running
+  const open = openCells;
+  const pool = only ? [only] : table.filter(r => !tableFiltered() || rowMatches(r));
+  const todo = pool.filter(r => !isBlank(r) && !r.removed && open(r).length);
+  if (!todo.length) { $("fillStatus").textContent = (only ? "Nothing to look for in that row. " : tableFiltered() ? "Nothing to look for in the rows shown. " : "Nothing to look for. ") + "Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
   filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
   Object.assign(fillWait, { rows: new Set(todo), now: null, since: Date.now() });
   let filled = 0, n = 0;
@@ -1488,9 +1568,146 @@ async function fillMissing() {
     finally { fillWait.rows.delete(row); }
   }
   const stopped = !filling;
-  filling = false; $("fillBtn").textContent = "Find missing links";
+  filling = false; fillLabel();
   fillWait.rows.clear(); fillWait.now = null; paintFill();
   $("fillStatus").textContent = (stopped ? "Stopped. " : "") + (filled ? `Filled ${filled} cell${filled > 1 ? "s" : ""}. Check the highlighted ones, then Save.` : "Nothing new found.");
+}
+
+// ---- Tracked Artists: setting up workspaces (kept with the table, on Save) ----
+function renderSpaces() {
+  $("spacesList").replaceChildren(...spaces.map((w, i) => {
+    const name = el("input", { type: "text", value: w.name, "aria-label": "Workspace name", spellcheck: "false", autocomplete: "off" });
+    name.addEventListener("input", () => {
+      w.name = name.value; setDirty(true);
+      const th = $("thead").querySelectorAll("th.ws")[i];
+      if (th) th.textContent = w.name || "(no name)";
+    });
+    name.addEventListener("change", () => { renderTable(); renderFollowSpaces(); });
+    const n = table.filter(r => !r.removed && (r.groups || []).includes(w.id)).length;
+    const move = (by, label, text) => el("button", { class: "btn small", type: "button", text, title: label, "aria-label": `${label}: ${w.name}`,
+      disabled: !spaces[i + by], onclick: () => { [spaces[i], spaces[i + by]] = [spaces[i + by], spaces[i]]; setDirty(true); renderSpaces(); renderTable(); } });
+    return el("div", { class: "space" }, name, move(-1, "Move up", "↑"), move(1, "Move down", "↓"),
+      el("button", { class: "btn small ghost", type: "button", text: "✕", title: "Remove this workspace (its artists stay tracked)",
+        "aria-label": `Remove workspace ${w.name}`,
+        onclick: () => {
+          spaces.splice(i, 1);
+          table.forEach(r => { r.groups = (r.groups || []).filter(g => g !== w.id); });
+          setDirty(true); renderSpaces(); renderTable(); renderFollowSpaces();
+        } }),
+      el("span", { class: "dim", text: `${n} artist${n === 1 ? "" : "s"}` }));
+  }));
+  if (!spaces.length) $("spacesList").append(el("div", { class: "dim small", text: "No workspaces. Add one to start a group." }));
+}
+$("spacesBtn").onclick = () => {
+  const open = $("spacesPanel").hidden;
+  $("spacesPanel").hidden = !open; $("spacesBtn").setAttribute("aria-expanded", String(open));
+  if (open) renderSpaces();
+};
+$("spacesClose").onclick = () => { $("spacesPanel").hidden = true; $("spacesBtn").setAttribute("aria-expanded", "false"); };
+$("spaceAdd").onclick = () => {
+  let n = spaces.length + 1, name = "New workspace";
+  while (spaces.some(w => w.name.toLowerCase() === name.toLowerCase())) name = `New workspace ${++n}`;
+  spaces.push({ id: "w" + Date.now().toString(36), name });
+  setDirty(true); renderSpaces(); renderTable(); renderFollowSpaces();
+  const inputs = $("spacesList").querySelectorAll("input"); inputs[inputs.length - 1].select();
+};
+
+// ---- Tracked Artists: adding the artists and labels an account follows ----
+let follows = { site: "", items: [] }, followDefaults = null;
+const shortHandle = (site, handle) => site === "bandcamp" && handle.endsWith(".bandcamp.com") ? handle.slice(0, -13) : handle;
+const plainName = t => (t || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const cellPages = (row, site) => getCell(row, site).split(/[,;\n]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+function inTable(site, handle) {
+  const want = [handle, shortHandle(site, handle)].map(x => x.toLowerCase());
+  return table.some(r => !r.removed && cellPages(r, site).some(p => want.includes(p.replace(/^https?:\/\//, "").replace(/\/+$/, "")
+    .replace(/^(?:www\.|m\.)?soundcloud\.com\//, ""))));
+}
+function renderFollowSpaces() {
+  const sel = $("followsSpace"), keep = sel.value;
+  sel.replaceChildren(el("option", { value: "", text: "no workspace" }), ...spaces.map(w => el("option", { value: w.id, text: w.name })));
+  sel.value = spaces.some(w => w.id === keep) ? keep : "";
+}
+function renderImport() {
+  const items = follows.items;
+  $("followsResult").hidden = !items.length;
+  $("followsList").replaceChildren(...items.map(f => {
+    const why = f.tracked ? "already tracked" : f.inTable ? "already in the table" : "";
+    const box = el("input", { type: "checkbox", disabled: !!why, "aria-label": f.name });
+    box.checked = !why && f.pick;
+    box.addEventListener("change", () => { f.pick = box.checked; countFollows(); });
+    return el("label", { class: why ? "off" : "", title: f.url }, box, f.name, el("small", { text: why || shortHandle(follows.site, f.handle) }));
+  }));
+  renderFollowSpaces();
+  countFollows();
+}
+function countFollows() {
+  const open = follows.items.filter(f => !f.tracked && !f.inTable), picked = open.filter(f => f.pick).length;
+  $("followsCount").textContent = `${picked} of ${open.length} picked` + (open.length < follows.items.length ? ` · ${follows.items.length - open.length} already tracked or in the table` : "");
+  $("followsAll").checked = open.length > 0 && picked === open.length;
+  $("followsAll").disabled = !open.length;
+  $("followsAdd").disabled = !picked;
+}
+async function followDefault() {
+  try { followDefaults = followDefaults || await api("/api/follows"); } catch { followDefaults = {}; }
+  const site = $("followsSite").value, mine = followDefaults[site] || "";
+  if (!$("followsUser").value.trim() || Object.values(followDefaults).includes($("followsUser").value.trim())) $("followsUser").value = mine;
+}
+$("followsBtn").onclick = () => {
+  const open = $("followsPanel").hidden;
+  $("followsPanel").hidden = !open; $("followsBtn").setAttribute("aria-expanded", String(open));
+  if (open) { followDefault(); renderFollowSpaces(); $("followsUser").focus(); }
+};
+$("followsClose").onclick = () => { $("followsPanel").hidden = true; $("followsBtn").setAttribute("aria-expanded", "false"); };
+$("followsSite").onchange = followDefault;
+$("followsUser").addEventListener("keydown", e => { if (e.key === "Enter") $("followsRead").click(); });
+$("followsRead").onclick = async () => {
+  const site = $("followsSite").value, user = $("followsUser").value.trim();
+  if (!user) { $("followsStatus").textContent = "Enter a username first."; return; }
+  $("followsRead").disabled = true;
+  $("followsStatus").textContent = `Reading who ${user} follows on ${src(site).label}…`;
+  try {
+    const r = await fetch("/api/follows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ site, user }) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Couldn't read those follows.");
+    follows = { site, items: data.items.map(f => ({ ...f, inTable: !f.tracked && inTable(site, f.handle), pick: true })) };
+    const fresh = follows.items.filter(f => !f.tracked && !f.inTable).length;
+    $("followsStatus").textContent = data.items.length
+      ? `${user} follows ${data.items.length}; ${fresh} not tracked yet.` : `${user} doesn't follow anyone (or the list is private).`;
+    renderImport();
+  } catch (x) { $("followsStatus").textContent = x.message; follows = { site, items: [] }; renderImport(); }
+  finally { $("followsRead").disabled = false; }
+};
+$("followsAll").onchange = e => { follows.items.forEach(f => { if (!f.tracked && !f.inTable) f.pick = e.target.checked; }); renderImport(); };
+$("followsAdd").onclick = () => {
+  const site = follows.site, space = $("followsSpace").value;
+  if (!columns().includes(site)) { $("followsStatus").textContent = `${src(site) ? src(site).label : site} is switched off in Settings.`; return; }
+  while (table.length && isBlank(table[table.length - 1])) table.pop();
+  let added = 0, joined = 0;
+  for (const f of follows.items.filter(f => f.pick && !f.tracked && !f.inTable)) {
+    const name = plainName(f.name), page = shortHandle(site, f.handle);
+    // A row for someone of the same name takes the page; otherwise a new row.
+    let row = name && table.find(r => !r.removed && lookupNames(r.name).some(n => plainName(n) === name));
+    if (row) { setCell(row, site, getCell(row, site).trim() ? `${getCell(row, site).trim()}, ${page}` : page); joined++; }
+    else { row = blankRow(); row.name = f.name; setCell(row, site, page); table.push(row); added++; }
+    (row.auto = row.auto || new Set()).add(site);
+    if (space && !(row.groups || []).includes(space)) row.groups = [...(row.groups || []), space];
+    f.inTable = true;
+  }
+  if (!added && !joined) return;
+  setDirty(true); renderTable(); renderImport();
+  $("fillStatus").textContent = `Added ${added} row${added === 1 ? "" : "s"}` + (joined ? ` and ${joined} page${joined === 1 ? "" : "s"} to rows with the same name` : "") +
+    ". Check them, use Find missing links to fill their other sites if you like, then Save.";
+};
+// The names in an Artist cell: the first, then other names after commas ("double quotes" keep a comma in a name).
+function lookupNames(text) {
+  const out = []; let cur = "", quoted = false;
+  for (const ch of text || "") {
+    if (ch === '"') quoted = !quoted;
+    else if (ch === "," && !quoted) { out.push(cur.trim()); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
 }
 
 function pasteGrid(grid, startRow, startCol) {
@@ -1566,6 +1783,9 @@ function importCsv(text) {
 
 async function loadTable() {
   const rows = await api("/api/table");
+  workspaces = await api("/api/workspaces"); renderWorkspaceSel();
+  spaces = workspaces.map(({ id, name }) => ({ id, name }));
+  if (!$("spacesPanel").hidden) renderSpaces();
   table = rows.map(r => ({ ...r, errors: [] }));
   savedIds = rows.map(r => r.id);
   tviewSeq = 0; orderTable();
@@ -1581,7 +1801,7 @@ async function saveTable() {
   if (removed && !confirm(`This stops tracking ${removed} artist${removed > 1 ? "s" : ""} and removes their posts from the feed. Continue?`)) { renderTable(); return; }
   $("tableError").textContent = "";
   const r = await fetch("/api/table", { method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup, keep_separate, focus, removed }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected, keep_separate: !!keep_separate, focus: !!focus, remove: !!removed,
+    body: JSON.stringify({ workspaces: spaces, rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup, keep_separate, groups, removed }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected, keep_separate: !!keep_separate, groups: groups || [], remove: !!removed,
       ...(hasYoutube() ? { youtube_lookup: !!youtube_lookup } : {}) })) }) });
   const data = await r.json().catch(() => ({}));
   table.forEach(row => { row.errors = []; row.sameName = false; });
@@ -1593,6 +1813,9 @@ async function saveTable() {
   }
   table = data.rows.map(row => ({ ...row, errors: [] }));
   savedIds = data.rows.map(row => row.id);
+  workspaces = data.workspaces || workspaces; renderWorkspaceSel();
+  spaces = workspaces.map(({ id, name }) => ({ id, name }));
+  if (!$("spacesPanel").hidden) renderSpaces();
   tviewSeq = 0; orderTable();
   $("fillStatus").textContent = "";                  // saved as they stand: the highlights go
   setDirty(false); renderTable();
@@ -1603,6 +1826,7 @@ async function saveTable() {
 async function reload() {
   artists = await api("/api/artists");
   renderArtists();
+  await loadWorkspaces();
   await loadFacets();
   await loadFeed();
   if (!$("drawer").hidden && !dirty) await loadTable();   // pick up new post counts and warnings
@@ -2086,7 +2310,7 @@ $("importBtn").onclick = () => $("csvFile").click();
 $("csvFile").onchange = async e => { const f = e.target.files[0]; if (f) importCsv(await f.text()); e.target.value = ""; };
 $("moreBtn").onclick = () => loadFeed(false);
 $("viewGrid").onclick = () => setView("grid");
-$("focusBtn").onclick = () => { filter.focus = !filter.focus; $("focusBtn").setAttribute("aria-pressed", String(filter.focus)); loadFeed(); };
+$("workspaceSel").onchange = e => { filter.workspace = e.target.value; loadFeed(); };
 $("viewList").onclick = () => setView("list");
 $("dockClose").onclick = closePlayer;
 $("fHidden").onchange = e => { filter.hidden = e.target.checked ? "1" : ""; loadFeed(); };
@@ -2100,7 +2324,7 @@ $("pageWidth").onchange = e => setPageWidth(e.target.value);
 { let w = "1280px"; try { w = localStorage.getItem("pageWidth") || w; } catch {} setPageWidth(w); }
 for (const k of EXTRA_FILTERS) $(FILTER_SELECTS[k]).onchange = e => { filter[k] = e.target.value; loadFeed(); };
 $("clearFilters").onclick = () => {
-  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", focus: false });
+  Object.assign(filter, { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", workspace: "" });
   $("fHidden").checked = false;
   $("search").value = ""; $("artistFilter").value = ""; renderChips(); loadFeed();
 };

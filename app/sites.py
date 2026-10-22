@@ -99,12 +99,33 @@ def set_youtube_names(names):
 
 
 def focus_names() -> set:
-    """Tidied names of the artists ticked in the Focus column of Tracked Artists."""
+    """Tidied names of the artists in the Focus workspace (kept for databases read by older versions)."""
     return set(_load("focus_names", []))
 
 
 def set_focus_names(names):
     db.kv_set("focus_names", json.dumps(sorted(set(n for n in names if n))))
+
+
+# Workspaces: named groups of artists, each a filter for the feed (Focus is the first one).
+# Members are kept by tidied name, like Focus and YouTube search, so they survive the table
+# being saved again. [{"id", "name", "members": [tidied names]}], in the order they are shown.
+def workspaces() -> list:
+    try:
+        saved = json.loads(db.kv_get("workspaces") or "null")
+    except ValueError:
+        saved = None
+    if not isinstance(saved, list):              # from before workspaces: the Focus column becomes the first
+        return [{"id": "focus", "name": "Focus", "members": sorted(focus_names())}]
+    return [w for w in saved if isinstance(w, dict) and w.get("id") and w.get("name")]
+
+
+def set_workspaces(groups):
+    groups = [{"id": str(w["id"]), "name": str(w["name"]).strip(),
+               "members": sorted(set(n for n in w.get("members") or [] if n))} for w in groups]
+    db.kv_set("workspaces", json.dumps(groups))
+    focus = next((w for w in groups if w["id"] == "focus"), None)
+    set_focus_names(focus["members"] if focus else [])
 
 
 def settings() -> dict:
