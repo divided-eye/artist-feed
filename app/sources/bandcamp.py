@@ -20,6 +20,9 @@ from .base import FetchResult, Post, Source, SourceError, Track, iso
 # Release pages opened per account per refresh. A long back catalogue fills in
 # over the next few refreshes instead of hammering the site on day one.
 MAX_NEW = int(os.environ.get("BANDCAMP_MAX_NEW", "6"))
+# On a page's first read, only its newest releases are opened, so every newly added artist shows up
+# quickly; the rest load on the catch-up visits every few minutes (MAX_NEW at a time).
+FIRST_READ = int(os.environ.get("BANDCAMP_FIRST_READ", "2"))
 GIVE_WAY_AFTER = 3   # a release page that failed this often no longer takes a slot ahead of unread ones
 PAUSE = float(os.environ.get("BANDCAMP_PAUSE_SECONDS", "0"))   # extra gap on top of the shared pace (see pace.py)
 
@@ -466,7 +469,8 @@ class Bandcamp(Source):
             fails = {}
         fails = {it["url"]: fails[it["url"]] for it in new if it["url"] in fails}
         new.sort(key=lambda it: min(fails.get(it["url"], 0), GIVE_WAY_AFTER))    # stable: page order otherwise
-        for i, it in enumerate(new[:MAX_NEW]):
+        limit = MAX_NEW if known_ids else min(MAX_NEW, FIRST_READ)      # a page read for the first time: newest first
+        for i, it in enumerate(new[:limit]):
             if i:
                 await asyncio.sleep(PAUSE)
             url = it["url"]

@@ -414,7 +414,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
     <div class="row2">                         <!-- always its own line: status on the left, panel buttons on the right -->
-      <span class="status" id="status"></span> <span class="error" id="feedError" role="alert"></span>
+      <span class="status" id="status"></span> <button class="btn small" id="showNew" hidden title="Add the posts this refresh has found so far; the refresh carries on">Show new posts</button> <span class="error" id="feedError" role="alert"></span>
       <div class="spacer"></div>
       <div class="actions">
         <a class="btn" id="downloadsBtn" hidden target="_blank" rel="noopener" href="https://bandcamp.com/"><svg class="dlicon" width="19" height="11" viewBox="0 0 458.32 269.31" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="matrix(1.3333 0 0 -1.3333 0 275.18)"><g transform="scale(.1)"><path d="m2343.2 43.969h-2343.2l1094.2 2019.9h2343.2l-1094.2-2019.9" fill="#1da0c3"/></g></g></svg>Downloads<span class="dlcount" id="downloadsCount" hidden></span></a>
@@ -662,7 +662,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
 <script>
 const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
-let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted", workspace: "" }, offset = 0, wasRefreshing = false;
+let sources = [], artists = [], filter = { source: "", artist_id: "", q: "", year: "", label: "", kind: "", length: "", hidden: "", range: "", since: "", until: "", dateBy: "posted", workspace: "" }, offset = 0, wasRefreshing = false, newShown = 0, newSoFar = 0;
 let hideNoPreview = false;      // a standing preference, kept in this browser; not cleared by "Clear filters"
 try { hideNoPreview = localStorage.getItem("hideNoPreview") === "1"; } catch {}
 let view = "grid", sort = { key: "posted", dir: "desc" }, playing = null;
@@ -1906,7 +1906,13 @@ async function pollStatus() {
     $("refreshBtn").disabled = s.refreshing && s.queued;
     $("version").textContent = s.version ? "v" + s.version : "";
     showDownloads(s.downloads);
-    if (wasRefreshing && !s.refreshing) await reload();
+    // Posts found while a refresh runs can be shown straight away, without waiting for it to end.
+    newSoFar = s.refreshing && s.progress ? s.progress.new || 0 : 0;
+    if (newSoFar < newShown) newShown = 0;                  // a new refresh has started
+    const waiting = newSoFar - newShown;
+    $("showNew").hidden = !(s.refreshing && waiting > 0);
+    $("showNew").textContent = `Show ${waiting.toLocaleString()} new post${waiting === 1 ? "" : "s"}`;
+    if (wasRefreshing && !s.refreshing) { newShown = 0; await reload(); }
     wasRefreshing = s.refreshing;
     statusTimer = setTimeout(pollStatus, s.refreshing ? 2000 : 15000);
   } catch { statusTimer = setTimeout(pollStatus, 15000); }
@@ -2309,6 +2315,7 @@ $("revertBtn").onclick = () => { if (confirm("Discard unsaved changes?")) loadTa
 $("importBtn").onclick = () => $("csvFile").click();
 $("csvFile").onchange = async e => { const f = e.target.files[0]; if (f) importCsv(await f.text()); e.target.value = ""; };
 $("moreBtn").onclick = () => loadFeed(false);
+$("showNew").onclick = async () => { newShown = newSoFar; $("showNew").hidden = true; await reload(); };
 $("viewGrid").onclick = () => setView("grid");
 $("workspaceSel").onchange = e => { filter.workspace = e.target.value; loadFeed(); };
 $("viewList").onclick = () => setView("list");

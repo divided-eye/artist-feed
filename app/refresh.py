@@ -15,6 +15,8 @@ from .sources.base import BROWSER_HEADERS, SourceError
 log = logging.getLogger("artist-feed")
 
 REFRESH_MINUTES = float(os.environ.get("REFRESH_MINUTES", "60"))
+# Pages read at the same time, per site. Each site has its own queue, so the quick sites (SoundCloud,
+# YouTube) never wait behind Bandcamp, whose requests are spaced out (see pace.py).
 CONCURRENCY = int(os.environ.get("REFRESH_CONCURRENCY", "3"))
 # Pages whose back catalogue is still loading are visited again this often, between full refreshes.
 CATCH_UP_MINUTES = float(os.environ.get("CATCH_UP_MINUTES", "10"))
@@ -57,6 +59,7 @@ def progress():
     if not _runs:
         return None
     pages, done = sum(r["pages"] for r in _runs), sum(r["done"] for r in _runs)
+    new = sum(r.get("tally", {}).get("new", 0) for r in _runs)          # new posts saved so far: the page offers to show them
     now, saved = time.monotonic(), _saved_pace()
     left, known = 0.0, False
     for run in _runs:
@@ -73,7 +76,7 @@ def progress():
                 continue
             known = True
             left = max(left, remaining * each)
-    return {"pages": pages, "done": done, "seconds_left": round(left) if known else None}
+    return {"pages": pages, "done": done, "seconds_left": round(left) if known else None, "new": new}
 
 
 async def _read_one(client, sem, account, tally):
@@ -114,14 +117,14 @@ async def refresh(account_ids=None):
     state["held"] = 0
     tally = {"pages": len(accounts), "checked": 0, "new": 0, "errors": 0, "held": 0,
              "lookup_running": pace.on_hold()}
-    run = {"pages": len(accounts), "done": 0, "started": time.monotonic(), "by": {}}
+    run = {"pages": len(accounts), "done": 0, "started": time.monotonic(), "by": {}, "tally": tally}
     for a in accounts:
         run["by"].setdefault(a["source"], {"pages": 0, "done": 0})["pages"] += 1
     _runs.append(run)
     try:
-        sem = asyncio.Semaphore(CONCURRENCY)
+        sems = {key: asyncio.Semaphore(CONCURRENCY) for key in run["by"]}      # one queue per site
         async with make_client() as client:
-            await asyncio.gather(*(_refresh_one(client, sem, a, tally, run) for a in accounts))
+            await asyncio.gather(*(_refresh_one(client, sems[a["source"]], a, tally, run) for a in accounts))
         if account_ids is None:          # each site's pace, remembered for the next estimate
             pace_now = _saved_pace()
             for key, site in run["by"].items():

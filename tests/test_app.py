@@ -1889,7 +1889,7 @@ def test_refresh_progress_estimate(client):
     refresh._runs.append(run)
     try:
         # SoundCloud: 20 pages in 40 s, 80 left = 160 s; Bandcamp: last refresh's 3 s a page, 18 left = 54 s
-        assert refresh.progress() == {"pages": 120, "done": 22, "seconds_left": 160}
+        assert refresh.progress() == {"pages": 120, "done": 22, "seconds_left": 160, "new": 0}
         # the quick pages are done: what's left is the slow site, at its own pace (10 pages in 40 s)
         run["by"] = {"soundcloud": {"pages": 100, "done": 100}, "bandcamp": {"pages": 20, "done": 10}}
         run["done"] = 110
@@ -2277,3 +2277,50 @@ def test_reading_follows(client):
     assert bad.status_code == 400
     assert set(client.get("/api/follows").json()) == {"soundcloud", "bandcamp"}
     client.put("/api/table", json={"rows": []})
+
+
+def test_quick_sites_do_not_wait_behind_bandcamp(monkeypatch):
+    """Each site has its own queue: SoundCloud pages are all read while Bandcamp's slow pages are
+    still being read, and the new posts found so far are counted while the refresh runs."""
+    import asyncio
+    from app import refresh, sites
+    from app.sources.base import FetchResult, Post
+    finished, seen_new = [], []
+
+    class Fake:
+        def __init__(self, key, seconds):
+            self.key, self.label, self.seconds = key, key, seconds
+
+        async def fetch(self, client, account, known):
+            await asyncio.sleep(self.seconds)
+            finished.append(account["source"])
+            if self.key == "soundcloud" and len([f for f in finished if f == "soundcloud"]) == 3:
+                seen_new.append(refresh.progress()["new"])
+            return FetchResult(posts=[Post(f"x{account['id']}", "t", "https://x/t", None, "track", None, None, None, None)])
+
+    accounts = [{"id": i, "source": "bandcamp" if i < 4 else "soundcloud", "url": f"https://x/{i}"} for i in range(7)]
+    monkeypatch.setattr(refresh.db, "list_accounts", lambda account_ids=None: accounts)
+    monkeypatch.setattr(refresh.db, "known_ids", lambda account_id: set())
+    monkeypatch.setattr(refresh.db, "save_result", lambda account, result: None)
+    monkeypatch.setattr(sites, "is_on", lambda key: True)
+    monkeypatch.setattr(refresh, "SOURCES", {"bandcamp": Fake("bandcamp", 0.3), "soundcloud": Fake("soundcloud", 0.01)})
+    asyncio.run(refresh.refresh([a["id"] for a in accounts]))
+    assert finished[:3] == ["soundcloud"] * 3, finished          # not held up by the 4 slow Bandcamp pages
+    assert seen_new == [2]                                       # counted as each page finishes, while Bandcamp still runs
+
+
+def test_a_new_bandcamp_page_reads_its_newest_releases_first(client, monkeypatch):
+    import asyncio
+    from app.sources import SOURCES, bandcamp
+    monkeypatch.setattr(bandcamp, "FIRST_READ", 1)
+    account = {"id": 99999, "url": "https://nightferry.bandcamp.com"}
+    first = asyncio.run(_fetch_with(SOURCES["bandcamp"], account, set()))
+    assert [p.external_id.rsplit("/", 1)[-1] for p in first.posts] == ["first"] and "still to load" in first.warning
+    later = asyncio.run(_fetch_with(SOURCES["bandcamp"], account, {p.external_id for p in first.posts}))
+    assert len(later.posts) == 2                                  # then MAX_NEW (2 in the tests) at a time
+
+
+async def _fetch_with(source, account, known):
+    from app import refresh
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True) as c:
+        return await source.fetch(c, account, known)

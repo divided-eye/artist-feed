@@ -1,10 +1,10 @@
 # Artist Feed: User Guide
 
-Oct 21, 2026
+Oct 25, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 84. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 85. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -218,6 +218,8 @@ These are the standard Docker and Python steps for macOS, and everything the app
 ## Using the feed
 
 The feed shows everything collected from your tracked artists, newest first. It refreshes itself every hour while the app is running. **Refresh Feed** checks immediately. If a refresh is already under way (for example for pages just added), a full one follows as soon as it ends. When it finishes, the line beside the buttons says what it found: how many new posts, how many Bandcamp pages were skipped because a Link Finder lookup was running (they are checked on the next refresh), and how many pages couldn't be read. The reasons for those are in the Status column of Tracked Artists and in the app's log (docker compose logs).
+
+You don't have to wait for a long refresh to end. While one runs, a **Show new posts** button beside the status line (for example **Show 24 new posts**) adds what it has found so far, and the refresh carries on.
 
 ### Views
 
@@ -474,6 +476,8 @@ Every request to Bandcamp goes through one queue, two seconds apart, whether it 
 
 While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". Each site is timed separately, since the refresh ends when its slowest site does: a site's pace comes from the last full refresh at first, then from this refresh once five of its pages are done. Bandcamp's two-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
 
+Each site has its own queue, three pages at a time, so SoundCloud and YouTube pages are read straight away instead of waiting behind Bandcamp's spaced-out requests. A Bandcamp page read for the first time opens only its two newest releases, so every newly added artist appears in the first pass; its older releases load on the catch-up visits every 10 minutes. Together this matters most just after adding many artists at once, such as with Import follows: their latest posts arrive within minutes rather than at the end of a long first refresh.
+
 ### Background reading
 
 After your purchases are read, the app keeps working in the background, one page every few seconds, pausing whenever a lookup is running.
@@ -540,7 +544,7 @@ Things saved in the browser do not follow you to another browser or device. Thin
 
 ### Settings in docker-compose.yml
 
-Add or change lines under `environment:`, then run `docker compose up -d --build`. Only the first two are set in the file by default; the third is there as a commented-out line.
+Add or change lines under `environment:`, then run `docker compose up -d --build`. Only the first two are set in the file by default; several others are there as commented-out lines (remove the # to use one).
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -550,6 +554,8 @@ Add or change lines under `environment:`, then run `docker compose up -d --build
 | `BANDCAMP_GAP_SECONDS` | 2 | Gap between any two requests to Bandcamp. Raise it if you see many pauses. |
 | `BANDCAMP_BACKOFF_SECONDS` | 30 | First pause after Bandcamp says "slow down"; doubles each time |
 | `BANDCAMP_MAX_NEW` | 6 | New Bandcamp releases opened per artist per feed refresh |
+| BANDCAMP\_FIRST\_READ | 2 | Releases opened on a Bandcamp page's first read, newest first; the rest load on catch-up visits |
+| REFRESH\_CONCURRENCY | 3 | Pages read at the same time, per site |
 | `SOUNDCLOUD_LIMIT` | 30 | Most recent SoundCloud uploads read per artist |
 | `LOOKUP_SCAN_RELEASES` | 40 | Releases opened on an artist's page per lookup row |
 | `LOOKUP_OWNED_RELEASES` | 15 | Purchases by an artist opened per lookup row |
@@ -693,6 +699,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 85 | Faster refresh after adding many artists: each site has its own queue, so SoundCloud and YouTube no longer wait behind Bandcamp; a Bandcamp page's first read opens only its two newest releases (the rest load on catch-up visits); and Show new posts adds what a running refresh has found so far. |
 | 84 | Not for sale on this page is only shown when the Bandcamp page itself says the release has no tracks, so a page the app couldn't fully read is no longer marked. |
 | 83 | Workspaces: named groups of artists, each with a checkbox column in Tracked Artists and a choice in the new workspace menu at the top (Focus becomes the first). Import follows adds the artists and labels a SoundCloud account or Bandcamp fan follows. Find missing links searches only the rows shown while the table is filtered, and each row has its own Find links. |
 | 82 | A Bandcamp release with no tracks and nothing to buy that doesn't say where it is sold: the feed searches Bandcamp once for the page that sells it, else marks the card Not for sale on this page. Link Finder keeps looking past such a page and gives it only as a last resort, marked Needs review. |
