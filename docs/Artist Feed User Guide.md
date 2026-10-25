@@ -8,8 +8,6 @@ This guide describes Artist Feed version 88. The version number is shown in smal
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
-The guide is meant to be edited. Change anything here that you want described differently. When a new version of the guide is requested, the current text is read first, your edits are kept, and only the parts affected by changes to the app are updated.
-
 To download a copy of this guide, click the guide's name at the top of the page and choose **Export**, then pick Word, PDF or Markdown. In the phone apps, Export is under Share. A download is a snapshot: later edits made here are not carried into it.
 
 One thing applies throughout: the app was built without access to the real Bandcamp, SoundCloud and YouTube sites. Its logic is tested against stand-in copies of their pages, and corrected from reports of how it behaves on the real ones. Parts that have only been tested that way are noted under Known limits.
