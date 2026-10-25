@@ -103,7 +103,13 @@ def progress():
                 continue
             known = True
             left = max(left, remaining * each)
-    return {"pages": pages, "done": done, "seconds_left": round(left) if known else None, "new": new}
+    by = {}                                              # pages per site, for "Bandcamp 40 of 110"
+    for run in _runs:
+        for key, site in run["by"].items():
+            b = by.setdefault(key, {"pages": 0, "done": 0})
+            b["pages"] += site["pages"]
+            b["done"] += site["done"]
+    return {"pages": pages, "done": done, "seconds_left": round(left) if known else None, "new": new, "by": by}
 
 
 async def _read_one(client, sem, account, tally):
@@ -136,11 +142,12 @@ async def _read_one(client, sem, account, tally):
             tally["errors"] += 1
 
 
-async def refresh(account_ids=None):
+async def refresh(account_ids=None, everything=False):
     """Read every page, or just these. A full refresh leaves out quiet Bandcamp pages not due yet
-    (see QUIET_DAYS); pages asked for by id (new pages, Check now) are always read."""
+    (see QUIET_DAYS) unless everything is asked for; pages asked for by id (new pages, Check now)
+    are always read."""
     accounts = [a for a in db.list_accounts(account_ids=account_ids) if sites.is_on(a["source"])]
-    resting = _resting(accounts) if account_ids is None else set()
+    resting = _resting(accounts) if account_ids is None and not everything else set()
     accounts = [a for a in accounts if a["id"] not in resting]
     if not accounts:
         return
@@ -165,7 +172,8 @@ async def refresh(account_ids=None):
         if account_ids is None:
             state["last_refresh"] = db.now()
             db.kv_set("last_refresh", state["last_refresh"])
-            state["last_result"] = dict(tally, at=state["last_refresh"])
+            state["last_result"] = dict(tally, at=state["last_refresh"],
+                                        sites={k: v["pages"] for k, v in run["by"].items()})
             log.info("refresh: %(checked)s of %(pages)s pages read, %(new)s new posts, %(errors)s problems, "
                      "%(held)s Bandcamp pages left for later", tally)
     finally:
@@ -179,13 +187,18 @@ async def refresh_when_free():
     try:
         while state["refreshing"]:
             await asyncio.sleep(1)
-        await refresh()
+        everything = state.get("queued_everything", False)
+        state["queued_everything"] = False
+        await refresh(everything=everything)
     finally:
         state["queued"] = False
 
 
-def request_refresh() -> str:
-    """The Refresh Feed button: "started", or "queued" behind a refresh already running."""
+def request_refresh(everything=False) -> str:
+    """The Refresh Feed button: "started", or "queued" behind a refresh already running.
+    everything: quiet Bandcamp pages too (the "Check them now" link)."""
+    if everything:
+        state["queued_everything"] = True if state["refreshing"] else False
     if state["queued"]:
         return "queued"
     if state["refreshing"]:
@@ -194,12 +207,12 @@ def request_refresh() -> str:
         _tasks.add(task)
         task.add_done_callback(_tasks.discard)
         return "queued"
-    refresh_in_background()
+    refresh_in_background(everything=everything)
     return "started"
 
 
-def refresh_in_background(account_ids=None):
-    task = asyncio.create_task(refresh(account_ids))
+def refresh_in_background(account_ids=None, everything=False):
+    task = asyncio.create_task(refresh(account_ids, everything))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
 

@@ -1889,7 +1889,8 @@ def test_refresh_progress_estimate(client):
     refresh._runs.append(run)
     try:
         # SoundCloud: 20 pages in 40 s, 80 left = 160 s; Bandcamp: last refresh's 3 s a page, 18 left = 54 s
-        assert refresh.progress() == {"pages": 120, "done": 22, "seconds_left": 160, "new": 0}
+        assert refresh.progress() == {"pages": 120, "done": 22, "seconds_left": 160, "new": 0,
+                                      "by": {"soundcloud": {"pages": 100, "done": 20}, "bandcamp": {"pages": 20, "done": 2}}}
         # the quick pages are done: what's left is the slow site, at its own pace (10 pages in 40 s)
         run["by"] = {"soundcloud": {"pages": 100, "done": 100}, "bandcamp": {"pages": 20, "done": 10}}
         run["done"] = 110
@@ -2346,3 +2347,42 @@ def test_quiet_bandcamp_pages_rest_between_checks(monkeypatch):
     assert refresh._resting(accounts) == {1}
     monkeypatch.setattr(refresh, "QUIET_HOURS", 0)
     assert refresh._resting(accounts) == set()              # switched off: every page, every time
+
+
+
+def test_check_them_now_reads_the_quiet_pages_too(monkeypatch):
+    """A normal refresh leaves quiet Bandcamp pages for later and says how many; "Check them now"
+    (everything) reads them as well. The summary counts the pages checked on each site."""
+    import asyncio
+    from app import refresh, sites
+    from app.sources.base import FetchResult
+    read = []
+
+    class Fake:
+        def __init__(self, key):
+            self.key = self.label = key
+
+        async def fetch(self, client, account, known):
+            read.append(account["id"])
+            return FetchResult()
+
+    accounts = [{"id": 1, "source": "bandcamp"}, {"id": 2, "source": "bandcamp"}, {"id": 3, "source": "soundcloud"}]
+    monkeypatch.setattr(refresh.db, "list_accounts", lambda account_ids=None: accounts)
+    monkeypatch.setattr(refresh.db, "known_ids", lambda account_id: set())
+    monkeypatch.setattr(refresh.db, "save_result", lambda account, result: None)
+    monkeypatch.setattr(refresh.db, "kv_set", lambda k, v: None)
+    monkeypatch.setattr(sites, "is_on", lambda key: True)
+    monkeypatch.setattr(refresh, "SOURCES", {"bandcamp": Fake("bandcamp"), "soundcloud": Fake("soundcloud")})
+    monkeypatch.setattr(refresh, "_resting", lambda accs: {1})
+    saved = dict(refresh.state)
+    try:
+        asyncio.run(refresh.refresh())
+        assert sorted(read) == [2, 3]
+        assert refresh.state["last_result"]["resting"] == 1
+        assert refresh.state["last_result"]["sites"] == {"bandcamp": 1, "soundcloud": 1}
+        read.clear()
+        asyncio.run(refresh.refresh(everything=True))
+        assert sorted(read) == [1, 2, 3] and refresh.state["last_result"]["resting"] == 0
+        assert refresh.state["last_result"]["sites"] == {"bandcamp": 2, "soundcloud": 1}
+    finally:
+        refresh.state.update(saved)

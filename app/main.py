@@ -18,7 +18,7 @@ from . import db, follows, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "86"   # shown beside the title, so you can tell which version is running
+VERSION = "87"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -787,8 +787,9 @@ async def retry_lookup_row(job_id: str, body: RetryIn):
 
 
 @app.post("/api/refresh")
-async def refresh_now():
-    return {"ok": True, "state": refresh.request_refresh()}
+async def refresh_now(all: bool = False):
+    """Refresh Feed; all=true also checks the quiet Bandcamp pages a normal refresh leaves for later."""
+    return {"ok": True, "state": refresh.request_refresh(everything=all)}
 
 
 RELATED_HOURS = 24
