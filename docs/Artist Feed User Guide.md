@@ -554,8 +554,8 @@ Add or change lines under `environment:`, then run `docker compose up -d --build
 | `BANDCAMP_GAP_SECONDS` | 2 | Gap between any two requests to Bandcamp. Raise it if you see many pauses. |
 | `BANDCAMP_BACKOFF_SECONDS` | 30 | First pause after Bandcamp says "slow down"; doubles each time |
 | `BANDCAMP_MAX_NEW` | 6 | New Bandcamp releases opened per artist per feed refresh |
-| BANDCAMP\_FIRST\_READ | 2 | Releases opened on a Bandcamp page's first read, newest first; the rest load on catch-up visits |
-| REFRESH\_CONCURRENCY | 3 | Pages read at the same time, per site |
+| `BANDCAMP_FIRST_READ` | 2 | Releases opened on a Bandcamp page's first read, newest first; the rest load on catch-up visits |
+| `REFRESH_CONCURRENCY` | 3 | Pages read at the same time, per site |
 | `SOUNDCLOUD_LIMIT` | 30 | Most recent SoundCloud uploads read per artist |
 | `LOOKUP_SCAN_RELEASES` | 40 | Releases opened on an artist's page per lookup row |
 | `LOOKUP_OWNED_RELEASES` | 15 | Purchases by an artist opened per lookup row |
