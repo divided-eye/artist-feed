@@ -152,7 +152,11 @@ Then open http://localhost:8080. Leave the window open while you use the app; cl
 
 Artist Feed also comes as a desktop program: **ArtistFeed.exe** on Windows (and versions for Mac and Linux). It does what the Docker version does, with the feed, Tracked Artists, Link Finder and Settings, in a window of its own instead of a browser tab. Its code is in its own repository, **divided-eye/artist-feed-desktop** on GitHub. It is the same app rebuilt for desktops, so each new feature comes to it after the Docker version.
 
-**Getting the .exe without any commands.** GitHub can build it for you:
+**Downloading it (the easiest way).** Open [github.com/divided-eye/artist-feed-desktop/releases/latest](https://github.com/divided-eye/artist-feed-desktop/releases/latest). Under **Assets**, download **ArtistFeed-windows.zip** (or the Mac or Linux zip), unzip it, and put **ArtistFeed.exe** in a folder of its own that you will keep. No GitHub account is needed, and the link always points to the newest version.
+
+**Publishing a new version (for whoever looks after the app).** In PowerShell, in the `artist-feed-desktop` folder, run `git tag -a v0.5.0 -m "What changed"` and then `git push origin v0.5.0`, with the next version number. GitHub tests and builds the app, then publishes a release of that name on the Releases page with all four zips attached, using your message as its description. The app shows that number beside its title.
+
+**Building a copy without a release.** To try the latest changes before publishing a version, GitHub can build them for you; the download is only for signed-in GitHub users and is deleted after 90 days:
 
 1. Sign in to GitHub and open the **artist-feed-desktop** repository.
 2. Click **Actions**, then **Build** in the list on the left, then **Run workflow** → **Run workflow**.
@@ -174,7 +178,7 @@ The finished **ArtistFeed.exe** is in the `publish` folder. Copy it to your own 
 
 **Your data.** The desktop app keeps its data in its own place, not in the app's folder: `%APPDATA%\ArtistFeed` on Windows (paste that into File Explorer's address bar to open it). **Settings → Your data** shows the exact path. To bring over your artists, feed and saved lookups from the Docker version, stop it first (`docker compose stop`), then choose **Settings → Your data → Import from the web version…** and pick the Docker version's `data\feed.db`. It takes over the next time you open the desktop app. Don't run both versions on one data file at the same time.
 
-**Updating the desktop app.** Get a new .exe (run the **Build** workflow again, or run `git pull` and the same `dotnet publish` line in the `artist-feed-desktop` folder). Close the app, copy the new **ArtistFeed.exe** over the old one in your folder, and open it again. Your data isn't in that folder, so nothing is lost.
+**Updating the desktop app.** Get a new .exe (download it from the Releases page, run the **Build** workflow again, or run `git pull` and the same `dotnet publish` line in the `artist-feed-desktop` folder). Close the app, copy the new **ArtistFeed.exe** over the old one in your folder, and open it again. Your data isn't in that folder, so nothing is lost.
 
 **Which is easier to maintain?** Docker. Its update is `git pull` plus one rebuild command, it restarts by itself, and it gets new features first. The desktop app saves you Docker and the terminal day to day, but each update means fetching and swapping a new .exe yourself.
 
