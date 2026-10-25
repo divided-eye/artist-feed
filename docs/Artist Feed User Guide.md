@@ -4,7 +4,7 @@ Oct 25, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 87. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 88. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -221,7 +221,7 @@ These are the standard Docker and Python steps for macOS, and everything the app
 
 ## Using the feed
 
-The feed shows everything collected from your tracked artists, newest first. It refreshes itself every hour while the app is running. **Refresh Feed** checks immediately. If a refresh is already under way (for example for pages just added), a full one follows as soon as it ends. When it finishes, the line beside the buttons says what it found: how many new posts, how many Bandcamp pages were skipped because a Link Finder lookup was running (they are checked on the next refresh), and how many pages couldn't be read. The reasons for those are in the Status column of Tracked Artists and in the app's log (docker compose logs).
+The feed shows everything collected from your tracked artists, newest first. It refreshes itself every hour while the app is running. **Refresh Feed** checks immediately. If a refresh is already under way (for example for pages just added), a full one follows as soon as it ends. When it finishes, the line beside the buttons says when it ran and how many new posts it found. The rest sits behind the small ⓘ after it: hover over it (or tap it) for the pages checked on each site, Bandcamp pages skipped because a Link Finder lookup was running (they are checked on the next refresh), quiet Bandcamp pages left for later, and pages that couldn't be read. The ⓘ turns yellow when some pages couldn't be read. The reasons for those are in the Status column of Tracked Artists and in the app's log (docker compose logs).
 
 You don't have to wait for a long refresh to end. While one runs, a **Show new posts** button beside the status line (for example **Show 24 new posts**) adds what it has found so far, and the refresh carries on.
 
@@ -480,11 +480,11 @@ Every request to Bandcamp goes through one queue, one second apart (`BANDCAMP_GA
 
 While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". Each site is timed separately, since the refresh ends when its slowest site does: a site's pace comes from the last full refresh at first, then from this refresh once five of its pages are done. Bandcamp's one-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
 
-The status line also counts pages per site, both while a refresh runs ("120 of 300 pages (Bandcamp 40 of 110, SoundCloud 80 of 190)") and in the summary afterwards ("pages checked: Bandcamp 110, SoundCloud 190").
+The ⓘ beside the status line counts pages per site, both while a refresh runs ("Pages checked so far: Bandcamp 40 of 110, SoundCloud 80 of 190") and afterwards ("Pages checked: Bandcamp 110, SoundCloud 190").
 
 Each site has its own queue, three pages at a time, so SoundCloud and YouTube pages are read straight away instead of waiting behind Bandcamp's spaced-out requests. A Bandcamp page read for the first time opens only its two newest releases, so every newly added artist appears in the first pass; its older releases load on the catch-up visits every 10 minutes. Together this matters most just after adding many artists at once, such as with Import follows: their latest posts arrive within minutes rather than at the end of a long first refresh.
 
-Quiet Bandcamp pages rest between checks. A page whose newest release is more than 90 days old is checked at most every 6 hours, instead of on every hourly refresh, so a typical refresh reads only the pages that have been active lately. Pages with a recent release, pages never read before, and pages whose older releases are still loading are checked every time; so are SoundCloud and YouTube pages, which are quick. **Refresh Feed** follows the same rule, while **Check now** in Tracked Artists always reads that artist's pages. After a refresh, the status line says how many quiet pages were left for a later check, with a **Check them now** button beside it that runs a full refresh of every page, quiet ones included. A long-silent artist's surprise release can therefore show up a few hours late; set `BANDCAMP_QUIET_HOURS` to `0` in `docker-compose.yml` to check every page on every refresh.
+Quiet Bandcamp pages rest between checks. A page whose newest release is more than 90 days old is checked at most every 6 hours, instead of on every hourly refresh, so a typical refresh reads only the pages that have been active lately. Pages with a recent release, pages never read before, and pages whose older releases are still loading are checked every time; so are SoundCloud and YouTube pages, which are quick. **Refresh Feed** follows the same rule, while **Check now** in Tracked Artists always reads that artist's pages. After a refresh, the ⓘ beside the status line says how many quiet pages were left for a later check, with a **Check them now** button in it that runs a full refresh of every page, quiet ones included. A long-silent artist's surprise release can therefore show up a few hours late; set `BANDCAMP_QUIET_HOURS` to `0` in `docker-compose.yml` to check every page on every refresh.
 
 ### Background reading
 
@@ -709,6 +709,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 88 | Shorter status line: it says when the feed was updated and how many new posts came in, and the rest (pages per site, skipped and quiet pages, problems, Check them now) is behind a small ⓘ beside it, shown on hover or tap. The line no longer wraps and shifts the page. |
 | 87 | Check them now, beside the note about quiet Bandcamp pages left for later, refreshes every page at once. The status line counts pages per site, during a refresh and in the summary after it. |
 | 86 | Quiet Bandcamp pages (no release in 90 days) are checked every 6 hours instead of every refresh, and the gap between Bandcamp requests is one second instead of two (BANDCAMP\_GAP\_SECONDS raises it again). |
 | 85 | Faster refresh after adding many artists: each site has its own queue, so SoundCloud and YouTube no longer wait behind Bandcamp; a Bandcamp page's first read opens only its two newest releases (the rest load on catch-up visits); and Show new posts adds what a running refresh has found so far. |

@@ -101,7 +101,21 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   #downloadsBtn.off:hover { background: transparent; }
   .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
   .btn.ghost:hover { color: var(--danger); }
-  .status { color: var(--muted); font-size: 13px; }
+  .status { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* the ⓘ beside the status line: the refresh's details, on hover or tap */
+  .infowrap { position: relative; display: inline-flex; align-items: center; margin-left: 6px; vertical-align: middle; }
+  .infobtn { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--muted); background: transparent; color: var(--muted);
+             font: italic 600 11px/1 Georgia, "Times New Roman", serif; padding: 0; cursor: help; display: inline-flex; align-items: center; justify-content: center; }
+  .infobtn:hover, .infowrap:focus-within .infobtn { color: var(--text); border-color: var(--text); }
+  .infowrap.warn .infobtn { color: var(--warn); border-color: var(--warn); }
+  .infopop { display: none; position: absolute; top: 100%; left: -8px; z-index: 60; padding-top: 8px; }      /* the padding bridges the gap, so the pop-up stays open on the way to it */
+  .infowrap[hidden] { display: none; }
+  .infowrap:hover .infopop, .infowrap:focus-within .infopop { display: block; }
+  .popbox { min-width: 280px; max-width: 440px; width: max-content; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+            padding: 10px 12px; box-shadow: 0 8px 24px var(--shadow); color: var(--text); font-size: 13px; line-height: 1.45; white-space: normal; }
+  .popbox #statusLines div + div { margin-top: 4px; }
+  .popbox .dim { color: var(--muted); }
+  .popbox #checkQuiet { margin-top: 8px; }
 
   main { max-width: max(var(--page), var(--fit)); margin: 0 auto; padding: 18px 16px 60px; }
   .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
@@ -414,7 +428,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
       <button id="viewGrid" aria-pressed="true">Grid</button><button id="viewList" aria-pressed="false">List</button>
     </div>
     <div class="row2">                         <!-- always its own line: status on the left, panel buttons on the right -->
-      <span class="status" id="status"></span> <button class="btn small" id="checkQuiet" hidden title="Check the quiet Bandcamp pages now as well: a full refresh of every page">Check them now</button> <button class="btn small" id="showNew" hidden title="Add the posts this refresh has found so far; the refresh carries on">Show new posts</button> <span class="error" id="feedError" role="alert"></span>
+      <span class="status" id="status"></span><span class="infowrap" id="statusInfo" hidden><button type="button" class="infobtn" id="statusInfoBtn" aria-label="Refresh details" aria-describedby="statusDetails">i</button><div class="infopop" id="statusDetails" role="tooltip"><div class="popbox"><div id="statusLines"></div><button class="btn small" id="checkQuiet" hidden title="Check the quiet Bandcamp pages now as well: a full refresh of every page">Check them now</button></div></div></span> <button class="btn small" id="showNew" hidden title="Add the posts this refresh has found so far; the refresh carries on">Show new posts</button> <span class="error" id="feedError" role="alert"></span>
       <div class="spacer"></div>
       <div class="actions">
         <a class="btn" id="downloadsBtn" hidden target="_blank" rel="noopener" href="https://bandcamp.com/"><svg class="dlicon" width="19" height="11" viewBox="0 0 458.32 269.31" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="matrix(1.3333 0 0 -1.3333 0 275.18)"><g transform="scale(.1)"><path d="m2343.2 43.969h-2343.2l1094.2 2019.9h2343.2l-1094.2-2019.9" fill="#1da0c3"/></g></g></svg>Downloads<span class="dlcount" id="downloadsCount" hidden></span></a>
@@ -1835,13 +1849,25 @@ async function reload() {
 // What the last full refresh did, in a few words.
 function refreshSummary(r) {
   if (!r) return "";
-  const parts = [r.new ? `${r.new} new post${r.new > 1 ? "s" : ""}` : "nothing new"];
-  if (r.held) parts.push(`${r.held} Bandcamp page${r.held > 1 ? "s" : ""} skipped${r.lookup_running ? " while a lookup ran" : ""}, tried again next time`);
-  if (r.errors) parts.push(`${r.errors} page${r.errors > 1 ? "s" : ""} couldn't be read (see Tracked Artists)`);
-  if (r.resting) parts.push(`${r.resting} quiet Bandcamp page${r.resting > 1 ? "s" : ""} left for a later check`);
-  const per = sitesText(r.sites, false);
-  if (per) parts.push(`pages checked: ${per}`);
-  return " · " + parts.join(" · ");
+  return " · " + (r.new ? `${r.new} new post${r.new > 1 ? "s" : ""}` : "nothing new");
+}
+
+// The details behind the ⓘ beside the status line: one line each, longest last.
+function statusDetails(s) {
+  const lines = [], r = s.last_result, n = x => x.toLocaleString(), pl = (x, one, many) => `${n(x)} ${x === 1 ? one : many}`;
+  if (s.refreshing) {
+    const per = sitesText(s.progress && s.progress.by, true);
+    if (per) lines.push("Pages checked so far: " + per);
+    if (s.queued) lines.push("A full refresh follows when this one ends.");
+  } else if (r) {
+    const per = sitesText(r.sites, false);
+    if (per) lines.push("Pages checked: " + per);
+    if (r.errors) lines.push(`${pl(r.errors, "page", "pages")} couldn't be read (see Tracked Artists).`);
+    if (r.held) lines.push(`${pl(r.held, "Bandcamp page", "Bandcamp pages")} skipped${r.lookup_running ? " while a lookup ran" : ""}; tried again next time.`);
+    if (r.resting) lines.push(`${pl(r.resting, "quiet Bandcamp page", "quiet Bandcamp pages")} (no release in the last few months) left for a later check.`);
+  }
+  if (s.bandcamp_on_hold) lines.push("Bandcamp checks are on hold while a lookup runs or Bandcamp has asked for a pause; they resume on the next refresh.");
+  return { lines, warn: !!(r && !s.refreshing && r.errors) };
 }
 
 let statusTimer = null;
@@ -1887,8 +1913,7 @@ function sitesText(by, done) {
 
 function progressText(p) {
   if (!p || !p.pages) return "";
-  const per = sitesText(p.by, true);
-  let text = ` ${p.done.toLocaleString()} of ${p.pages.toLocaleString()} page${p.pages === 1 ? "" : "s"}` + (per ? ` (${per})` : "");
+  let text = ` ${p.done.toLocaleString()} of ${p.pages.toLocaleString()} page${p.pages === 1 ? "" : "s"}`;
   const left = p.seconds_left;
   if (left != null && p.done < p.pages) {
     const min = Math.round(left / 60);
@@ -1912,12 +1937,14 @@ async function pollStatus() {
   clearTimeout(statusTimer);                  // one polling loop, however often it is kicked
   try {
     const s = await api("/api/status");
-    $("status").textContent = s.refreshing ? "Checking for new posts…" + progressText(s.progress) + (s.queued ? " (a full refresh follows)" : "")
+    $("status").textContent = s.refreshing ? "Checking for new posts…" + progressText(s.progress)
       : (s.last_refresh ? "Updated " + ago(s.last_refresh) + refreshSummary(s.last_result) : "");
-    $("status").title = s.bandcamp_on_hold ? "Bandcamp checks are on hold while a lookup runs or Bandcamp has asked for a pause; they resume on the next refresh." : "";
-    if (s.bandcamp_on_hold && !s.refreshing && !(s.last_result && s.last_result.held)) $("status").textContent += " · Bandcamp on hold";
-    $("refreshBtn").disabled = s.refreshing && s.queued;
+    const info = statusDetails(s);
+    $("statusLines").replaceChildren(...info.lines.map(t => el("div", { text: t })));
     $("checkQuiet").hidden = s.refreshing || !(s.last_result && s.last_result.resting);
+    $("statusInfo").hidden = !info.lines.length && $("checkQuiet").hidden;
+    $("statusInfo").classList.toggle("warn", info.warn);
+    $("refreshBtn").disabled = s.refreshing && s.queued;
     $("version").textContent = s.version ? "v" + s.version : "";
     showDownloads(s.downloads);
     // Posts found while a refresh runs can be shown straight away, without waiting for it to end.
