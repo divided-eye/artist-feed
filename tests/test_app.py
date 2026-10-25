@@ -2324,3 +2324,25 @@ async def _fetch_with(source, account, known):
     from app import refresh
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True) as c:
         return await source.fetch(c, account, known)
+
+
+def test_quiet_bandcamp_pages_rest_between_checks(monkeypatch):
+    """A Bandcamp page with no release in QUIET_DAYS is checked at most every QUIET_HOURS; recent, new,
+    still-loading and other sites' pages are always checked."""
+    from datetime import datetime, timedelta, timezone
+    from app import refresh
+    ago = lambda **kw: (datetime.now(timezone.utc) - timedelta(**kw)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    newest = {1: ago(days=400), 2: ago(days=10), 3: ago(days=400), 4: ago(days=400), 5: ago(days=400), 6: ago(days=400)}
+    monkeypatch.setattr(refresh.db, "query", lambda sql, args=(): [{"account_id": k, "newest": v} for k, v in newest.items()])
+    acc = lambda i, source="bandcamp", checked=ago(hours=1), error=None: {
+        "id": i, "source": source, "last_checked": checked, "last_error": error}
+    accounts = [acc(1),                                    # quiet, checked an hour ago: rests
+                acc(2),                                    # released 10 days ago: checked
+                acc(3, checked=ago(hours=7)),              # quiet, but last checked 7 hours ago: due
+                acc(4, checked=None),                      # never read: checked
+                acc(5, error="3 older release(s) still to load"),   # catalogue still loading: checked
+                acc(6, source="soundcloud"),               # other sites are quick: always checked
+                acc(7)]                                    # nothing saved yet: checked
+    assert refresh._resting(accounts) == {1}
+    monkeypatch.setattr(refresh, "QUIET_HOURS", 0)
+    assert refresh._resting(accounts) == set()              # switched off: every page, every time

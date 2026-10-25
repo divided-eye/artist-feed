@@ -4,7 +4,7 @@ Oct 25, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 85. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 86. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -473,14 +473,16 @@ YouTube publishes a feed of every channel's 15 newest videos, which needs no key
 
 ### Pacing
 
-Every request to Bandcamp goes through one queue, two seconds apart, whether it comes from the feed, the purchases reader or the Link Finder.
+Every request to Bandcamp goes through one queue, one second apart (`BANDCAMP_GAP_SECONDS`), whether it comes from the feed, the purchases reader or the Link Finder.
 
 - If Bandcamp answers "slow down" (error 429), everything waits as long as it asks, or 30 seconds doubling each time, and then carries on with a wider gap. The status line shows the pause.
 - While a lookup or a purchases read is running, the feed's own Bandcamp checks stand aside and resume on the next refresh.
 
-While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". Each site is timed separately, since the refresh ends when its slowest site does: a site's pace comes from the last full refresh at first, then from this refresh once five of its pages are done. Bandcamp's two-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
+While the feed refreshes, the status line counts the pages checked and estimates the time left, for example "Checking for new posts… 118 of 452 pages · about 49 min left". Each site is timed separately, since the refresh ends when its slowest site does: a site's pace comes from the last full refresh at first, then from this refresh once five of its pages are done. Bandcamp's one-second gap and any pauses it asks for make it a rough guide: SoundCloud and YouTube pages are quick, Bandcamp pages slow.
 
 Each site has its own queue, three pages at a time, so SoundCloud and YouTube pages are read straight away instead of waiting behind Bandcamp's spaced-out requests. A Bandcamp page read for the first time opens only its two newest releases, so every newly added artist appears in the first pass; its older releases load on the catch-up visits every 10 minutes. Together this matters most just after adding many artists at once, such as with Import follows: their latest posts arrive within minutes rather than at the end of a long first refresh.
+
+Quiet Bandcamp pages rest between checks. A page whose newest release is more than 90 days old is checked at most every 6 hours, instead of on every hourly refresh, so a typical refresh reads only the pages that have been active lately. Pages with a recent release, pages never read before, and pages whose older releases are still loading are checked every time; so are SoundCloud and YouTube pages, which are quick. **Refresh Feed** follows the same rule, while **Check now** in Tracked Artists always reads that artist's pages. After a refresh, the status line says how many quiet pages were left for a later check. A long-silent artist's surprise release can therefore show up a few hours late; set `BANDCAMP_QUIET_HOURS` to `0` in `docker-compose.yml` to check every page on every refresh.
 
 ### Background reading
 
@@ -555,11 +557,13 @@ Add or change lines under `environment:`, then run `docker compose up -d --build
 | `REFRESH_MINUTES` | 60 | How often the feed checks every artist (minimum 5) |
 | `BANDCAMP_FAN` | empty | Bandcamp account whose purchases Link Finder reads |
 | `LOOKUP_FALLBACK` | soundcloud | Artist link when a track isn't found: `soundcloud` or `bandcamp`. The menu in the panel overrides it. |
-| `BANDCAMP_GAP_SECONDS` | 2 | Gap between any two requests to Bandcamp. Raise it if you see many pauses. |
+| `BANDCAMP_GAP_SECONDS` | 1 | Gap between any two requests to Bandcamp. Raise it if you see many pauses. |
 | `BANDCAMP_BACKOFF_SECONDS` | 30 | First pause after Bandcamp says "slow down"; doubles each time |
 | `BANDCAMP_MAX_NEW` | 6 | New Bandcamp releases opened per artist per feed refresh |
 | `BANDCAMP_FIRST_READ` | 2 | Releases opened on a Bandcamp page's first read, newest first; the rest load on catch-up visits |
 | `REFRESH_CONCURRENCY` | 3 | Pages read at the same time, per site |
+| `BANDCAMP_QUIET_DAYS` | 90 | A Bandcamp page with no release in this many days counts as quiet |
+| `BANDCAMP_QUIET_HOURS` | 6 | A quiet page is checked at most this often; 0 checks every page on every refresh |
 | `SOUNDCLOUD_LIMIT` | 30 | Most recent SoundCloud uploads read per artist |
 | `LOOKUP_SCAN_RELEASES` | 40 | Releases opened on an artist's page per lookup row |
 | `LOOKUP_OWNED_RELEASES` | 15 | Purchases by an artist opened per lookup row |
@@ -677,7 +681,7 @@ These are the questions that came up while the app was being built.
 
 **Can I correct a result and have the right link remembered?** Yes. Use Edit under the link. Your link is used for that artist and title from then on.
 
-**Why does a lookup take so long, or seem stuck?** Bandcamp limits how fast it can be read, so requests go two seconds apart and pause when Bandcamp asks. A track that is not in your purchases can need several searches and dozens of page reads. The status line names the track being searched and shows any pause. Tracks already known are filled in first. If you know a track can't be found (an unreleased tune, say) or already have its link, press Skip or Add link on its row.
+**Why does a lookup take so long, or seem stuck?** Bandcamp limits how fast it can be read, so requests go a second apart and pause when Bandcamp asks. A track that is not in your purchases can need several searches and dozens of page reads. The status line names the track being searched and shows any pause. Tracks already known are filled in first. If you know a track can't be found (an unreleased tune, say) or already have its link, press Skip or Add link on its row.
 
 **What does "Bandcamp answered 429" mean?** Bandcamp is saying the app asked too fast. The app waits and carries on by itself. A purchases read that is interrupted continues from where it stopped.
 
@@ -703,6 +707,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 86 | Quiet Bandcamp pages (no release in 90 days) are checked every 6 hours instead of every refresh, and the gap between Bandcamp requests is one second instead of two (BANDCAMP\_GAP\_SECONDS raises it again). |
 | 85 | Faster refresh after adding many artists: each site has its own queue, so SoundCloud and YouTube no longer wait behind Bandcamp; a Bandcamp page's first read opens only its two newest releases (the rest load on catch-up visits); and Show new posts adds what a running refresh has found so far. |
 | 84 | Not for sale on this page is only shown when the Bandcamp page itself says the release has no tracks, so a page the app couldn't fully read is no longer marked. |
 | 83 | Workspaces: named groups of artists, each with a checkbox column in Tracked Artists and a choice in the new workspace menu at the top (Focus becomes the first). Import follows adds the artists and labels a SoundCloud account or Bandcamp fan follows. Find missing links searches only the rows shown while the table is filtered, and each row has its own Find links. |

@@ -1838,6 +1838,7 @@ function refreshSummary(r) {
   const parts = [r.new ? `${r.new} new post${r.new > 1 ? "s" : ""}` : "nothing new"];
   if (r.held) parts.push(`${r.held} Bandcamp page${r.held > 1 ? "s" : ""} skipped${r.lookup_running ? " while a lookup ran" : ""}, tried again next time`);
   if (r.errors) parts.push(`${r.errors} page${r.errors > 1 ? "s" : ""} couldn't be read (see Tracked Artists)`);
+  if (r.resting) parts.push(`${r.resting} quiet Bandcamp page${r.resting > 1 ? "s" : ""} left for a later check`);
   return " · " + parts.join(" · ");
 }
 

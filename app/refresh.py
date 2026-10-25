@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -20,6 +21,12 @@ REFRESH_MINUTES = float(os.environ.get("REFRESH_MINUTES", "60"))
 CONCURRENCY = int(os.environ.get("REFRESH_CONCURRENCY", "3"))
 # Pages whose back catalogue is still loading are visited again this often, between full refreshes.
 CATCH_UP_MINUTES = float(os.environ.get("CATCH_UP_MINUTES", "10"))
+
+# Quiet Bandcamp pages rest between checks. A page whose newest release is older than QUIET_DAYS is
+# checked at most every QUIET_HOURS, instead of on every refresh; pages with a recent release, pages
+# never read, and pages with older releases still to load are checked every time. QUIET_HOURS 0 = off.
+QUIET_DAYS = float(os.environ.get("BANDCAMP_QUIET_DAYS", "90"))
+QUIET_HOURS = float(os.environ.get("BANDCAMP_QUIET_HOURS", "6"))
 
 state = {"refreshing": 0, "last_refresh": None, "held": 0, "queued": False, "last_result": None}
 _runs = []          # the refreshes running now: {"pages", "done", "started"}
@@ -41,6 +48,26 @@ async def _refresh_one(client, sem, account, tally, run):
             site["finished"] = time.monotonic()
 
 
+def _resting(accounts) -> set:
+    """The quiet Bandcamp pages not due for a check this time: no release in QUIET_DAYS, and checked
+    less than QUIET_HOURS ago."""
+    if QUIET_HOURS <= 0:
+        return set()
+    newest = {r["account_id"]: r["newest"] for r in db.query(
+        "SELECT account_id, MAX(COALESCE(published_at, posted_at)) AS newest FROM posts GROUP BY account_id")}
+    now = datetime.now(timezone.utc)
+    quiet_before = (now - timedelta(days=QUIET_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    checked_after = (now - timedelta(hours=QUIET_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    resting = set()
+    for a in accounts:
+        if a["source"] != "bandcamp" or not a.get("last_checked") or "still to load" in (a.get("last_error") or ""):
+            continue
+        last = newest.get(a["id"])
+        if last and last < quiet_before and a["last_checked"] > checked_after:
+            resting.add(a["id"])
+    return resting
+
+
 def _saved_pace() -> dict:
     try:
         saved = json.loads(db.kv_get("refresh_pace") or "{}")
@@ -52,7 +79,7 @@ def _saved_pace() -> dict:
 def progress():
     """Pages checked so far in the refreshes running now, and a rough estimate of the time left.
 
-    Each site is timed on its own: Bandcamp pages are read two seconds apart (and wait out any pause
+    Each site is timed on its own: Bandcamp pages are read a second apart (and wait out any pause
     Bandcamp asks for), while SoundCloud and YouTube pages are quick, so one overall pace would
     rise as the quick pages run out. A site's pace comes from this refresh once a few of its pages
     are done, before that from the last full refresh. The refresh ends when the slowest site does."""
@@ -110,13 +137,17 @@ async def _read_one(client, sem, account, tally):
 
 
 async def refresh(account_ids=None):
+    """Read every page, or just these. A full refresh leaves out quiet Bandcamp pages not due yet
+    (see QUIET_DAYS); pages asked for by id (new pages, Check now) are always read."""
     accounts = [a for a in db.list_accounts(account_ids=account_ids) if sites.is_on(a["source"])]
+    resting = _resting(accounts) if account_ids is None else set()
+    accounts = [a for a in accounts if a["id"] not in resting]
     if not accounts:
         return
     state["refreshing"] += 1
     state["held"] = 0
     tally = {"pages": len(accounts), "checked": 0, "new": 0, "errors": 0, "held": 0,
-             "lookup_running": pace.on_hold()}
+             "lookup_running": pace.on_hold(), "resting": len(resting)}
     run = {"pages": len(accounts), "done": 0, "started": time.monotonic(), "by": {}, "tally": tally}
     for a in accounts:
         run["by"].setdefault(a["source"], {"pages": 0, "done": 0})["pages"] += 1

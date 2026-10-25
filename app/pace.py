@@ -13,7 +13,7 @@ import asyncio
 import os
 import time
 
-GAP = float(os.environ.get("BANDCAMP_GAP_SECONDS", "2"))            # normal gap between requests
+GAP = float(os.environ.get("BANDCAMP_GAP_SECONDS", "1"))            # normal gap between requests
 MAX_GAP = float(os.environ.get("BANDCAMP_MAX_GAP_SECONDS", "8"))
 BACKOFF = float(os.environ.get("BANDCAMP_BACKOFF_SECONDS", "30"))   # first pause after a 429; doubles each time
 TRIES = int(os.environ.get("BANDCAMP_TRIES", "6"))                  # attempts per request before giving up

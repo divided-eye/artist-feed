@@ -14,6 +14,9 @@ services:
       # CATCH_UP_MINUTES: "10"   # how often pages with older releases still to load are visited between refreshes
       # BANDCAMP_FIRST_READ: "2"   # releases opened on a Bandcamp page's first read (newest first); the rest load on catch-up visits
       # REFRESH_CONCURRENCY: "3"   # pages read at the same time, per site
+      # BANDCAMP_GAP_SECONDS: "1"   # gap between any two requests to Bandcamp; raise it (to 2, say) if you see many pauses
+      # BANDCAMP_QUIET_DAYS: "90"   # a Bandcamp page with no release in this many days counts as quiet...
+      # BANDCAMP_QUIET_HOURS: "6"   # ...and is checked at most this often; "0" checks every page on every refresh
       # LOOKUP_SEARCH_DAYS: "7"   # how long Bandcamp's search answers are reused by Link Finder
       # SOUNDCLOUD_USER: ""   # your SoundCloud username; profiles it follows are preferred (can also be set in Settings)
       # SOUNDCLOUD_CLIENT_ID: ""   # optional; found automatically when unset
