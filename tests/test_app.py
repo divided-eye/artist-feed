@@ -2386,3 +2386,28 @@ def test_check_them_now_reads_the_quiet_pages_too(monkeypatch):
         assert refresh.state["last_result"]["sites"] == {"bandcamp": 2, "soundcloud": 1}
     finally:
         refresh.state.update(saved)
+
+
+
+def test_find_missing_links_remembers_what_it_searched(client):
+    """Each search is remembered per artist and site; the table says which sites were searched, so
+    "Skip rows already searched" can leave those rows alone. Sites skipped aren't counted as searched."""
+    from app import db
+    keep = client.get("/api/table").json()
+    try:
+        made = client.put("/api/table", json={"rows": keep + [{"name": "Remembered Act", "cells": {"youtube": ""}}]})
+        assert made.status_code == 200, made.text
+        row = next(r for r in made.json()["rows"] if r["name"] == "Remembered Act")
+        assert row["searched"] == []
+        got = client.post("/api/table/suggest", json={"name": "Remembered Act", "cells": {}, "skip": ["soundcloud"]}).json()
+        assert got["searched"] == ["bandcamp"]                     # SoundCloud was left out, so it isn't marked
+        row = next(r for r in client.get("/api/table").json() if r["name"] == "Remembered Act")
+        assert row["searched"] == ["bandcamp"]
+        client.post("/api/table/suggest", json={"name": "Remembered Act", "cells": {}})
+        row = next(r for r in client.get("/api/table").json() if r["name"] == "Remembered Act")
+        assert row["searched"] == ["bandcamp", "soundcloud"]
+        got = client.post("/api/table/suggest", json={"name": "Remembered Act", "cells": {}, "skip": ["bandcamp", "soundcloud"]}).json()
+        assert got["searched"] == []                               # nothing looked for: nothing recorded
+    finally:
+        client.put("/api/table", json={"rows": keep})
+        db.kv_set("suggest_searched", "{}")

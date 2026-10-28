@@ -18,7 +18,7 @@ from . import db, follows, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "88"   # shown beside the title, so you can tell which version is running
+VERSION = "89"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -265,8 +265,26 @@ class TableIn(BaseModel):
     workspaces: Optional[list[WorkspaceIn]] = None   # the workspaces as they should be (names, order); None: unchanged
 
 
+# Find missing links remembers which sites it has already searched for each artist, so later runs can
+# leave those rows alone ("Skip rows already searched"). Kept by tidied name: {name: {site: when}}.
+def _searched() -> dict:
+    try:
+        saved = json.loads(db.kv_get("suggest_searched") or "{}")
+    except ValueError:
+        saved = {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def _search_key(name: str, cells: dict) -> str:
+    first = (lookup.split_names(name or "") or [""])[0]
+    if first.strip():
+        return lookup.norm(first)
+    return "~" + "|".join(sorted(f"{k}={v.strip()}" for k, v in cells.items() if (v or "").strip()))   # a row with links only
+
+
 def _table_rows():
     rows, remembered, on, youtube, same = [], _left_empty(), sites.enabled(), sites.youtube_names(), _same_name_ok()
+    searched = _searched()
     groups = sites.workspaces()
     for a in db.list_artists():
         cells = {key: [] for key in on}
@@ -289,7 +307,8 @@ def _table_rows():
                      "same_name": lookup.norm(a["name"]) in same,
                      "cells": {k: ", ".join(v) for k, v in cells.items()}, "problems": problems,
                      "skip": [k for k in note.get("skip") or [] if k in cells and not cells[k]],
-                     "rejected": note.get("rejected") or {}})
+                     "rejected": note.get("rejected") or {},
+                     "searched": sorted((searched.get(lookup.norm(a["name"])) or {}).keys())})
     return rows
 
 
@@ -332,12 +351,21 @@ async def check_artist(artist_id: int):
 
 @app.post("/api/table/suggest")
 async def suggest_row(body: SuggestIn):
-    """Guesses for the pages one row is missing. Nothing is saved."""
+    """Guesses for the pages one row is missing. Nothing in the table is saved; which sites were searched
+    for this artist is remembered, for "Skip rows already searched"."""
     try:
         first = (lookup.split_names(body.name) or [""])[0]          # other names in the cell are aliases
+        looked = [k for k in ("bandcamp", "soundcloud") if not (body.cells.get(k) or "").strip() and k not in body.skip]
         found = await lookup.suggest_pages(first, body.cells, body.skip, body.avoid)
         if body.name.strip():
             found["name"] = ""                                      # never write over names already typed
+        if looked:
+            searched, now = _searched(), db.now()
+            # under the name typed, or the one the page gave, so the row is recognised once saved
+            for key in {_search_key(body.name, body.cells), _search_key(found.get("name") or "", {}) if found.get("name") else None} - {None, "~"}:
+                searched.setdefault(key, {}).update({k: now for k in looked})
+            db.kv_set("suggest_searched", json.dumps(searched))
+        found["searched"] = looked
         return found
     except lookup.Blocked:
         raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")

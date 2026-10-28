@@ -566,6 +566,10 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <button class="btn" id="addRowBtn">Add row</button>
     <button class="btn" id="importBtn">Import CSV</button>
     <button class="btn" id="fillBtn" title="Look for the Bandcamp pages and SoundCloud profiles rows are missing. While the table is filtered, only the rows shown are searched; each row also has its own Find links.">Find missing links</button>
+    <select id="fillSites" aria-label="Which links Find missing links looks for" title="Which links Find missing links looks for">
+      <option value="">Bandcamp and SoundCloud</option><option value="bandcamp">Bandcamp only</option><option value="soundcloud">SoundCloud only</option>
+    </select>
+    <label class="opt" title="Leave out rows whose missing links were already searched for (on an earlier run). Tick a row's Rescan box to search it again anyway; a row's own Find links button always searches."><input type="checkbox" id="fillNew" checked> Skip rows already searched</label>
     <button class="btn" id="followsBtn" aria-expanded="false" title="Add the artists and labels a SoundCloud account or Bandcamp fan follows">Import follows</button>
     <button class="btn" id="spacesBtn" aria-expanded="false" title="Name the groups of artists you can show on their own (Focus is the first)">Workspaces</button>
     <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
@@ -1238,7 +1242,7 @@ function renderArtists() {
 // ---- artist table ----
 let table = [], savedIds = [], dirty = false, spaces = [];   // spaces: the workspaces as being edited [{id, name}]
 const columns = () => ["name", ...sources.map(s => s.key)];
-const blankRow = () => ({ id: null, name: "", cells: {}, groups: [], problems: [], errors: [], skip: [], rejected: {} });
+const blankRow = () => ({ id: null, name: "", cells: {}, groups: [], problems: [], errors: [], skip: [], rejected: {}, searched: [] });
 // A cell emptied on purpose is remembered: "Find missing links" leaves it alone unless the row's
 // Rescan box is ticked, and whatever was in it is never offered for that cell again.
 function noteCleared(row, col, was) {
@@ -1541,6 +1545,14 @@ function paintFill() {
 
 const guessable = c => c === "name" || (src(c) && src(c).suggest);          // Find missing links can't guess every site
 const openCells = r => columns().filter(c => guessable(c) && !getCell(r, c).trim() && (r.rescan || !r.skip.includes(c)));
+// What Find missing links looks for in a row: its open cells, on the sites chosen beside the button, and (with
+// "Skip rows already searched") not the sites it has searched for before - unless Rescan is ticked or the row's
+// own Find links button was used.
+const fillChoice = () => $("fillSites").value;
+function wantedCells(r, single) {
+  return openCells(r).filter(c => c === "name" || !fillChoice() || c === fillChoice())
+    .filter(c => c === "name" || single || r.rescan || !$("fillNew").checked || !(r.searched || []).includes(c));
+}
 const tableFiltered = () => !!(tview.q.trim() || tview.show);
 // The rows Find missing links goes through: every row, or only those shown while the table is filtered.
 function fillLabel() {
@@ -1550,10 +1562,16 @@ function fillLabel() {
 // only: one row's own Find links button. Otherwise every row, or the rows shown when the table is filtered.
 async function fillMissing(only = null) {
   if (filling) { if (!only) filling = false; return; }   // the button reads "Stop" while running
-  const open = openCells;
+  const want = r => wantedCells(r, !!only);
   const pool = only ? [only] : table.filter(r => !tableFiltered() || rowMatches(r));
-  const todo = pool.filter(r => !isBlank(r) && !r.removed && open(r).length);
-  if (!todo.length) { $("fillStatus").textContent = (only ? "Nothing to look for in that row. " : tableFiltered() ? "Nothing to look for in the rows shown. " : "Nothing to look for. ") + "Cells you cleared are left alone; tick Rescan on a row to search it again."; return; }
+  const todo = pool.filter(r => !isBlank(r) && !r.removed && want(r).length);
+  if (!todo.length) {
+    const before = pool.some(r => !isBlank(r) && !r.removed && wantedCells(r, true).length);   // only rows searched before are left
+    $("fillStatus").textContent = (only ? "Nothing to look for in that row. " : tableFiltered() ? "Nothing to look for in the rows shown. " : "Nothing to look for. ")
+      + (before ? "Every row with a missing link has been searched before: untick Skip rows already searched, or tick Rescan on a row, to search again."
+                : "Cells you cleared are left alone; tick Rescan on a row to search it again.");
+    return;
+  }
   filling = true; $("fillBtn").textContent = "Stop"; $("tableError").textContent = "";
   Object.assign(fillWait, { rows: new Set(todo), now: null, since: Date.now() });
   let filled = 0, n = 0;
@@ -1561,18 +1579,22 @@ async function fillMissing(only = null) {
     if (!filling || $("drawer").hidden) break;
     fillWait.now = row; paintFill();
     $("fillStatus").textContent = `Looking for missing links: ${++n} of ${todo.length} (${row.name || Object.values(row.cells).find(Boolean) || ""})…`;
+    const wanted = want(row);
     try {
+      // sites not wanted this time are skipped, as are cells cleared on purpose (unless Rescan is ticked)
+      const skip = [...new Set([...(row.rescan ? [] : row.skip), ...columns().filter(c => c !== "name" && !wanted.includes(c))])];
       const r = await fetch("/api/table/suggest", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: row.name, cells: row.cells, skip: row.rescan ? [] : row.skip, avoid: row.rejected }) });
+        body: JSON.stringify({ name: row.name, cells: row.cells, skip, avoid: row.rejected }) });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) { $("tableError").textContent = typeof data.detail === "string" ? data.detail : "Couldn't look that up."; break; }
       const found = { ...(data.cells || {}), ...(data.name ? { name: data.name } : {}) };
       const at = table.indexOf(row);
       if (at < 0) continue;                             // row deleted meanwhile
-      const wanted = open(row), had = row.rescan;
+      row.searched = [...new Set([...(row.searched || []), ...(data.searched || [])])];
+      const had = row.rescan;
       let changed = false;
       for (const [col, value] of Object.entries(found)) {
-        if (!value || !wanted.includes(col)) continue;      // never over something typed meanwhile, or a cleared cell
+        if (!value || !wanted.includes(col) || getCell(row, col).trim()) continue;   // never over something typed meanwhile, or a cleared cell
         setCell(row, col, value); (row.auto = row.auto || new Set()).add(col); changed = true; filled++;
         row.skip = row.skip.filter(c => c !== col);
       }
@@ -2328,6 +2350,13 @@ $("lookupText").addEventListener("keydown", e => { if (e.key === "Tab") { e.prev
 window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
 $("addRowBtn").onclick = () => { if (!isBlank(table[table.length - 1])) table.push(blankRow()); renderTable(); $("tbody").lastElementChild.querySelector("input").focus(); };
 $("fillBtn").onclick = () => fillMissing();
+// The choices beside Find missing links are remembered in this browser.
+try {
+  $("fillSites").value = localStorage.getItem("fillSites") || "";
+  $("fillNew").checked = localStorage.getItem("fillNew") !== "0";
+} catch {}
+$("fillSites").onchange = e => { try { localStorage.setItem("fillSites", e.target.value); } catch {} };
+$("fillNew").onchange = e => { try { localStorage.setItem("fillNew", e.target.checked ? "1" : "0"); } catch {} };
 $("tabLookup").onclick = () => lookupTab("lookup");
 $("tabSaved").onclick = () => lookupTab("saved");
 $("savedFilter").onchange = e => { savedState.filter = e.target.value; loadSaved(true).catch(x => { $("savedError").textContent = x.message; }); };
