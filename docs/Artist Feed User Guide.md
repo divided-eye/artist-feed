@@ -4,7 +4,7 @@ Oct 28, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 89. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 90. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -317,7 +317,7 @@ The box under the table takes a pasted list, one artist or label per line. A lin
 
 **Find missing links** goes through every row that has an empty cell (or, while the table is filtered, only the rows shown: the button then reads Find missing links (shown rows)) and looks for what is missing: the Bandcamp page, the SoundCloud profile, or the name when only a link was given. It works one row at a time at Bandcamp's pace, and the button reads Stop while it runs. As in a Link Finder lookup, the panel glows while it works, rows still to be searched have a blue tint, and the row being searched pulses.
 
-The menu beside the button picks what to look for: **Bandcamp and SoundCloud**, **Bandcamp only** or **SoundCloud only**. A missing name is still filled in either way. With **Skip rows already searched** ticked (the default), a row is only searched for a site it hasn't been searched for before, so pressing the button again after adding new rows searches just the new ones. Untick it to search every row with an empty cell again, or tick Rescan on a single row. Both choices are remembered in this browser.
+Find missing links has its own box. **Look on** picks what to look for: **Both**, **Bandcamp** or **SoundCloud**. A missing name is still filled in either way. With **Only rows not searched yet** ticked (the default), a row is only searched for a site it hasn't been searched for before, so pressing the button again after adding new rows searches just the new ones. Untick it to search every row with an empty cell again, or tick Rescan on a single row. Both choices are remembered in this browser.
 
 - Filled cells are highlighted in light blue italics. They are guesses matched on the name, so check them, especially for common names.
 - When a row already has one site's link, a page with the same address on the other site is preferred.
@@ -327,7 +327,7 @@ The menu beside the button picks what to look for: **Bandcamp and SoundCloud**, 
 
 ### Rescan
 
-Each row has a **Rescan** checkbox. Tick it and press Find missing links to search that row's empty cells again, including ones you cleared. A guess you removed is not offered again for that cell, so a rescan returns the next best match or nothing. A ticked Rescan also searches the row when Skip rows already searched is on. The box unticks itself after the run. Typing a link into a cleared cell also ends its "left empty" state.
+Each row has a **Rescan** checkbox. Tick it and press Find missing links to search that row's empty cells again, including ones you cleared. A guess you removed is not offered again for that cell, so a rescan returns the next best match or nothing. A ticked Rescan also searches the row when Only rows not searched yet is on. The box unticks itself after the run. Typing a link into a cleared cell also ends its "left empty" state.
 
 To search one row only, press **Find links** in its Status column. It appears on rows with something to look for.
 
@@ -337,9 +337,9 @@ To search one row only, press **Find links** in its Status column. It appears on
 
 The list shows everyone followed, with the ones already tracked or already in the table greyed out. Untick any you don't want (Select all ticks or unticks the rest), optionally choose a workspace to put them in, and press **Add to table**. Each becomes a new row, highlighted for review, or joins the row that already has that name. Nothing is tracked until you Save changes. Find missing links can then fill in their other sites.
 
-### Clear All
+### Clear all
 
-**Clear All** empties the table after asking you to confirm. Nothing is removed from the feed until you press Save changes, which asks again; Discard brings the rows back.
+**Clear all**, in the Table group, empties the table after asking you to confirm. While the table is filtered it removes only the rows shown, and the button says so (for example **Clear 2 shown rows**); the other rows stay. Nothing is removed from the feed until you press Save changes, which asks again; Discard brings the rows back. If saving would remove every artist you track, a last warning asks you to choose between **Keep my list** and **Yes, clear everything**.
 
 ## Settings
 
@@ -711,6 +711,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 90 | Tidier Tracked Artists toolbar: buttons grouped under Add artists, Organize and Table; Save changes moved up beside Close; Find missing links in its own box with Look on (Both, Bandcamp, SoundCloud) and Only rows not searched yet. Clear all removes only the rows shown while the table is filtered, and a last warning appears before saving an empty list. |
 | 89 | Tracked Artists: a menu beside Find missing links picks Bandcamp and SoundCloud, Bandcamp only or SoundCloud only, and Skip rows already searched (ticked by default) leaves out rows already searched for that site, so a second run only searches new rows. |
 | 88 | Shorter status line: it says when the feed was updated and how many new posts came in, and the rest (pages per site, skipped and quiet pages, problems, Check them now) is behind a small ⓘ beside it, shown on hover or tap. The line no longer wraps and shifts the page. |
 | 87 | Check them now, beside the note about quiet Bandcamp pages left for later, refreshes every page at once. The status line counts pages per site, during a refresh and in the summary after it. |

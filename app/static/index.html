@@ -246,6 +246,23 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   aside h2 { font-size: 16px; margin: 0; flex: 1; }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px 0; }
   .hint { color: var(--muted); font-size: 13px; padding: 8px 16px 12px; }
+  aside header { gap: 8px; }
+  .tgroups { align-items: stretch; gap: 6px; }
+  .tgroup { display: grid; gap: 4px; }
+  .tlabel { font-size: 12px; color: var(--muted); }
+  .tsep { width: 1px; background: var(--line); margin: 0 8px; }
+  .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+  .btn.danger:hover { background: var(--danger); color: var(--on-accent); border-color: var(--danger); }
+  .btn.toggle::after { content: " ▾"; color: var(--muted); }
+  .btn.toggle[aria-expanded="true"] { border-color: var(--accent); }
+  .btn.toggle[aria-expanded="true"]::after { content: " ▴"; }
+  .findbox { margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); display: grid; gap: 8px; font-size: 13px; }
+  .findbox .dim { color: var(--muted); } .findbox .small:empty { display: none; }
+  .segpick { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .segpick button { border: 0; background: var(--panel); color: var(--muted); padding: 6px 12px; font: inherit; cursor: pointer; }
+  .segpick button + button { border-left: 1px solid var(--line); }
+  .segpick button[aria-checked="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  .showrow { padding-top: 10px; }
   .unsaved { color: var(--warn); font-size: 13px; }
   .table-wrap { overflow: auto; flex: 1; border-top: 1px solid var(--line); }
   table { border-collapse: collapse; width: 100%; min-width: 720px; }
@@ -362,6 +379,10 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   dialog#settings { background: var(--panel, #17191d); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
     padding: 0; width: min(560px, calc(100vw - 32px)); }
   dialog#settings::backdrop { background: var(--scrim); }
+  dialog#clearConfirm { background: var(--panel); color: var(--text); border: 1px solid var(--danger); border-radius: 10px; padding: 18px 20px; max-width: 440px; }
+  dialog#clearConfirm::backdrop { background: var(--scrim); }
+  dialog#clearConfirm h2 { font-size: 16px; margin: 0 0 8px; }
+  dialog#clearConfirm p { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
   .settings-in { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
   .settings-in header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .settings-actions { display: flex; align-items: center; gap: 8px; }
@@ -560,29 +581,39 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <p class="hint">Changes take effect when you press <b>Save</b>.</p>
   </form>
 </dialog>
+<dialog id="clearConfirm" aria-labelledby="clearConfirmTitle">
+  <form method="dialog">
+    <h2 id="clearConfirmTitle">Clear your whole Tracked Artists list?</h2>
+    <p id="clearConfirmText"></p>
+    <div class="tools-row"><div class="spacer"></div>
+      <button class="btn" value="cancel" autofocus>Keep my list</button>
+      <button class="btn danger" value="clear">Yes, clear everything</button>
+    </div>
+  </form>
+</dialog>
 <aside id="drawer" hidden aria-label="Manage artists">
-  <header><h2>Tracked Artists</h2><button class="btn" id="closeBtn">Close</button></header>
-  <div class="tools">
-    <button class="btn" id="addRowBtn">Add row</button>
-    <button class="btn" id="importBtn">Import CSV</button>
-    <button class="btn" id="fillBtn" title="Look for the Bandcamp pages and SoundCloud profiles rows are missing. While the table is filtered, only the rows shown are searched; each row also has its own Find links.">Find missing links</button>
-    <select id="fillSites" aria-label="Which links Find missing links looks for" title="Which links Find missing links looks for">
-      <option value="">Bandcamp and SoundCloud</option><option value="bandcamp">Bandcamp only</option><option value="soundcloud">SoundCloud only</option>
-    </select>
-    <label class="opt" title="Leave out rows whose missing links were already searched for (on an earlier run). Tick a row's Rescan box to search it again anyway; a row's own Find links button always searches."><input type="checkbox" id="fillNew" checked> Skip rows already searched</label>
-    <button class="btn" id="followsBtn" aria-expanded="false" title="Add the artists and labels a SoundCloud account or Bandcamp fan follows">Import follows</button>
-    <button class="btn" id="spacesBtn" aria-expanded="false" title="Name the groups of artists you can show on their own (Focus is the first)">Workspaces</button>
-    <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
-    <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
-    <button class="btn" id="clearAllBtn" title="Empty the whole table (nothing is removed until you save)">Clear All</button>
-    <span class="clearable"><input type="text" id="artistQ" placeholder="Filter rows" aria-label="Show only rows containing these words" spellcheck="false" autocomplete="off"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
-    <select id="artistShow" aria-label="Which rows to show"></select>
-    <div class="spacer"></div>
+  <header><h2>Tracked Artists</h2>
     <span class="unsaved" id="unsaved" hidden>Unsaved changes</span>
     <button class="btn" id="revertBtn" hidden>Discard</button>
     <button class="btn primary" id="saveBtn">Save changes</button>
+    <button class="btn" id="closeBtn">Close</button></header>
+  <div class="tools tgroups">
+    <div class="tgroup"><span class="tlabel">Add artists</span><div class="tools-row">
+      <button class="btn" id="addRowBtn">Add row</button>
+      <button class="btn" id="importBtn">Import CSV</button>
+      <button class="btn toggle" id="followsBtn" aria-expanded="false" title="Add the artists and labels a SoundCloud account or Bandcamp fan follows">Import follows</button>
+    </div></div>
+    <div class="tsep"></div>
+    <div class="tgroup"><span class="tlabel">Organize</span><div class="tools-row">
+      <button class="btn toggle" id="spacesBtn" aria-expanded="false" title="Name the groups of artists you can show on their own (Focus is the first)">Workspaces</button>
+    </div></div>
+    <div class="tsep"></div>
+    <div class="tgroup"><span class="tlabel">Table</span><div class="tools-row">
+      <a class="btn" href="/api/artists.csv" download="artists.csv">Export CSV</a>
+      <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+      <button class="btn danger" id="clearAllBtn" title="Empty the whole table (nothing is removed until you save)">Clear all</button>
+    </div></div>
   </div>
-  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). A YouTube channel goes in the YouTube column; tick <b>YouTube search</b> on the rows Link Finder may look for on YouTube. <b>Find missing links</b> fills empty Bandcamp and SoundCloud cells with its best guess (only in the rows shown while the table is filtered; <b>Find links</b> in a row's Status does just that row), shown <span class="legend">like this</span>: check them, then Save. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span id="fillStatus"></span> <span class="error" id="tableError"></span></div>
   <div class="subpanel" id="followsPanel" hidden>
     <div class="tools-row">
       <select id="followsSite" aria-label="Site to read follows from"><option value="soundcloud">SoundCloud</option><option value="bandcamp">Bandcamp</option></select>
@@ -609,6 +640,25 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <div id="spacesList"></div>
     <div class="tools-row"><button class="btn" id="spaceAdd">Add workspace</button><div class="spacer"></div><button class="btn" id="spacesClose">Done</button></div>
   </div>
+  <div class="findbox">
+    <div class="tools-row"><b>Find missing links</b><span class="dim">Fills empty Bandcamp, SoundCloud and name cells with its best guess, shown <span class="legend">like this</span>: check them, then Save.</span></div>
+    <div class="tools-row">
+      <span class="dim">Look on</span>
+      <div class="segpick" id="fillSites" role="radiogroup" aria-label="Which links Find missing links looks for">
+        <button type="button" role="radio" data-v="" aria-checked="true">Both</button><button type="button" role="radio" data-v="bandcamp" aria-checked="false">Bandcamp</button><button type="button" role="radio" data-v="soundcloud" aria-checked="false">SoundCloud</button>
+      </div>
+      <label class="opt" title="Leave out rows whose missing links were already searched for (on an earlier run). Tick a row's Rescan box to search it again anyway; a row's own Find links button always searches."><input type="checkbox" id="fillNew" checked> Only rows not searched yet</label>
+      <div class="spacer"></div>
+      <button class="btn" id="fillBtn" title="Look for the Bandcamp pages and SoundCloud profiles rows are missing. While the table is filtered, only the rows shown are searched; each row also has its own Find links.">Find missing links</button>
+    </div>
+    <div class="dim small" id="fillStatus" aria-live="polite"></div>
+  </div>
+  <div class="tools showrow">
+    <span class="tlabel">Show</span>
+    <span class="clearable"><input type="text" id="artistQ" placeholder="Filter rows" aria-label="Show only rows containing these words" spellcheck="false" autocomplete="off"><button type="button" class="clearx" title="Clear" aria-label="Clear">✕</button></span>
+    <select id="artistShow" aria-label="Which rows to show"></select>
+  </div>
+  <div class="hint">One row per artist. Type in the cells, or paste rows copied from a spreadsheet. Leave a cell empty if the artist isn't on that site; separate several pages in one cell with commas. The Artist cell can hold other names the artist goes by, after commas: the first is shown in the feed and Link Finder matches any of them (put a name that contains a comma in "double quotes"). A YouTube channel goes in the YouTube column; tick <b>YouTube search</b> on the rows Link Finder may look for on YouTube. While the table is filtered, Find missing links searches only the rows shown; <b>Find links</b> in a row's Status searches just that row. A cell you clear stays empty on later runs unless you tick that row's <b>Rescan</b> box. <span class="error" id="tableError"></span></div>
   <div class="table-wrap" id="artistWrap"><table id="artistTable"><colgroup id="artistCols"></colgroup><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
   <div class="bulk">
     <label for="bulkText">Paste a list to add: one artist or label per line. A name, a Bandcamp or SoundCloud link, or name, Bandcamp, SoundCloud separated by tabs or commas.</label>
@@ -1548,7 +1598,10 @@ const openCells = r => columns().filter(c => guessable(c) && !getCell(r, c).trim
 // What Find missing links looks for in a row: its open cells, on the sites chosen beside the button, and (with
 // "Skip rows already searched") not the sites it has searched for before - unless Rescan is ticked or the row's
 // own Find links button was used.
-const fillChoice = () => $("fillSites").value;
+const fillChoice = () => $("fillSites").querySelector("[aria-checked=true]")?.dataset.v || "";
+function setFillChoice(v) {
+  $("fillSites").querySelectorAll("button").forEach(b => b.setAttribute("aria-checked", String(b.dataset.v === v)));
+}
 function wantedCells(r, single) {
   return openCells(r).filter(c => c === "name" || !fillChoice() || c === fillChoice())
     .filter(c => c === "name" || single || r.rescan || !$("fillNew").checked || !(r.searched || []).includes(c));
@@ -1557,6 +1610,10 @@ const tableFiltered = () => !!(tview.q.trim() || tview.show);
 // The rows Find missing links goes through: every row, or only those shown while the table is filtered.
 function fillLabel() {
   if (!filling) $("fillBtn").textContent = tableFiltered() ? "Find missing links (shown rows)" : "Find missing links";
+  // Clear works the same way: while filtered it empties only the rows shown, and says so
+  const shown = tableFiltered() ? table.filter(r => !isBlank(r) && rowMatches(r)).length : 0;
+  $("clearAllBtn").textContent = tableFiltered() ? `Clear ${shown} shown row${shown === 1 ? "" : "s"}` : "Clear all";
+  $("clearAllBtn").title = tableFiltered() ? "Remove only the rows shown by the filter (nothing is removed until you save)" : "Empty the whole table (nothing is removed until you save)";
 }
 
 // only: one row's own Find links button. Otherwise every row, or the rows shown when the table is filtered.
@@ -1829,12 +1886,22 @@ async function loadTable() {
   setDirty(false); renderTable();
 }
 
+function confirmClearAll(n) {
+  const d = $("clearConfirm");
+  $("clearConfirmText").textContent = `All ${n} artist${n > 1 ? "s" : ""} will stop being tracked and their posts will be removed from the feed. `
+    + "This can't be undone: to get the list back you'd have to add the artists again (Export CSV first to keep a copy).";
+  d.returnValue = "";
+  return new Promise(done => { d.addEventListener("close", () => done(d.returnValue === "clear"), { once: true }); d.showModal(); });
+}
+
 async function saveTable() {
   filling = false;
   while (table.length && isBlank(table[table.length - 1])) table.pop();
   const staying = new Set(table.filter(r => !isBlank(r) && !r.removed).map(r => r.id));
   const removed = savedIds.filter(id => !staying.has(id)).length;
   if (removed && !confirm(`This stops tracking ${removed} artist${removed > 1 ? "s" : ""} and removes their posts from the feed. Continue?`)) { renderTable(); return; }
+  // Saving an empty list (Clear all, then Save) asks once more, since it can't be undone.
+  if (removed && removed === savedIds.length && !(await confirmClearAll(removed))) { renderTable(); return; }
   $("tableError").textContent = "";
   const r = await fetch("/api/table", { method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ workspaces: spaces, rows: table.map(({ id, name, cells, skip, rejected, youtube_lookup, keep_separate, groups, removed }) => ({ id, name, cells, skip: skip.filter(c => c !== "name"), rejected, keep_separate: !!keep_separate, groups: groups || [], remove: !!removed,
@@ -2352,10 +2419,13 @@ $("addRowBtn").onclick = () => { if (!isBlank(table[table.length - 1])) table.pu
 $("fillBtn").onclick = () => fillMissing();
 // The choices beside Find missing links are remembered in this browser.
 try {
-  $("fillSites").value = localStorage.getItem("fillSites") || "";
+  setFillChoice(localStorage.getItem("fillSites") || "");
   $("fillNew").checked = localStorage.getItem("fillNew") !== "0";
 } catch {}
-$("fillSites").onchange = e => { try { localStorage.setItem("fillSites", e.target.value); } catch {} };
+$("fillSites").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  setFillChoice(b.dataset.v); try { localStorage.setItem("fillSites", b.dataset.v); } catch {}
+};
 $("fillNew").onchange = e => { try { localStorage.setItem("fillNew", e.target.checked ? "1" : "0"); } catch {} };
 $("tabLookup").onclick = () => lookupTab("lookup");
 $("tabSaved").onclick = () => lookupTab("saved");
@@ -2369,10 +2439,15 @@ $("knownClear").onclick = async () => {
   await api("/api/known", { method: "DELETE" }); await loadSaved(true);
 };
 $("clearAllBtn").onclick = () => {
-  const n = table.filter(r => !isBlank(r)).length;
+  const some = tableFiltered();                                  // filtered: only the rows shown
+  const going = table.filter(r => !isBlank(r) && (!some || rowMatches(r)));
+  const n = going.length, left = table.filter(r => !isBlank(r)).length - n;
   if (!n) return;
-  if (!confirm(`Are you sure? This empties all ${n} row${n > 1 ? "s" : ""} of the table. Nothing is removed from the feed until you press Save changes, and Discard brings the rows back.`)) return;
-  filling = false; table = []; $("fillStatus").textContent = "";
+  if (!confirm(some
+      ? `Remove the ${n} row${n > 1 ? "s" : ""} shown by the filter? The other ${left} row${left === 1 ? " stays" : "s stay"}. Nothing is removed from the feed until you press Save changes, and Discard brings the rows back.`
+      : `Are you sure? This empties all ${n} row${n > 1 ? "s" : ""} of the table. Nothing is removed from the feed until you press Save changes, and Discard brings the rows back.`)) return;
+  filling = false; $("fillStatus").textContent = "";
+  table = some ? table.filter(r => !going.includes(r)) : [];
   setDirty(true); renderTable();
 };
 $("bulkBtn").onclick = () => {
