@@ -162,3 +162,7 @@ settings in `docker-compose.yml`, described in the guide under "What to personal
 ## License
 
 Free to use, copy, change and share, under the [MIT License](LICENSE).
+
+## Credits
+
+The small button icons in Tracked Artists are drawn from [Tabler Icons](https://tabler.io/icons) (MIT licence).

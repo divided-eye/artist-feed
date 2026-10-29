@@ -18,7 +18,7 @@ from . import db, follows, lookup, pace, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "90"   # shown beside the title, so you can tell which version is running
+VERSION = "91"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
