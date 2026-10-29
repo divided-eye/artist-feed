@@ -4,7 +4,7 @@ Oct 29, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 91. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 92. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -711,6 +711,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 92 | Link Finder finds bootlegs, remixes and edits whose Bandcamp title is worded differently from your row: "bootleg" outside the brackets, or the original artist repeated in them, as in "Oblivion bootleg (by Astor Piazzolla as performed by Miguel Fajardo)". |
 | 91 | Tracked Artists toolbar: small icons on the buttons, a blue Find missing links button, and the Look on choice and an open Import follows or Workspaces panel shown in blue, with an arrow that points up while the panel is open. |
 | 90 | Tidier Tracked Artists toolbar: buttons grouped under Add artists, Organize and Table; Save changes moved up beside Close; Find missing links in its own box with Look on (Both, Bandcamp, SoundCloud) and Only rows not searched yet. Clear all removes only the rows shown while the table is filtered, and a last warning appears before saving an empty list. |
 | 89 | Tracked Artists: a menu beside Find missing links picks Bandcamp and SoundCloud, Bandcamp only or SoundCloud only, and Skip rows already searched (ticked by default) leaves out rows already searched for that site, so a second run only searches new rows. |
