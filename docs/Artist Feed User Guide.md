@@ -4,7 +4,7 @@ Oct 29, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 93. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 94. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -711,6 +711,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 94 | Link Finder: the Export results button that appears when a lookup finishes is blue, like Find missing links in Tracked Artists. |
 | 93 | The version 92 change to how Link Finder matches bootlegs is undone for now: matching works as it did in version 91. |
 | 92 | Link Finder finds bootlegs, remixes and edits whose Bandcamp title is worded differently from your row: "bootleg" outside the brackets, or the original artist repeated in them, as in "Oblivion bootleg (by Astor Piazzolla as performed by Miguel Fajardo)". |
 | 91 | Tracked Artists toolbar: small icons on the buttons, a blue Find missing links button, and the Look on choice and an open Import follows or Workspaces panel shown in blue, with an arrow that points up while the panel is open. |
