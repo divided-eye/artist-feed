@@ -922,13 +922,6 @@ def test_edits_remixes_and_bootlegs_belong_to_whoever_made_them(client):
     assert verdict("Sean Paul", edit, {"name": "Sean Paul - Temperature [River Dub edit]", "artists": ["Some Label"]}) == "bandcamp"
     assert verdict("Dayzero", "Blur", {"name": "Blur (Someone Remix)", "artists": ["Dayzero"]}) == "bandcamp_check"
     assert verdict("Dayzero", "Blur", {"name": "Blur (Original Mix)", "artists": ["Dayzero"]}) == "bandcamp"
-    # The page words it differently: "bootleg" outside the brackets, and the original artist restated in them
-    page = {"name": "Oblivion bootleg (by Astor Piazzolla as performed by Miguel Fajardo)", "artists": ["Sentient"],
-            "context": ["Oblivion bootleg (by Astor Piazzolla as performed by Miguel Fajardo)"]}
-    asked = "Oblivion (as performed by Miguel Fajardo) (sentient bootleg)"
-    assert verdict("Astor Piazzolla", asked, page) == "bandcamp"
-    assert verdict("Astor Piazzolla", "Oblivion (as performed by Miguel Fajardo)", page) == "bandcamp_check"    # someone's version
-    assert verdict("Astor Piazzolla", "Oblivion (as performed by Miguel Fajardo) (Other Guy bootleg)", page) == ""
 
     def run(rows):
         text = "Artist\tTitle\n" + "\n".join(f"{a}\t{t}" for a, t in rows)

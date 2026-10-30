@@ -400,22 +400,6 @@ def release_context(rel: dict) -> list:
             slug_words(rel.get("release_url"))]
 
 
-_BARE_VERSION_WORD = re.compile(r"\b(?:remix|rmx|bootleg|boot|edit|re ?edit|flip|refix|rework|re ?rub|mash ?up)\b")
-
-
-def _restated(have: str, wanted: list, version: bool) -> str:
-    """A candidate's tidied title without what it repeats about the request: "by <the artist asked
-    for>" ("Oblivion bootleg (by Astor Piazzolla as performed by ...)"), and, when a version was
-    asked for, a bare "bootleg"/"remix"/"edit" word written outside brackets."""
-    out = f" {have} "
-    for w in sorted(wanted, key=len, reverse=True):
-        if len(w) >= 2:
-            out = out.replace(f" by {w} ", " ")
-    if version:
-        out = _BARE_VERSION_WORD.sub(" ", out)
-    return " ".join(out.split())
-
-
 def score(artist: str, title: str, cand: dict) -> tuple:
     """(title score, artist score) for a candidate {"name", "artists": [names...], "context": [text...]}.
     "context" is free text around the release (its title, its address); the wanted artist appearing
@@ -424,11 +408,6 @@ def score(artist: str, title: str, cand: dict) -> tuple:
     name = cand.get("name") or ""
     prefix, _, rest = name.partition(" - ")            # label pages often title tracks "Artist - Title"
     t = max(title_sim(want_title, norm(name)), title_sim(want_title, norm(rest)) if rest else 0.0)
-    asked_version = bool(remixer_names(title))
-    for text in ([name, rest] if rest else [name]):     # the same title, worded around what was asked
-        cleaned = _restated(norm(text), wanted, asked_version)
-        if cleaned:
-            t = max(t, title_sim(want_title, cleaned))
     have = [p for n in cand.get("artists") or [] for p in artist_parts(n or "")]
     if rest:
         have += artist_parts(prefix)
@@ -452,8 +431,6 @@ def score(artist: str, title: str, cand: dict) -> tuple:
             t = min(t, 0.7)
     elif remixer_names(name):
         t = min(t, 0.8)
-    elif set(_BARE_VERSION_WORD.findall(norm(name))) - set(_BARE_VERSION_WORD.findall(want_title)):
-        t = min(t, 0.8)                                # "Oblivion bootleg (...)": someone's version, not the track
     # A VIP is a different recording from the original: one is never an answer for the other.
     if not same_vip(title, name):
         t = min(t, 0.7)
