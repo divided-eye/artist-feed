@@ -608,8 +608,6 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <button class="btn" id="closeBtn">Close</button></header>
   <div class="tools tgroups">
     <div class="tgroup"><span class="tlabel">Add artists</span><div class="tools-row">
-      <button class="btn" id="addRowBtn" data-icon="plus">Add row</button>
-      <button class="btn" id="importBtn" data-icon="fileUp">Import CSV</button>
       <button class="btn toggle" id="followsBtn" data-icon="userPlus" aria-expanded="false" title="Add the artists and labels a SoundCloud account or Bandcamp fan follows">Import follows</button>
     </div></div>
     <div class="tsep"></div>
@@ -619,7 +617,6 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <div class="tsep"></div>
     <div class="tgroup"><span class="tlabel">Table</span><div class="tools-row">
       <a class="btn" href="/api/artists.csv" download="artists.csv" data-icon="fileDown">Export CSV</a>
-      <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
       <button class="btn danger" id="clearAllBtn" data-icon="trash" title="Empty the whole table (nothing is removed until you save)"><span class="lbl">Clear all</span></button>
     </div></div>
   </div>
@@ -741,8 +738,6 @@ const PAGE = 60, LIST_PAGE = 200;
 const $ = id => document.getElementById(id);
 // Small outline icons on the Tracked Artists buttons (shapes from Tabler Icons, MIT licence).
 const ICONS = {
-  plus: ["M12 5l0 14", "M5 12l14 0"],
-  fileUp: ["M14 3v4a1 1 0 0 0 1 1h4", "M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z", "M12 11v6", "M9.5 13.5l2.5 -2.5l2.5 2.5"],
   fileDown: ["M14 3v4a1 1 0 0 0 1 1h4", "M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z", "M12 17v-6", "M9.5 14.5l2.5 2.5l2.5 -2.5"],
   userPlus: ["M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0", "M16 19h6", "M19 16v6", "M6 21v-2a4 4 0 0 1 4 -4h4"],
   folders: ["M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2", "M17 17v2a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2h2"],
@@ -1858,43 +1853,6 @@ function addPasted(text) {
   return added;
 }
 
-function parseCsv(text) {
-  const rows = []; let row = [], cell = "", quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') quoted = false;
-      else cell += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ",") { row.push(cell); cell = ""; }
-    else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
-    else if (ch !== "\r") cell += ch;
-  }
-  if (cell || row.length) { row.push(cell); rows.push(row); }
-  return rows.filter(r => r.some(c => c.trim()));
-}
-
-function importCsv(text) {
-  let rows = parseCsv(text.replace(/^\uFEFF/, ""));
-  if (!rows.length) return;
-  const cols = columns();
-  // With a header row, match columns by name ("name"/"artist", site key or label); otherwise use table order.
-  const header = rows[0].map(h => h.trim().toLowerCase());
-  let map = cols.map((_, i) => i);
-  if (header.includes("name") || header.includes("artist")) {
-    map = cols.map(c => header.findIndex(h => c === "name" ? (h === "name" || h === "artist") : (h === c || h === src(c).label.toLowerCase())));
-    rows = rows.slice(1);
-  }
-  while (table.length && isBlank(table[table.length - 1])) table.pop();
-  rows.forEach(r => {
-    const row = blankRow();
-    cols.forEach((c, i) => { if (map[i] >= 0 && r[map[i]] !== undefined) setCell(row, c, r[map[i]].trim()); });
-    table.push(row);
-  });
-  setDirty(true); renderTable();
-}
-
 async function loadTable() {
   const rows = await api("/api/table");
   workspaces = await api("/api/workspaces"); renderWorkspaceSel();
@@ -2436,7 +2394,6 @@ $("lookupFile").onchange = async e => { const f = e.target.files[0]; e.target.va
 $("lookupGo").onclick = () => $("lookupText").value.trim() ? startLookup($("lookupText").value) : ($("lookupError").textContent = "Paste some rows first, or choose a file.");
 $("lookupText").addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "\t"); } });
 window.addEventListener("beforeunload", e => { if (dirty) e.preventDefault(); });
-$("addRowBtn").onclick = () => { if (!isBlank(table[table.length - 1])) table.push(blankRow()); renderTable(); $("tbody").lastElementChild.querySelector("input").focus(); };
 $("fillBtn").onclick = () => fillMissing();
 // The choices beside Find missing links are remembered in this browser.
 try {
@@ -2478,8 +2435,6 @@ $("bulkBtn").onclick = () => {
 };
 $("saveBtn").onclick = () => saveTable().catch(x => { $("tableError").textContent = x.message; });
 $("revertBtn").onclick = () => { if (confirm("Discard unsaved changes?")) loadTable(); };
-$("importBtn").onclick = () => $("csvFile").click();
-$("csvFile").onchange = async e => { const f = e.target.files[0]; if (f) importCsv(await f.text()); e.target.value = ""; };
 $("moreBtn").onclick = () => loadFeed(false);
 $("showNew").onclick = async () => { newShown = newSoFar; $("showNew").hidden = true; await reload(); };
 $("viewGrid").onclick = () => setView("grid");

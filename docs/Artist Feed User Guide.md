@@ -4,7 +4,7 @@ Oct 29, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 94. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 95. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -298,14 +298,14 @@ The **Tracked Artists** button opens a table with one row per artist or label an
 - Copy rows from Excel or Google Sheets and paste them into any cell. They fill the table from that cell onward, in the order name, Bandcamp, SoundCloud.
 - Nothing changes until you press **Save changes**. If any row has a problem, nothing is saved and that row shows the reason.
 - The ✕ at the end of a row marks it for removal: the row turns a dark red-grey, its text is struck through, and an Undo button takes the ✕'s place. Nothing is removed until you Save, which stops tracking those artists and removes their posts after asking you to confirm. A new row that was never saved goes at once. Each workspace has a column of checkboxes left of the artist's name (see Workspaces).
-- **Export CSV** downloads the saved list. **Import CSV** adds a file's rows to the table for you to review and save.
+- **Export CSV** downloads the saved list.
 - After a save, rows are sorted by artist name, or by the column you sorted on.
 
 The Status column shows how many posts each artist has, and any problem reading one of their pages. Click **Check now** beside the count to read that artist's pages straight away, without waiting for the next refresh or refreshing everyone; the count and any problems update when it finishes.
 
 To find rows quickly, type in **Filter rows** (it matches names, pages and status messages) or pick from the menu beside it: **Needs attention** shows rows with a problem (a page that couldn't be read, or a save error), and there are also Still being checked, No posts yet, New, not saved yet, Ticked for YouTube search, one for each workspace (In Focus, say), and Marked for removal. Each option shows how many rows it holds. Click a column heading to sort by it, again to reverse, and a third time to go back to the usual order; sorting by Status puts rows with problems first, then those with the fewest posts. Filtering and sorting only change what is shown: saving still saves every row, and pasting a block of cells fills the rows on screen, leaving filtered-out rows alone.
 
-Each artist belongs on one row. Save is refused, with a message on every row involved, when two rows have the same page, or share a name (any of the names in their Artist cells). Both usually happen after **Import CSV**, which adds the file's rows as new rows rather than updating the ones you have: move the new pages into the existing row and delete the extra one. Two rows for one artist would leave Link Finder using whichever it finds first. If two rows really are different artists who share a name (in different genres, say), press **Different artists, keep both** on one of them and save. That is remembered, and both rows then say "Shares its name with another row". Link Finder still can't tell them apart by name, so give the right link with Edit when it picks the wrong one. Renaming one of them ends it.
+Each artist belongs on one row. Save is refused, with a message on every row involved, when two rows have the same page, or share a name (any of the names in their Artist cells). Both usually happen after pasting a list, which adds new rows rather than updating the ones you have: move the new pages into the existing row and delete the extra one. Two rows for one artist would leave Link Finder using whichever it finds first. If two rows really are different artists who share a name (in different genres, say), press **Different artists, keep both** on one of them and save. That is remembered, and both rows then say "Shares its name with another row". Link Finder still can't tell them apart by name, so give the right link with Edit when it picks the wrong one. Renaming one of them ends it.
 
 Labels work the same way as artists: add the label's Bandcamp page as a row. A release that reaches the feed through both an artist's page and a label's page is shown once. Some artists' pages show a release that is sold from another page, usually the label's: that copy has no tracks and nothing to buy. The app links and plays the page that sells it instead, whether or not you track that page, and Link Finder gives that page too. When such a page doesn't say where the release is sold, the app searches Bandcamp once for the same title and artist on another page and uses what it finds; if nothing turns up, the card says Not for sale on this page (in the list, beside the release name).
 
@@ -711,6 +711,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 95 | Tracked Artists: the Add row and Import CSV buttons are gone. Type in the empty row at the bottom of the table (a new one appears as you type), or paste a list into the box under the table. |
 | 94 | Link Finder: the Export results button that appears when a lookup finishes is blue, like Find missing links in Tracked Artists. |
 | 93 | The version 92 change to how Link Finder matches bootlegs is undone for now: matching works as it did in version 91. |
 | 92 | Link Finder finds bootlegs, remixes and edits whose Bandcamp title is worded differently from your row: "bootleg" outside the brackets, or the original artist repeated in them, as in "Oblivion bootleg (by Astor Piazzolla as performed by Miguel Fajardo)". |
