@@ -4,7 +4,7 @@ Nov 4, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 96. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 97. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -280,11 +280,11 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 
 ### Purchase list
 
-Every Bandcamp track and release in the feed has a **Save** button: in the **Save** column of the list view (just left of Site), and under each Bandcamp card in the grid. Press it to put that track or release on your purchase list; press it again to take it off. The **Purchase list** button (top right, beside Tracked Artists) shows how many saved items you don't own yet, and opens the list: every link you saved, newest first, each opening its Bandcamp page so you can go back and buy it. **Copy links** copies them all, one per line, and the ✕ beside one takes it off the list.
+Every Bandcamp track and release in the feed has a **Save** button: in the **Save** column of the list view (just left of Site), and under each Bandcamp card in the grid. Press it to put that track or release on your purchase list; press it again to take it off. The **Purchase List** button (top right, beside Tracked Artists) shows how many saved items you don't own yet, and opens the list: every link you saved, newest first, each opening its Bandcamp page so you can go back and buy it. Sort by changes the order: newest or oldest saved first, artist or title (A to Z), or the ones you don't own yet first; the choice is remembered. **Copy links** copies them all, one per line, and the ✕ beside one takes it off the list.
 
 When your Bandcamp username is set in Link Finder, the app reads your purchases and tells you what you already own. A track or release you bought shows **Owned**, greyed out, instead of Save, and on the purchase list. That includes a single track in the feed from an album you bought whole, also when the album was sold on a label's page. Someone's remix or edit of a track you own is a different track and still shows Save. A release you bought only some tracks of shows Save, with how many of its tracks you own beside it. **Remove owned** takes the bought ones off the list.
 
-The Purchase list button also counts down to Bandcamp Friday, when Bandcamp waives its share of sales: it gets a yellow border in the three days before, and turns green on the day itself (midnight to midnight Pacific time). The dates are read from isitbandcampfriday.com once a day, and the list says when the next one is.
+The Purchase List button also counts down to Bandcamp Friday, when Bandcamp waives its share of sales: it gets a yellow border in the three days before, and turns green on the day itself (midnight to midnight Pacific time). The dates are read from isitbandcampfriday.com once a day, and the list says when the next one is.
 
 - Two things are counted: a purchase made since the app first read your collection, and a pre-order whose release date has come. A pre-order is not counted when you buy it, only when it comes out.
 - Point at the button to see the list of releases. Click it to open your Bandcamp collection in a new tab, where the download links are; the count goes back to zero.
@@ -715,6 +715,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 97 | Purchase list: Sort by (newest or oldest saved, artist, title, or not owned first), remembered. The button now reads Purchase List. |
 | 96 | Purchase list: a Save button on every Bandcamp track and release (a Save column in the list, a button on cards) puts it on a list of links to buy later. The Purchase list button replaces Downloads; it has a yellow border in the three days before Bandcamp Friday and turns green on the day. Anything already in your purchases says Owned, including a track from an album you bought whole. |
 | 95 | Tracked Artists: the Add row and Import CSV buttons are gone. Type in the empty row at the bottom of the table (a new one appears as you type), or paste a list into the box under the table. |
 | 94 | Link Finder: the Export results button that appears when a lookup finishes is blue, like Find missing links in Tracked Artists. |
