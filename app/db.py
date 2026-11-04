@@ -74,8 +74,6 @@ CREATE TABLE IF NOT EXISTS web_cache(kind TEXT NOT NULL, key TEXT NOT NULL, data
 CREATE TABLE IF NOT EXISTS collection_items(key TEXT PRIMARY KEY, fan TEXT NOT NULL, title TEXT NOT NULL,
   band TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL,
   preorder INTEGER NOT NULL DEFAULT 0, release_date TEXT NOT NULL DEFAULT '', checked_at TEXT NOT NULL DEFAULT '');
--- Purchases ready to download that you haven't been shown yet: new ones, and pre-orders now out.
-CREATE TABLE IF NOT EXISTS download_alerts(key TEXT PRIMARY KEY, reason TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS collection_tracks(item_key TEXT NOT NULL, position INTEGER, title TEXT NOT NULL, artist TEXT);
 CREATE INDEX IF NOT EXISTS collection_tracks_item ON collection_tracks(item_key);
 -- Your own list of tracks: how each artist and title should be written, and optionally a link.
@@ -84,6 +82,10 @@ CREATE TABLE IF NOT EXISTS known_tracks(key TEXT NOT NULL, variant TEXT NOT NULL
   title TEXT NOT NULL, year TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', others TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, PRIMARY KEY(key, variant));
 CREATE TABLE IF NOT EXISTS known_artists(key TEXT PRIMARY KEY, name TEXT NOT NULL, at TEXT NOT NULL);
+-- The purchase list: Bandcamp tracks and releases saved from the feed, to buy later (by tidied link).
+CREATE TABLE IF NOT EXISTS purchase_list(key TEXT PRIMARY KEY, url TEXT NOT NULL, title TEXT NOT NULL,
+  artist TEXT NOT NULL DEFAULT '', release TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'release',
+  image TEXT NOT NULL DEFAULT '', post_id INTEGER, post_url TEXT NOT NULL DEFAULT '', added_at TEXT NOT NULL);
 """
 
 
@@ -141,6 +143,7 @@ def migrate(c):
         c.execute("UPDATE posts SET detailed=0 WHERE id IN (SELECT p.id FROM posts p JOIN accounts a ON a.id=p.account_id"
                   " WHERE a.source='bandcamp' AND NOT EXISTS(SELECT 1 FROM tracks t WHERE t.post_id=p.id))")
         c.execute("INSERT OR REPLACE INTO kv(key, value) VALUES('reread_trackless', '1')")
+    c.execute("DROP TABLE IF EXISTS download_alerts")        # the Downloads button, replaced by the purchase list
     cols = {r[1] for r in c.execute("PRAGMA table_info(artists)")}
     if cols and "aliases" not in cols:
         c.execute("ALTER TABLE artists ADD COLUMN aliases TEXT NOT NULL DEFAULT ''")

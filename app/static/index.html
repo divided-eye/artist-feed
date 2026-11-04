@@ -97,11 +97,34 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   .dlcount { margin-left: 7px; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--on-accent);
            font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
   .dlicon { margin-right: 7px; flex: none; }
-  #downloadsBtn.has { border-color: var(--accent); }
-  #downloadsBtn:not(.has) { color: var(--muted); }
-  #downloadsBtn:not(.has) .dlicon { opacity: .5; }
-  #downloadsBtn.off { opacity: .45; cursor: default; }
-  #downloadsBtn.off:hover { background: transparent; }
+  #buyListBtn { display: inline-flex; align-items: center; }
+  /* Bandcamp Friday: a yellow border in the three days before, all green on the day */
+  #buyListBtn.soon { border-color: var(--accent); }
+  #buyListBtn.today { background: #4ade80; border-color: #4ade80; color: #000; font-weight: 600; }
+  #buyListBtn.today .dlcount { background: #000; color: #4ade80; }
+  #buyList { width: min(620px, 100%); }
+  #buyList h2 .dim { color: var(--muted); font-weight: 400; font-size: 14px; }
+  #buyList .friday { margin: 0 16px; padding: 8px 12px; border-radius: var(--radius); background: var(--panel-2); font-size: 13px; }
+  #buyList .friday.soon { box-shadow: inset 0 0 0 1px var(--accent); }
+  #buyList .friday.today { background: #4ade80; color: #000; }
+  #buyItems { list-style: none; margin: 0; padding: 0 16px 16px; overflow: auto; flex: 1; }
+  #buyItems li { display: grid; grid-template-columns: 48px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  #buyItems li.owned { opacity: .6; }
+  #buyItems .thumb { width: 48px; height: 48px; border-radius: 6px; background: var(--panel-2); object-fit: cover; }
+  #buyItems a.name { color: var(--text); text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
+  #buyItems a.name:hover { text-decoration: underline; }
+  #buyItems .sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  #buyItems .empty { color: var(--muted); font-size: 14px; border: 0; display: block; padding: 18px 0; }
+  .ownedtag { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  /* Save, in the list's Save column and on Bandcamp cards */
+  .savebtn { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; white-space: nowrap; }
+  .savebtn:hover { border-color: var(--hover-line); }
+  .savebtn.saved { border-color: var(--accent); color: var(--accent-ink); }
+  .savebtn.owned { color: var(--muted); opacity: .6; cursor: default; }
+  .savebtn.owned.saved { cursor: pointer; }
+  td.save { padding: 4px 8px; vertical-align: middle; }
+  .card .saverow { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+  .card .saverow small { color: var(--muted); font-size: 12px; }
   .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
   .btn.ghost:hover { color: var(--danger); }
   .status { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -421,7 +444,6 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
   .res details { margin-top: 3px; } .res summary { color: var(--muted); font-size: 12px; cursor: pointer; }
   .res details ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
   .tools.second { padding-top: 8px; } .tools.second input[type=text] { width: 170px; }
-  #downloadsOnLabel { margin-left: 8px; }
   .tools.second select { padding: 4px 8px; font-size: 13px; }
   .pair { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .range { display: inline-flex; gap: 6px; align-items: center; }
@@ -461,7 +483,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
       <span class="status" id="status"></span><span class="infowrap" id="statusInfo" hidden><button type="button" class="infobtn" id="statusInfoBtn" aria-label="Refresh details" aria-describedby="statusDetails">i</button><div class="infopop" id="statusDetails" role="tooltip"><div class="popbox"><div id="statusLines"></div><button class="btn small" id="checkQuiet" hidden title="Check the quiet Bandcamp pages now as well: a full refresh of every page">Check them now</button></div></div></span> <button class="btn small" id="showNew" hidden title="Add the posts this refresh has found so far; the refresh carries on">Show new posts</button> <span class="error" id="feedError" role="alert"></span>
       <div class="spacer"></div>
       <div class="actions">
-        <a class="btn" id="downloadsBtn" hidden target="_blank" rel="noopener" href="https://bandcamp.com/"><svg class="dlicon" width="19" height="11" viewBox="0 0 458.32 269.31" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="matrix(1.3333 0 0 -1.3333 0 275.18)"><g transform="scale(.1)"><path d="m2343.2 43.969h-2343.2l1094.2 2019.9h2343.2l-1094.2-2019.9" fill="#1da0c3"/></g></g></svg>Downloads<span class="dlcount" id="downloadsCount" hidden></span></a>
+        <button class="btn" id="buyListBtn" aria-pressed="false" title="Bandcamp tracks and releases you saved to buy later"><svg class="dlicon" width="19" height="11" viewBox="0 0 458.32 269.31" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="matrix(1.3333 0 0 -1.3333 0 275.18)"><g transform="scale(.1)"><path d="m2343.2 43.969h-2343.2l1094.2 2019.9h2343.2l-1094.2-2019.9" fill="#1da0c3"/></g></g></svg>Purchase list<span class="dlcount" id="buyListCount" hidden></span></button>
         <button class="btn" id="manageBtn" aria-pressed="false" title="Add, edit or remove the artists and labels in your feed, and their Bandcamp, SoundCloud and YouTube pages">Tracked Artists</button>
         <button class="btn" id="lookupBtn" aria-pressed="false" title="Find links for a tracklist on the sites chosen in Settings">Link Finder</button>
         <button class="btn" id="settingsBtn" aria-haspopup="dialog" title="Which sites the app uses, and which ones Link Finder searches">Settings</button>
@@ -600,6 +622,15 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     </div>
   </form>
 </dialog>
+<aside id="buyList" hidden aria-label="Purchase list">
+  <header><h2>Purchase list <span class="dim" id="buyListTotal"></span></h2>
+    <button class="btn" id="buyCopy" title="Copy every link in the list, one per line">Copy links</button>
+    <button class="btn" id="buyRemoveOwned" title="Take the ones you already own off the list">Remove owned</button>
+    <button class="btn" id="buyClose">Close</button></header>
+  <div class="friday" id="buyFriday"></div>
+  <p class="hint" id="buyHint">The Bandcamp tracks and releases you saved with <b>Save</b> in the feed (the Save column in the list, or the button on a Bandcamp card). Each link opens its Bandcamp page. Once you buy one it says <b>Owned</b>.</p>
+  <ul id="buyItems"></ul>
+</aside>
 <aside id="drawer" hidden aria-label="Manage artists">
   <header><h2>Tracked Artists</h2>
     <span class="unsaved" id="unsaved" hidden>Unsaved changes</span>
@@ -697,7 +728,7 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { i
     <label class="opt" for="fanName">Your Bandcamp username</label>
     <input type="text" id="fanName" placeholder="username" spellcheck="false" autocomplete="off">
     <button class="btn small" id="fanSync">Read purchases</button>
-    <label class="opt" id="downloadsOnLabel" title="The Downloads button (top right) counts Bandcamp purchases and pre-orders ready to download, and opens your collection. Off by default. Switched off, it stays greyed out and purchases aren't watched for it; Link Finder still uses your purchases either way."><input type="checkbox" id="downloadsOn"> Show the Downloads button</label>
+   
     <div class="spacer"></div>
     <span class="pair">
       <label class="opt" for="fallbackPref">If a track isn't found, link to the artist's</label>
@@ -867,7 +898,10 @@ function card(p) {
     el("div", { class: "title" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", text: p.title })),
     el("div", { class: "sub", text: [who, p.label].filter(Boolean).join(" · ") }),
     el("div", { class: "sub", text: [size, clock(p.duration), when].filter(Boolean).join(" · ") }),
-    p.note ? el("div", { class: "sub note", text: p.note, title: NOTE_TIPS[p.note] || null }) : null));
+    p.note ? el("div", { class: "sub note", text: p.note, title: NOTE_TIPS[p.note] || null }) : null,
+    p.source === "bandcamp" ? el("div", { class: "saverow" }, saveButton(p, { url: p.url, title: p.title, artist: p.author || p.artist || "",
+      release: "", kind: p.kind === "track" ? "track" : "release", image: p.image || "", post_id: p.id, post_url: p.url }),
+      p.owned === "part" ? el("small", { text: ownedText(p.owned, p.owned_of), title: "Some of its tracks are in your Bandcamp purchases" }) : null) : null));
   return node;
 }
 
@@ -956,7 +990,7 @@ async function loadGrid(reset, seq) {
 // The list's columns: [key, heading, heading class, sortable]. The play and hide columns are fixed at the ends.
 const LIST_COLUMNS = [["artist", "Artist", "", true], ["track", "Track", "", true], ["duration", "Duration", "n", true],
   ["date", "Year", "n", true], ["release", "Release", "", true], ["posted", "Posted", "n", true],
-  ["released", "Released", "n", true], ["label", "Label", "", true], ["site", "Site", "", false]];
+  ["released", "Released", "n", true], ["label", "Label", "", true], ["save", "Save", "", false], ["site", "Site", "", false]];
 const COL_INFO = Object.fromEntries(LIST_COLUMNS.map(c => [c[0], c]));
 const DEFAULT_ORDER = LIST_COLUMNS.map(c => c[0]);
 // Which columns show and in what order; remembered in this browser. Change with the Columns button or by dragging a heading.
@@ -964,6 +998,7 @@ let colOrder = [...DEFAULT_ORDER], colHidden = new Set();
 try {
   const saved = JSON.parse(localStorage.getItem("listLayout") || "{}");
   const order = (saved.order || []).filter(k => COL_INFO[k]);
+  if (order.length && !order.includes("save")) order.splice(order.includes("site") ? order.indexOf("site") : order.length, 0, "save");   // new: just left of Site
   colOrder = [...new Set([...order, ...DEFAULT_ORDER])];
   colHidden = new Set((saved.hidden || []).filter(k => COL_INFO[k]));
   if (colHidden.size >= colOrder.length) colHidden.clear();
@@ -980,8 +1015,8 @@ function moveCol(key, toIndex) {
 }
 
 // Column widths (px) in the list. Drag the edge of a heading to resize; widths are remembered in this browser.
-const COL_DEFAULTS = { go: 48, rel: 34, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 124, posted: 124, site: 130, hide: 52 };
-const COL_ORDER = ["go", "rel", "artist", "label", "release", "track", "duration", "date", "released", "posted", "site", "hide"];
+const COL_DEFAULTS = { go: 48, rel: 34, artist: 170, label: 150, release: 212, track: 240, duration: 92, date: 66, released: 124, posted: 124, save: 92, site: 130, hide: 52 };
+const COL_ORDER = ["go", "rel", "artist", "label", "release", "track", "duration", "date", "released", "posted", "save", "site", "hide"];
 const COL_MIN = 48;
 let colW = { ...COL_DEFAULTS };
 try {
@@ -1140,6 +1175,8 @@ function listRow(r) {
       date: () => el("td", { class: "n dim", text: (r.published_at || "").slice(0, 4), title: r.published_at ? "Released " + r.published_at.slice(0, 10) : null }),
       released: () => el("td", { class: "n dim", text: (r.published_at || "").slice(0, 10), title: r.published_at ? "Release date given by the artist" : "No release date given" }),
       posted: () => el("td", { class: "n dim", text: (r.posted || "").slice(0, 10), title: r.posted ? "Posted " + new Date(r.posted).toLocaleString() : null }),
+      save: () => el("td", { class: "save" }, r.source === "bandcamp" ? saveButton(r, { url: r.url, title: r.track || r.release || r.post_title,
+        artist: r.artist || "", release: r.release || "", kind: r.track ? "track" : "release", image: r.image || "", post_id: r.post_id, post_url: r.post_url || "" }) : ""),
       site: () => el("td", { class: "site" }, el("a", { href: link, target: "_blank", rel: "noopener noreferrer", title: `Open on ${s.label}` },
         el("span", { class: "dot", style: `background:${s.color}` }), s.label)),
     })[k]()),
@@ -1939,36 +1976,116 @@ function statusDetails(s) {
 }
 
 let statusTimer = null;
-// Purchases ready to download: a count on the Downloads button. Opening Bandcamp clears it.
-function showDownloads(d) {
-  const b = $("downloadsBtn");
-  if (d && document.activeElement !== $("downloadsOn")) $("downloadsOn").checked = d.on !== false;
-  b.hidden = !d;
-  if (b.hidden) return;
-  const off = d.on === false || !d.fan;            // greyed out, with a tooltip saying how to turn it on
-  b.classList.toggle("off", off);
-  if (off) {
-    b.removeAttribute("href");
-    $("downloadsCount").hidden = true;
-    b.classList.remove("has");
-    b.title = d.on === false
-      ? "Downloads is switched off. Turn it on in Link Finder (tick Show the Downloads button, beside your Bandcamp username) to see when your Bandcamp purchases and pre-orders are ready to download."
-      : "Set your Bandcamp username in Link Finder to use Downloads.";
-    return;
-  }
-  b.href = d.url;
-  $("downloadsCount").hidden = !d.count;
-  $("downloadsCount").textContent = d.count > 99 ? "99+" : String(d.count);
-  b.classList.toggle("has", d.count > 0);
-  b.title = d.count
-    ? `Ready to download on Bandcamp:\n${d.items.join("\n")}${d.count > d.items.length ? `\n…and ${d.count - d.items.length} more` : ""}\n\nOpens your Bandcamp collection and clears this list.`
-    : "Nothing new to download. Opens your Bandcamp collection.";
+// ---- The purchase list: Bandcamp tracks and releases saved from the feed to buy later.
+// Its button counts the ones not owned yet. Bandcamp Friday (midnight to midnight Pacific time):
+// a yellow border in the three days before, all green on the day.
+const pacificDay = (when = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(when);
+function nextFriday(dates) {
+  const today = pacificDay(), next = (dates || []).filter(d => d >= today).sort()[0];
+  if (!next) return null;
+  const days = Math.round((Date.UTC(...next.split("-").map((n, i) => i === 1 ? n - 1 : +n)) - Date.UTC(...today.split("-").map((n, i) => i === 1 ? n - 1 : +n))) / 864e5);
+  const label = new Date(next + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+  return { date: next, days, label, state: days === 0 ? "today" : days <= 3 ? "soon" : "" };
 }
-$("downloadsBtn").addEventListener("click", e => {
-  if ($("downloadsBtn").classList.contains("off")) { e.preventDefault(); return; }
-  fetch("/api/downloads/clear", { method: "POST", keepalive: true }).catch(() => {});
-  showDownloads({ on: true, fan: true, url: $("downloadsBtn").href, count: 0, items: [] });
-});
+function fridayText(f) {
+  if (!f) return "";
+  return f.days === 0 ? "Today is Bandcamp Friday: Bandcamp waives its share, so more of what you pay goes to the artist and label (until midnight Pacific time)."
+    : `The next Bandcamp Friday is ${f.label}${f.days === 1 ? " (tomorrow)" : f.days <= 3 ? ` (in ${f.days} days)` : ""}: Bandcamp waives its share that day.`;
+}
+function showBuyButton(pl) {
+  if (!pl) return;
+  const b = $("buyListBtn"), f = nextFriday(pl.fridays);
+  $("buyListCount").hidden = !pl.count;
+  $("buyListCount").textContent = pl.count > 99 ? "99+" : String(pl.count);
+  b.classList.toggle("soon", f?.state === "soon"); b.classList.toggle("today", f?.state === "today");
+  b.title = (pl.count ? `${pl.count} saved to buy` : "Bandcamp tracks and releases you save from the feed, to buy later") + (f ? "\n" + fridayText(f) : "");
+}
+
+let buyData = { items: [], fridays: [], fan: "" };
+async function buyList(open) {
+  if (open) {
+    if (!$("drawer").hidden) await drawer(false);
+    if (!$("lookup").hidden) lookupPanel(false);
+    if (!$("drawer").hidden) return;
+    renderBuyList(buyData);
+    try { renderBuyList(buyData = await api("/api/purchase-list")); } catch (x) { $("buyHint").textContent = x.message; }
+  }
+  $("buyList").hidden = !open; $("scrim").hidden = !open;
+  $("buyListBtn").setAttribute("aria-pressed", String(open));
+}
+function ownedText(owned, of) {
+  return owned === "yes" ? "Owned" : owned === "part" && of ? `${of[0]} of ${of[1]} tracks owned` : "";
+}
+function renderBuyList(d) {
+  const f = nextFriday(d.fridays);
+  $("buyFriday").textContent = fridayText(f); $("buyFriday").hidden = !f;
+  $("buyFriday").className = "friday" + (f?.state ? " " + f.state : "");
+  const open = d.items.filter(i => i.owned !== "yes").length;
+  $("buyListTotal").textContent = d.items.length ? `· ${d.items.length}${open !== d.items.length ? `, ${open} not owned yet` : ""}` : "";
+  $("buyRemoveOwned").disabled = !d.items.some(i => i.owned === "yes");
+  $("buyCopy").disabled = !d.items.length;
+  if (!d.items.length) {
+    $("buyItems").replaceChildren(el("li", { class: "empty", text: "Nothing saved yet. Press Save beside a Bandcamp track in the list view, or on a Bandcamp card in the grid, to add it here." }));
+  } else {
+    $("buyItems").replaceChildren(...d.items.map(i => {
+      const link = safeUrl(i.url) || "#", img = safeUrl(i.image);
+      const sub = [i.kind === "track" && i.release ? `from ${i.release}` : i.kind === "track" ? "track" : "release",
+                   "saved " + new Date(i.added_at).toLocaleDateString()].join(" · ");
+      const tag = ownedText(i.owned, i.owned_of);
+      return el("li", { class: i.owned === "yes" ? "owned" : "" },
+        img ? el("img", { class: "thumb", src: img, alt: "", loading: "lazy", referrerpolicy: "no-referrer", onerror: e => e.target.replaceWith(el("span", { class: "thumb" })) }) : el("span", { class: "thumb" }),
+        el("div", {}, el("a", { class: "name", href: link, target: "_blank", rel: "noopener noreferrer", title: "Open on Bandcamp", text: [i.artist, i.title].filter(Boolean).join(" — ") }),
+          el("div", { class: "sub", text: sub })),
+        tag ? el("span", { class: "ownedtag", text: tag, title: i.owned === "yes" ? "In your Bandcamp purchases" : "Some of its tracks are in your Bandcamp purchases" }) : el("span", {}),
+        el("button", { class: "btn ghost small", text: "✕", title: "Take off the list", "aria-label": "Take off the list: " + i.title,
+          onclick: async () => { renderBuyList(buyData = await api("/api/purchase-list?url=" + encodeURIComponent(i.url), { method: "DELETE" })); markSaved(i.url, false); pollStatus(); } }));
+    }));
+  }
+  if (!d.fan) $("buyHint").textContent = "The Bandcamp tracks and releases you saved with Save in the feed. Each link opens its Bandcamp page. Set your Bandcamp username in Link Finder to see which ones you already own.";
+}
+$("buyListBtn").onclick = () => buyList($("buyList").hidden);
+$("buyClose").onclick = () => buyList(false);
+$("buyRemoveOwned").onclick = async () => { renderBuyList(buyData = await api("/api/purchase-list/remove-owned", { method: "POST" })); syncSaved(); pollStatus(); };
+$("buyCopy").onclick = async () => {
+  const text = buyData.items.map(i => i.url).join("\n");
+  try { await navigator.clipboard.writeText(text); $("buyCopy").textContent = "Copied"; setTimeout(() => { $("buyCopy").textContent = "Copy links"; }, 1500); } catch {}
+};
+
+// The Save button for a Bandcamp list row or card. "Owned" (greyed) when it's in your purchases,
+// so it isn't bought twice; a release with only some tracks bought says how many.
+const tidyLink = u => { try { const x = new URL(u); return "https://" + x.host.toLowerCase().replace(/^www\./, "") + x.pathname.replace(/\/+$/, ""); } catch { return (u || "").trim().toLowerCase(); } };
+function saveLabel(b, o) {
+  const owned = o.owned === true || o.owned === "yes";
+  b.className = "savebtn" + (o.saved ? " saved" : "") + (owned ? " owned" : "");
+  b.textContent = owned ? "Owned" : o.saved ? "Saved" : "Save";
+  b.title = owned ? (o.saved ? "Already in your Bandcamp purchases. Click to take it off your purchase list." : "Already in your Bandcamp purchases")
+    : o.saved ? "On your purchase list. Click to take it off." : "Save to your purchase list, to buy later";
+  b.setAttribute("aria-pressed", String(!!o.saved));
+}
+function saveButton(o, entry) {
+  const b = el("button", { type: "button", "data-save": tidyLink(entry.url) });
+  b._o = o;
+  saveLabel(b, o);
+  b.onclick = async e => {
+    e.stopPropagation();
+    if ((o.owned === true || o.owned === "yes") && !o.saved) return;
+    b.disabled = true;
+    try {
+      buyData = o.saved ? await api("/api/purchase-list?url=" + encodeURIComponent(entry.url), { method: "DELETE" })
+        : await api("/api/purchase-list", { method: "POST", body: entry });
+      markSaved(entry.url, !o.saved); pollStatus();
+    } catch (x) { $("feedError").textContent = x.message; }
+    b.disabled = false;
+  };
+  return b;
+}
+function markSaved(url, saved) {
+  document.querySelectorAll(`[data-save="${CSS.escape(tidyLink(url))}"]`).forEach(b => { b._o.saved = saved; saveLabel(b, b._o); });
+}
+function syncSaved() {
+  const keep = new Set(buyData.items.map(i => tidyLink(i.url)));
+  document.querySelectorAll("[data-save]").forEach(b => { b._o.saved = keep.has(b.dataset.save); saveLabel(b, b._o); });
+}
 // "120 of 450 pages · about 12 min left": a rough guide while a refresh runs.
 // "Bandcamp 40 of 110 · SoundCloud 80 of 190": pages per site, in the site buttons' order.
 function sitesText(by, done) {
@@ -2014,7 +2131,7 @@ async function pollStatus() {
     $("statusInfo").classList.toggle("warn", info.warn);
     $("refreshBtn").disabled = s.refreshing && s.queued;
     $("version").textContent = s.version ? "v" + s.version : "";
-    showDownloads(s.downloads);
+    showBuyButton(s.purchase_list);
     // Posts found while a refresh runs can be shown straight away, without waiting for it to end.
     newSoFar = s.refreshing && s.progress ? s.progress.new || 0 : 0;
     if (newSoFar < newShown) newShown = 0;                  // a new refresh has started
@@ -2368,10 +2485,10 @@ async function drawer(open) {
 
 $("manageBtn").onclick = () => drawer(true);
 $("closeBtn").onclick = () => drawer(false);
-$("scrim").onclick = () => $("lookup").hidden ? drawer(false) : lookupPanel(false);
+$("scrim").onclick = () => !$("buyList").hidden ? buyList(false) : $("lookup").hidden ? drawer(false) : lookupPanel(false);
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  if (!$("lookup").hidden) lookupPanel(false); else if (!$("drawer").hidden) drawer(false);
+  if (!$("buyList").hidden) buyList(false); else if (!$("lookup").hidden) lookupPanel(false); else if (!$("drawer").hidden) drawer(false);
 });
 $("lookupBtn").onclick = () => lookupPanel(true);
 $("lookupClose").onclick = () => lookupPanel(false);
@@ -2380,11 +2497,6 @@ $("fallbackPref").onchange = async e => {
   if (lookupJob) { editingRow = null; renderLookup(await api(`/api/lookup/${lookupJob.id}`)); }   // rows on screen follow the choice
 };
 $("fanDeep").onclick = async () => { await api("/api/collection/tracklists", { method: "POST" }); setTimeout(loadFan, 400); };
-$("downloadsOn").onchange = async e => {
-  const on = e.target.checked;
-  try { await api("/api/settings", { method: "PUT", body: { downloads: on } }); pollStatus(); }
-  catch (x) { e.target.checked = !on; $("fanStatus").textContent = x.message; }
-};
 $("fanSync").onclick = async () => {
   try { await api("/api/collection", { method: "POST", body: { fan: $("fanName").value } }); } catch (x) { $("fanStatus").textContent = x.message; return; }
   setTimeout(loadFan, 400);

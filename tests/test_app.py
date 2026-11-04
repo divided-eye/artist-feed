@@ -1820,65 +1820,74 @@ def test_followed_soundcloud_profiles_are_preferred(client):
     client.post("/api/soundcloud/follows", json={"user": ""})
 
 
-def test_new_purchases_to_download(client):
-    def read_purchases():
-        client.post("/api/collection", json={"fan": "divided_eye"})
-        for _ in range(300):
-            time.sleep(0.02)
-            if not client.get("/api/collection").json()["syncing"]:
-                return
-        raise AssertionError("still reading")
-    calls.pop("collection_fail", None)
-    assert client.get("/api/settings").json()["downloads"]["on"] is False      # off until switched on
-    client.put("/api/settings", json={"downloads": True})
-    read_purchases()
-    if not client.get("/api/collection").json()["complete"]:
-        read_purchases()
-    client.post("/api/downloads/clear")
-    assert client.get("/api/status").json()["downloads"] == {"on": True,
-        "fan": "divided_eye", "url": "https://bandcamp.com/divided_eye", "count": 0, "items": []}
-    blob = json.loads(json.dumps(FAN_BLOB))
-    blob["collection_data"]["sequence"] = ["a5", "a6", "a1", "a2"]
-    blob["item_cache"]["collection"]["a5"] = {"tralbum_type": "a", "tralbum_id": 5, "item_title": "Fresh One", "band_name": "Masot",
-                                              "item_url": "https://masot.bandcamp.com/album/fresh-one"}
-    blob["item_cache"]["collection"]["a6"] = {"tralbum_type": "a", "tralbum_id": 6, "item_title": "Coming Soon", "band_name": "Masot",
-                                              "item_url": "https://masot.bandcamp.com/album/coming-soon", "is_preorder": True}
-    old = PAGES[("bandcamp.com", "/divided_eye")]
-    PAGES[("bandcamp.com", "/divided_eye")] = '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(blob)) + '"></div>'
-    PAGES[("masot.bandcamp.com", "/album/coming-soon")] = release("Coming Soon", "01 Jan 2099 00:00:00 GMT")
+def test_purchase_list_and_what_you_own(client):
+    """Saving Bandcamp tracks and releases to buy later, and telling what's already bought: a track
+    bought on its own, or on a release bought whole (also one sold on a label's page)."""
+    from app import purchase_list as pl
+    now = db.now()
+    artist = db.execute("INSERT INTO artists(name, created_at) VALUES('Owner Test', ?)", (now,))
+    acc = db.execute("INSERT INTO accounts(artist_id, source, handle, url) VALUES(?, 'bandcamp', 'ownertest', 'https://ownertest.bandcamp.com')", (artist,))
+    def post(title, url, kind, tracks):
+        pid = db.execute("INSERT INTO posts(account_id, external_id, title, url, kind, author, first_seen, published_at) VALUES(?,?,?,?,?,?,?,?)",
+                         (acc, url, title, url, kind, "Owner Test", now, "2026-10-01"))
+        for i, (t, u) in enumerate(tracks):
+            db.execute("INSERT INTO tracks(post_id, position, title, url) VALUES(?,?,?,?)", (pid, i + 1, t, u))
+        return pid
+    album = post("Whole Thing", "https://ownertest.bandcamp.com/album/whole-thing", "album",
+                 [("Opener", "https://ownertest.bandcamp.com/track/opener"), ("Closer", "https://ownertest.bandcamp.com/track/closer")])
+    single = post("Closer", "https://ownertest.bandcamp.com/track/closer-single", "track", [("Closer", "https://ownertest.bandcamp.com/track/closer-single")])
+    remix = post("Closer (Someone Remix)", "https://ownertest.bandcamp.com/track/closer-remix", "track",
+                 [("Closer (Someone Remix)", "https://ownertest.bandcamp.com/track/closer-remix")])
+    other = post("Other EP", "https://ownertest.bandcamp.com/album/other-ep", "album",
+                 [("One", "https://ownertest.bandcamp.com/track/one"), ("Two", "https://ownertest.bandcamp.com/track/two")])
     try:
-        d = client.post("/api/downloads/check").json()
-        # the new purchase is ready to download; the pre-order isn't out yet
-        assert [(x["title"], x["reason"]) for x in d["items"]] == [("Fresh One", "new")]
-        assert client.get("/api/status").json()["downloads"]["items"] == ["Masot — Fresh One"]
-        assert client.post("/api/downloads/clear").json()["count"] == 0
-        assert client.post("/api/downloads/check").json()["count"] == 0      # shown once only
-        # its release date comes: ready to download
-        db.execute("UPDATE collection_items SET release_date='2020-01-01' WHERE title='Coming Soon'")
-        d = client.post("/api/downloads/check").json()
-        assert [(x["title"], x["reason"]) for x in d["items"]] == [("Coming Soon", "released")]
-        client.post("/api/downloads/clear")
-        # a pre-order Bandcamp itself shows as out is ready too
-        blob["item_cache"]["collection"]["a6"]["is_preorder"] = False
-        db.execute("UPDATE collection_items SET preorder=1 WHERE title='Coming Soon'")
-        PAGES[("bandcamp.com", "/divided_eye")] = '<div id="pagedata" data-blob="' + html_lib.escape(json.dumps(blob)) + '"></div>'
-        assert [x["title"] for x in client.post("/api/downloads/check").json()["items"]] == ["Coming Soon"]
-        # switched off in Settings: the list is dropped, nothing is watched, and the button goes
-        st = client.put("/api/settings", json={"downloads": False}).json()["downloads"]
-        assert st == {"on": False, "fan": "divided_eye"}
-        assert client.get("/api/status").json()["downloads"]["on"] is False
-        assert client.get("/api/downloads").json()["count"] == 0
-        assert client.post("/api/downloads/check").status_code == 409
-        db.execute("UPDATE collection_items SET preorder=1, release_date='2020-01-01' WHERE title='Coming Soon'")
-        import asyncio
-        from app import lookup
-        asyncio.run(lookup.check_purchases())                    # the background check does nothing
-        assert db.query("SELECT preorder FROM collection_items WHERE title='Coming Soon'")[0]["preorder"] == 1
-        client.put("/api/settings", json={"downloads": True})
-        assert client.get("/api/settings").json()["downloads"]["on"] is True
-        client.post("/api/downloads/clear")
+        def cards():
+            return {p["id"]: p for p in client.get("/api/feed?limit=200").json() if p["artist"] == "Owner Test"}
+        assert {cards()[i]["owned"] for i in (album, single, remix, other)} == {""}       # nothing bought yet
+        # bought: the album on a label's page, and one track of the EP on its own
+        db.execute("INSERT INTO collection_items(key, fan, title, band, url, kind) VALUES('a901','me','Whole Thing','Some Label',"
+                   "'https://somelabel.bandcamp.com/album/whole-thing','a')")
+        db.execute("INSERT INTO collection_tracks(item_key, position, title, artist) VALUES('a901',1,'Opener','Owner Test'),('a901',2,'Closer','Owner Test')")
+        db.execute("INSERT INTO collection_items(key, fan, title, band, url, kind) VALUES('t902','me','One','Owner Test',"
+                   "'https://ownertest.bandcamp.com/track/one','t')")
+        c = cards()
+        assert c[album]["owned"] == "yes" and c[single]["owned"] == "yes"      # the single is on the album bought
+        assert c[remix]["owned"] == ""                                            # someone's remix is another track
+        assert (c[other]["owned"], c[other]["owned_of"]) == ("part", [1, 2])
+        rows = {r["url"]: r for r in client.get("/api/tracks?limit=1000").json() if r["tracked_artist"] == "Owner Test"}
+        assert rows["https://ownertest.bandcamp.com/track/opener"]["owned"] is True
+        assert rows["https://ownertest.bandcamp.com/track/one"]["owned"] is True
+        assert rows["https://ownertest.bandcamp.com/track/two"]["owned"] is False
+
+        # the list: save a track and a release; the button counts what isn't owned yet
+        got = client.post("/api/purchase-list", json={"url": "https://ownertest.bandcamp.com/track/two?from=feed", "title": "Two",
+                                                      "artist": "Owner Test", "kind": "track", "post_id": other,
+                                                      "post_url": "https://ownertest.bandcamp.com/album/other-ep"}).json()
+        client.post("/api/purchase-list", json={"url": "https://ownertest.bandcamp.com/album/whole-thing", "title": "Whole Thing",
+                                                "artist": "Owner Test", "kind": "release", "post_id": album})
+        items = {i["title"]: i for i in client.get("/api/purchase-list").json()["items"]}
+        assert items["Two"]["url"] == "https://ownertest.bandcamp.com/track/two?from=feed" and items["Two"]["owned"] == ""
+        assert items["Whole Thing"]["owned"] == "yes"
+        assert client.get("/api/status").json()["purchase_list"]["count"] == 1
+        assert rows and any(r["saved"] for r in client.get("/api/tracks?limit=1000").json() if r["url"] == "https://ownertest.bandcamp.com/track/two")
+        assert client.post("/api/purchase-list", json={"url": "https://example.com/x", "title": "x"}).status_code == 400
+        client.post("/api/purchase-list/remove-owned")
+        assert [i["title"] for i in client.get("/api/purchase-list").json()["items"]] == ["Two"]
+        client.delete("/api/purchase-list", params={"url": "https://ownertest.bandcamp.com/track/two/"})
+        assert client.get("/api/purchase-list").json()["items"] == []
     finally:
-        PAGES[("bandcamp.com", "/divided_eye")] = old
+        db.execute("DELETE FROM collection_tracks WHERE item_key IN ('a901','t902')")
+        db.execute("DELETE FROM collection_items WHERE key IN ('a901','t902')")
+        db.execute("DELETE FROM purchase_list")
+        db.execute("DELETE FROM artists WHERE id=?", (artist,))
+
+
+def test_bandcamp_friday_dates(client):
+    from datetime import date
+    from app import purchase_list as pl
+    page = "The next Bandcamp Friday is Friday, November 6, 2026, then Dec 4. Updated 2026-11-02."
+    assert pl.dates_in(page, date(2026, 11, 4)) == ["2026-11-06", "2026-12-04"]           # only Fridays count
+    assert "2026-11-06" in client.get("/api/purchase-list").json()["fridays"]
 
 
 def test_refresh_progress_estimate(client):

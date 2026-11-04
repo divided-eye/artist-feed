@@ -10,7 +10,7 @@ services:
     environment:
       REFRESH_MINUTES: "60"  # how often to check for new posts
       # LOOKUP_FALLBACK: "bandcamp"   # artist link when a track isn't found; default is their SoundCloud profile (also settable in the Link Finder panel)
-      BANDCAMP_FAN: ""   # your Bandcamp username; Link Finder checks its purchases first (can also be set in the Link Finder panel)
+      BANDCAMP_FAN: ""   # your Bandcamp username: Link Finder checks its purchases first, and the feed shows what you own (can also be set in the Link Finder panel)
       # CATCH_UP_MINUTES: "10"   # how often pages with older releases still to load are visited between refreshes
       # BANDCAMP_FIRST_READ: "2"   # releases opened on a Bandcamp page's first read (newest first); the rest load on catch-up visits
       # REFRESH_CONCURRENCY: "3"   # pages read at the same time, per site

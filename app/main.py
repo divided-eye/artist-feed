@@ -1,4 +1,5 @@
 import asyncio
+from urllib.parse import quote
 import csv
 import io
 import json
@@ -14,11 +15,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import db, follows, lookup, pace, refresh, saved, sites
+from . import db, follows, lookup, pace, purchase_list, refresh, saved, sites
 from .sources import SOURCES
 from .sources.base import SourceError
 
-VERSION = "95"   # shown beside the title, so you can tell which version is running
+VERSION = "96"   # shown beside the title, so you can tell which version is running
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -114,14 +115,12 @@ def sources():
 class SiteSettings(BaseModel):
     sites: Optional[dict[str, bool]] = None      # site key: switched on
     lookup_sites: Optional[list[str]] = None     # the sites Link Finder searches
-    downloads: Optional[bool] = None              # the Bandcamp Downloads button
     discogs_token: Optional[str] = None           # lets Link Finder search Discogs ("" to remove)
 
 
 @app.get("/api/settings")
 def get_settings():
     return dict(sites.settings(), fallback=lookup.fallback_pref(), soundcloud=lookup.follows_status(),
-                downloads={"on": lookup.downloads_on(), "fan": lookup.collection_fan()},
                 discogs={"token": bool(lookup.discogs_token()), "from_env": bool(os.environ.get("DISCOGS_TOKEN"))})
 
 
@@ -135,8 +134,6 @@ def put_settings(body: SiteSettings):
         raise HTTPException(400, str(e))
     if body.lookup_sites is not None:
         sites.set_lookup_sites(body.lookup_sites)
-    if body.downloads is not None:
-        lookup.set_downloads_on(body.downloads)
     if body.discogs_token is not None:
         lookup.set_discogs_token(body.discogs_token)
     lookup.sites_changed()
@@ -563,7 +560,7 @@ def facets():
 def feed(source: Optional[str] = None, artist_id: Optional[int] = None,
          limit: int = 60, offset: int = 0, q: Optional[str] = None,
          more: dict = Depends(more_filters)):
-    return db.feed(source, artist_id, max(1, min(limit, 200)), max(0, offset), q, more)
+    return purchase_list.annotate_posts(db.feed(source, artist_id, max(1, min(limit, 200)), max(0, offset), q, more))
 
 
 def _clock(seconds):
@@ -579,7 +576,7 @@ def _clock(seconds):
 def tracks(source: Optional[str] = None, artist_id: Optional[int] = None,
            q: Optional[str] = None, sort: str = "date", dir: str = "desc",
            limit: int = 200, offset: int = 0, more: dict = Depends(more_filters)):
-    return db.tracks(source, artist_id, q, sort, dir, max(1, min(limit, 1000)), max(0, offset), more)
+    return purchase_list.annotate_tracks(db.tracks(source, artist_id, q, sort, dir, max(1, min(limit, 1000)), max(0, offset), more))
 
 
 @app.get("/api/tracks.csv")
@@ -844,36 +841,56 @@ async def related_tracks(track_id: str, offset: int = 0, limit: int = 3):
     return {"tracks": rows[offset:offset + limit], "total": len(rows)}
 
 
-@app.get("/api/downloads")
-def get_downloads():
-    """Purchases ready to download that you haven't been shown yet."""
-    return lookup.downloads()
+class PurchaseItem(BaseModel):
+    url: str
+    title: str = ""
+    artist: str = ""
+    release: str = ""
+    kind: str = "release"                          # "track" or "release"
+    image: str = ""
+    post_id: Optional[int] = None
+    post_url: str = ""
 
 
-@app.post("/api/downloads/clear")
-def clear_downloads():
-    lookup.clear_downloads()
-    return lookup.downloads()
+def _purchase_list():
+    fan = lookup.collection_fan()
+    return {"items": purchase_list.items(), "fan": fan, "fridays": purchase_list.fridays(),
+            "collection": f"https://bandcamp.com/{quote(fan)}" if fan else ""}
 
 
-@app.post("/api/downloads/check")
-async def check_downloads():
-    """Look for new purchases and pre-orders that have come out now."""
-    if not lookup.downloads_on():
-        raise HTTPException(409, "The Downloads button is switched off in Settings.")
+@app.get("/api/purchase-list")
+async def get_purchase_list():
+    """The tracks and releases saved to buy later, each with whether you own it now."""
+    if purchase_list.fridays_stale():
+        asyncio.create_task(purchase_list.read_fridays())
+    return _purchase_list()
+
+
+@app.post("/api/purchase-list")
+def add_to_purchase_list(body: PurchaseItem):
     try:
-        await lookup.check_purchases()
-    except lookup.Blocked:
-        raise HTTPException(503, "Bandcamp is asking the app to slow down. Try again in a few minutes.")
-    return lookup.downloads()
+        purchase_list.add(body.url, body.title, body.artist, body.release, body.kind, body.image, body.post_id, body.post_url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _purchase_list()
+
+
+@app.delete("/api/purchase-list")
+def remove_from_purchase_list(url: str):
+    purchase_list.remove(url)
+    return _purchase_list()
+
+
+@app.post("/api/purchase-list/remove-owned")
+def remove_owned_from_purchase_list():
+    purchase_list.remove_owned()
+    return _purchase_list()
 
 
 @app.get("/api/status")
 def status():
-    d = lookup.downloads()
     return {"version": VERSION, "refreshing": refresh.state["refreshing"] > 0,
-            "downloads": {"on": d["on"], "fan": d["fan"], "url": d["url"], "count": d["count"],
-                          "items": [f'{x["band"]} — {x["title"]}' for x in d["items"][:20]]},
+            "purchase_list": {"count": purchase_list.count(), "fridays": purchase_list.fridays()},
             "bandcamp_on_hold": pace.on_hold() or refresh.state["held"] > 0,
             "last_refresh": refresh.state["last_refresh"], "queued": refresh.state["queued"],
             "last_result": refresh.state["last_result"],

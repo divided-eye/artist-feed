@@ -1,10 +1,10 @@
 # Artist Feed: User Guide
 
-Oct 29, 2026
+Nov 4, 2026
 
 ## About this guide
 
-This guide describes Artist Feed version 95. The version number is shown in small grey text beside the title at the top of the app.
+This guide describes Artist Feed version 96. The version number is shown in small grey text beside the title at the top of the app.
 
 Artist Feed is free to use, copy, change and share under the MIT License (the `LICENSE` file in the app's folder).
 
@@ -278,9 +278,13 @@ Press play on a card or a list row. The site's own player opens in a bar at the 
 - Anything you press play on is dimmed afterwards. Playing a card marks the whole release. Playing a list row marks that track.
 - There is no button to mark something as unheard.
 
-### Downloads
+### Purchase list
 
-The **Downloads** button (top right, beside Tracked Artists) shows how many of your Bandcamp purchases are ready to download that you haven't been shown yet. It needs your Bandcamp username, set in the Link Finder panel, and is off until you tick **Show the Downloads button**, right beside the username box in Link Finder. While it is off the button stays in place, greyed out, and hovering over it says how to turn it on; purchases aren't watched for downloads and any waiting count is dropped, so switching it on starts fresh. Link Finder still uses your purchases either way.
+Every Bandcamp track and release in the feed has a **Save** button: in the **Save** column of the list view (just left of Site), and under each Bandcamp card in the grid. Press it to put that track or release on your purchase list; press it again to take it off. The **Purchase list** button (top right, beside Tracked Artists) shows how many saved items you don't own yet, and opens the list: every link you saved, newest first, each opening its Bandcamp page so you can go back and buy it. **Copy links** copies them all, one per line, and the ✕ beside one takes it off the list.
+
+When your Bandcamp username is set in Link Finder, the app reads your purchases and tells you what you already own. A track or release you bought shows **Owned**, greyed out, instead of Save, and on the purchase list. That includes a single track in the feed from an album you bought whole, also when the album was sold on a label's page. Someone's remix or edit of a track you own is a different track and still shows Save. A release you bought only some tracks of shows Save, with how many of its tracks you own beside it. **Remove owned** takes the bought ones off the list.
+
+The Purchase list button also counts down to Bandcamp Friday, when Bandcamp waives its share of sales: it gets a yellow border in the three days before, and turns green on the day itself (midnight to midnight Pacific time). The dates are read from isitbandcampfriday.com once a day, and the list says when the next one is.
 
 - Two things are counted: a purchase made since the app first read your collection, and a pre-order whose release date has come. A pre-order is not counted when you buy it, only when it comes out.
 - Point at the button to see the list of releases. Click it to open your Bandcamp collection in a new tab, where the download links are; the count goes back to zero.
@@ -409,7 +413,7 @@ The note under each result says where it came from, for example "In your purchas
 
 ### Options in the panel
 
-- **Your Bandcamp username.** Lets the app read your public collection page. Your purchases are checked before anything is searched. Beside it, **Show the Downloads button** switches the Downloads button (top right) on or off; it takes effect straight away and starts off.
+- **Your Bandcamp username.** Lets the app read your public collection page. Your purchases are checked before anything is searched, and they tell the feed and the purchase list what you already own.
 - **If a track isn't found, link to the artist's…** Chooses between SoundCloud profile first or Bandcamp page first. Changing it re-points results on screen and saved results without searching again.
 - **Search again for saved results.** Normally a track looked up before is answered from the saved result. Tick this to run every step again, for example after a track has been released or bought. Search again for not-found rows only keeps the saved answers for tracks that were found and searches again just for the rows saved as not found. Each row of a finished lookup also has its own Search again button.
 
@@ -532,7 +536,7 @@ Most personal settings are made in the app itself. A few live in `docker-compose
 | Setting | Where | Why |
 | --- | --- | --- |
 | Your tracked artists and labels | Tracked Artists table | Nothing appears in the feed until at least one is saved |
-| Your Bandcamp username | Link Finder panel, or `BANDCAMP_FAN` in `docker-compose.yml` | Lets Link Finder check your purchases first, and the Downloads button count what you have to download. Your collection must be public. Enter your own username in the Link Finder panel, or set it in the file. |
+| Your Bandcamp username | Link Finder panel, or `BANDCAMP_FAN` in `docker-compose.yml` | Lets Link Finder check your purchases first, and the feed and purchase list show what you already own. Your collection must be public. Enter your own username in the Link Finder panel, or set it in the file. |
 | Your SoundCloud username | Settings, or `SOUNDCLOUD_USER` in `docker-compose.yml` | Find missing links and Link Finder prefer the SoundCloud profiles you follow when several share a name. Your follows must be public. |
 | Who can reach the app | `ports` line in `docker-compose.yml` | `"8080:8000"` lets any device on your network open it. `"127.0.0.1:8080:8000"` limits it to this computer. |
 
@@ -711,6 +715,7 @@ Versions 1 and 2 were delivered before the app showed a version number; the numb
 
 | Version | What changed |
 | --- | --- |
+| 96 | Purchase list: a Save button on every Bandcamp track and release (a Save column in the list, a button on cards) puts it on a list of links to buy later. The Purchase list button replaces Downloads; it has a yellow border in the three days before Bandcamp Friday and turns green on the day. Anything already in your purchases says Owned, including a track from an album you bought whole. |
 | 95 | Tracked Artists: the Add row and Import CSV buttons are gone. Type in the empty row at the bottom of the table (a new one appears as you type), or paste a list into the box under the table. |
 | 94 | Link Finder: the Export results button that appears when a lookup finishes is blue, like Find missing links in Tracked Artists. |
 | 93 | The version 92 change to how Link Finder matches bootlegs is undone for now: matching works as it did in version 91. |
